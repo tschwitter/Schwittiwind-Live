@@ -1,4 +1,6 @@
-meteodata-lab
+meteodata-lab[regrid]
+pyproj
+scipy
 xarray
 numpy
 matplotlib
