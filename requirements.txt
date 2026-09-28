@@ -1,0 +1,6 @@
+meteodata-lab
+xarray
+numpy
+matplotlib
+geojsoncontour
+rasterio
