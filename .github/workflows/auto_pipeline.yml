@@ -2,9 +2,14 @@ name: Wetterdaten berechnen und veröffentlichen
 
 on:
   schedule:
-    # Läuft alle 3 Stunden ca. 2h15 nach Modellstart (02:15, 05:15, 08:15, 11:15, 14:15, 17:15, 20:15, 23:15 UTC)
-    - cron: '15 2,5,8,11,14,17,20,23 * * *'
-  workflow_dispatch: # Ermöglicht manuelles Starten mit einem Klick!
+    # Fragt alle 20 Minuten nach (z. B. 00:05, 00:25, 00:45, usw.)
+    - cron: '5,25,45 * * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Berechnung erzwingen (auch wenn kein neuer Lauf da ist)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -38,17 +43,25 @@ jobs:
           pip install -r requirements.txt
 
       - name: Wetter-Pipeline ausführen
+        id: run_step
         run: |
-          python run_pipeline.py
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            python run_pipeline.py --force
+          else
+            python run_pipeline.py
+          fi
 
       - name: GitHub Pages einrichten
+        if: steps.run_step.outputs.updated == 'true'
         uses: actions/configure-pages@v5
 
       - name: Artefakt hochladen
+        if: steps.run_step.outputs.updated == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: 'dist'
 
       - name: Auf GitHub Pages bereitstellen
+        if: steps.run_step.outputs.updated == 'true'
         id: deployment
         uses: actions/deploy-pages@v4
