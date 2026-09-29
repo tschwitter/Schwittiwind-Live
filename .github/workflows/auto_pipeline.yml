@@ -2,8 +2,8 @@ name: Wetterdaten berechnen und veröffentlichen
 
 on:
   schedule:
-    # Fragt alle 20 Minuten nach (z. B. 00:05, 00:25, 00:45, usw.)
-    - cron: '5,25,45 * * * *'
+    # NEU: Läuft alle 5 Minuten (00:00, 00:05, 00:10, 00:15 usw.)
+    - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       force:
