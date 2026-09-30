@@ -2,7 +2,7 @@ name: Wetterdaten berechnen und veröffentlichen
 
 on:
   schedule:
-    # Fragt alle 5 Minuten nach neuen Daten (auf dem Default Branch)
+    # Automatischer 5-Minuten-Takt nach Zeitplan
     - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
@@ -10,9 +10,6 @@ on:
         description: 'Berechnung erzwingen (auch wenn kein neuer Lauf da ist)'
         type: boolean
         default: false
-  push:
-    branches:
-      - performance    # <--- NUR performance! 'main' wird bei Push komplett ignoriert.
 
 permissions:
   contents: read
