@@ -20,12 +20,62 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  # STUFE 1: 30-Sekunden Schnellprüfung & Erstellung der Basis-Website
+  check-and-prepare:
     runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.prep.outputs.should_run }}
+      ref_time_str: ${{ steps.prep.outputs.ref_time_str }}
+    steps:
+      - name: Code auschecken
+        uses: actions/checkout@v4
 
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Basis-Tools installieren
+        run: |
+          pip install meteodata-lab requests
+
+      - name: Schnellprüfung & Vorbereitung
+        id: prep
+        run: |
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            python -u run_pipeline.py --prepare --force
+          else
+            python -u run_pipeline.py --prepare
+          fi
+
+      - name: Basis-Website zwischenspeichern
+        if: steps.prep.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-base
+          path: dist/
+
+  # STUFE 2: 4 SERVER RECHNEN GLEICHZEITIG IN DER CLOUD!
+  compute-matrix:
+    needs: check-and-prepare
+    if: needs.check-and-prepare.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - chunk: 0
+            start: 0
+            end: 8
+          - chunk: 1
+            start: 9
+            end: 16
+          - chunk: 2
+            start: 17
+            end: 24
+          - chunk: 3
+            start: 25
+            end: 33
     steps:
       - name: Code auschecken
         uses: actions/checkout@v4
@@ -38,29 +88,48 @@ jobs:
 
       - name: Werkzeuge installieren
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Wetter-Pipeline ausführen
-        id: run_step
+      - name: Berechne Chunk ${{ matrix.chunk }} (Schritte ${{ matrix.start }} bis ${{ matrix.end }})
         run: |
-          if [ "${{ github.event.inputs.force }}" = "true" ]; then
-            python -u run_pipeline.py --force
-          else
-            python -u run_pipeline.py
-          fi
+          python -u run_pipeline.py --start-step ${{ matrix.start }} --end-step ${{ matrix.end }} --ref-time "${{ needs.check-and-prepare.outputs.ref_time_str }}"
 
-      - name: GitHub Pages einrichten
-        if: steps.run_step.outputs.updated == 'true'
+      - name: Chunk-Daten speichern
+        uses: actions/upload-artifact@v4
+        with:
+          name: chunk-${{ matrix.chunk }}
+          path: dist/data/
+
+  # STUFE 3: Alle Daten zusammenführen und live schalten (Dauer: ~30 Sekunden)
+  deploy:
+    needs: [check-and-prepare, compute-matrix]
+    if: needs.check-and-prepare.outputs.should_run == 'true'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Basis-Website abrufen
+        uses: actions/download-artifact@v4
+        with:
+          name: site-base
+          path: dist/
+
+      - name: Alle 4 Chunks zusammenführen
+        uses: actions/download-artifact@v4
+        with:
+          pattern: chunk-*
+          path: dist/data/
+          merge-multiple: true
+
+      - name: GitHub Pages konfigurieren
         uses: actions/configure-pages@v5
 
-      - name: Artefakt hochladen
-        if: steps.run_step.outputs.updated == 'true'
+      - name: Gesamtes Paket bereitstellen
         uses: actions/upload-pages-artifact@v3
         with:
           path: 'dist'
 
-      - name: Auf GitHub Pages bereitstellen
-        if: steps.run_step.outputs.updated == 'true'
+      - name: Live schalten auf GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
