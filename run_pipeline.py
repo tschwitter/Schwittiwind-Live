@@ -28,7 +28,6 @@ def check_if_new_data_available():
         return True, None, None
 
     try:
-        # VOLLSTÄNDIGKEITS-CHECK: Prüfe, ob die LETZTE Stunde (+33h) bereits hochgeladen ist!
         check_req = ogd_api.Request(
             collection="ogd-forecasting-icon-ch1",
             variable="U_10M",
@@ -59,8 +58,25 @@ def check_if_new_data_available():
             return True, latest_ref_str, iso_str
     except Exception as e:
         print(f"-> Hinweis: Neuester Lauf noch nicht vollständig bei MeteoSchweiz ({e}).", flush=True)
-        print("-> Warte auf den nächsten Check, bis alle 33h bereit sind.", flush=True)
+        print("-> Warte auf den nächsten Check, bis alle Stunden bereit sind.", flush=True)
         return False, None, "latest"
+
+def get_dynamic_chunks(total_steps, max_chunks=4):
+    """Teilt die Zeitschritte mathematisch in gleichmässige Portionen auf."""
+    k = min(max_chunks, total_steps)
+    base = total_steps // k
+    rem = total_steps % k
+    chunks = []
+    cur = 0
+    for i in range(k):
+        size = base + (1 if i < rem else 0)
+        chunks.append({
+            "chunk": i,
+            "start": cur,
+            "end": cur + size - 1
+        })
+        cur += size
+    return chunks
 
 def prepare_base_site(ref_time_str, iso_str):
     os.makedirs("dist/data", exist_ok=True)
@@ -129,19 +145,11 @@ def run_chunk(start_step, end_step, ref_time_str):
     import stats
 
     os.makedirs("dist/data", exist_ok=True)
+    num_chunk_steps = end_step - start_step + 1
 
-    if start_step > config.ANZAHL_STUNDEN:
-        print(f"Chunk ({start_step} bis {end_step}) liegt über ANZAHL_STUNDEN ({config.ANZAHL_STUNDEN}). Nichts zu tun.", flush=True)
-        with open("dist/data/.dummy", "w") as f:
-            f.write("")
-        return
+    print(f"--- STARTE CHUNK: Schritte {start_step} bis {end_step} ({num_chunk_steps} Schritte) ---", flush=True)
 
-    actual_end_step = min(end_step, config.ANZAHL_STUNDEN)
-    num_chunk_steps = actual_end_step - start_step + 1
-
-    print(f"--- STARTE CHUNK: Schritte {start_step} bis {actual_end_step} ({num_chunk_steps} Schritte) ---", flush=True)
-
-    u_h, v_h, g_h, u_e, v_e, g_e = downloader.fetch_weather_data(start_step, actual_end_step, ref_time_str)
+    u_h, v_h, g_h, u_e, v_e, g_e = downloader.fetch_weather_data(start_step, end_step, ref_time_str)
 
     source_lons = u_h.coords['lon'].values
     source_lats = u_h.coords['lat'].values
@@ -160,7 +168,7 @@ def run_chunk(start_step, end_step, ref_time_str):
     with ctx.Pool(processes=2) as pool:
         pool.map(process_single_local_step, tasks)
 
-    print(f"=== CHUNK {start_step} bis {actual_end_step} ERFOLGREICH BEENDET ===", flush=True)
+    print(f"=== CHUNK {start_step} bis {end_step} ERFOLGREICH BEENDET ===", flush=True)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -178,10 +186,19 @@ def main():
         if should_run:
             prepare_base_site(latest_ref_str, iso_str)
 
+        # Berechne dynamische Chunks für GitHub Actions Matrix
+        total_steps = config.ANZAHL_STUNDEN + 1
+        chunks = get_dynamic_chunks(total_steps, max_chunks=4)
+        matrix_payload = {"include": chunks}
+        print(f"-> Dynamische Matrix berechnet: {len(chunks)} Server-Jobs:", flush=True)
+        for c in chunks:
+            print(f"   Server {c['chunk']}: Schritte {c['start']} bis {c['end']}", flush=True)
+
         if "GITHUB_OUTPUT" in os.environ:
             with open(os.environ["GITHUB_OUTPUT"], "a") as f:
                 f.write(f"should_run={'true' if should_run else 'false'}\n")
                 f.write(f"ref_time_str={iso_str}\n")
+                f.write(f"matrix_config={json.dumps(matrix_payload)}\n")
         sys.exit(0)
 
     run_chunk(args.start_step, args.end_step, args.ref_time)
