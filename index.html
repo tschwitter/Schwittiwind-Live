@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ICON-CH1 Windprognose (10m) - Ensembles</title>
+    <title>ICON-CH1 Wind & Böen (10m) - Ensembles</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         html, body { 
@@ -25,20 +25,53 @@
             box-shadow: none !important; 
         }
 
-        /* --- SCHWEBENDER LADE-INDIKATOR (Oben Mitte) --- */
-        #loadingIndicator {
-            display: none;
+        /* --- VARIABLEN-UMSCHALTER (WIND / GUST) OBEN MITTE --- */
+        .var-switch-container {
             position: fixed;
             top: 20px;
             left: 50%;
             transform: translateX(-50%);
-            z-index: 100000;
+            z-index: 9999;
             background-color: rgba(33, 43, 54, 0.9);
             border: 1px solid rgba(255,255,255,0.15);
             border-radius: 20px;
-            padding: 8px 16px;
+            padding: 4px;
+            display: flex;
+            gap: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        .var-btn {
+            background: transparent;
+            border: none;
+            border-radius: 16px;
+            color: #aaa;
             font-family: Arial, sans-serif;
             font-size: 13px;
+            font-weight: bold;
+            padding: 6px 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .var-btn.active {
+            background-color: #007ab7;
+            color: white;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+
+        /* --- SCHWEBENDER LADE-INDIKATOR (Unter dem Umschalter) --- */
+        #loadingIndicator {
+            display: none;
+            position: fixed;
+            top: 65px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100000;
+            background-color: rgba(33, 43, 54, 0.95);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 20px;
+            padding: 6px 14px;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
             font-weight: bold;
             color: #d9534f;
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
@@ -103,7 +136,6 @@
             color: white;
         }
         
-        /* Scrollbar für das Läufe-Panel */
         .member-panel::-webkit-scrollbar { width: 6px; }
         .member-panel::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 3px; }
         .member-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 3px; }
@@ -128,7 +160,6 @@
             box-sizing: border-box;
         }
 
-        /* Wochentags-Buttons */
         .day-buttons-row {
             display: flex;
             justify-content: space-between;
@@ -154,7 +185,6 @@
             color: white;
         }
 
-        /* Haupt-Steuerungszeile */
         .main-controls-row {
             display: flex;
             align-items: center;
@@ -162,7 +192,6 @@
             margin-bottom: 8px;
         }
 
-        /* Zeit-Tasten (Links / Rechts vom Slider) */
         .nav-btn {
             width: 36px;
             height: 36px;
@@ -180,7 +209,6 @@
         }
         .nav-btn:active { background: #eee; }
 
-        /* Der Slider mit dickem weissem Thumb */
         #timeSlider {
             -webkit-appearance: none;
             appearance: none;
@@ -213,7 +241,6 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
 
-        /* Member-Tasten übereinander (Rechts aussen) */
         .member-nav-stack {
             display: flex;
             flex-direction: column;
@@ -238,7 +265,6 @@
         }
         .member-stack-btn:active { background: #eee; }
 
-        /* Zeitleisten-Labels ganz unten im Panel */
         .bottom-labels-row {
             display: flex;
             justify-content: space-between;
@@ -305,7 +331,19 @@
 
         /* ================= RESPONSIVE DESIGN (SMARTPHONES) ================= */
         @media (max-width: 768px) {
-            /* Kontrollzentrum ganz nach unten über die volle Breite */
+            .var-switch-container {
+                top: 10px;
+                padding: 3px;
+            }
+            .var-btn {
+                font-size: 11px;
+                padding: 4px 12px;
+            }
+            #loadingIndicator {
+                top: 45px;
+                font-size: 10px;
+                padding: 4px 10px;
+            }
             .control-panel {
                 bottom: 10px;
                 left: 10px;
@@ -315,13 +353,11 @@
                 max-width: none;
                 padding: 10px 12px;
             }
-
-            /* Läufe-Panel auf Smartphones verkleinern, Titel ausblenden & Höhe anpassen */
             .member-panel {
-                top: 20px; 
+                top: 50px; 
                 right: 10px;
                 bottom: auto; 
-                max-height: calc(100% - 175px); 
+                max-height: calc(100% - 200px); 
                 width: 55px; 
                 padding: 6px 2px;
             }
@@ -333,8 +369,6 @@
                 padding: 6px 2px;
                 margin: 2px 0;
             }
-
-            /* Legende verkleinern und symmetrisch LINKS platzieren */
             .legend-box {
                 bottom: 145px;
                 left: 10px; 
@@ -354,7 +388,13 @@
     <!-- Die Karte -->
     <div id="map"></div>
 
-    <!-- Schwebender Lade-Indikator (Oben Mitte) -->
+    <!-- Variablen-Umschalter (Oben Mitte) -->
+    <div class="var-switch-container">
+        <button id="varBtnWind" class="var-btn active" onclick="switchVariable('wind')">Wind</button>
+        <button id="varBtnGust" class="var-btn" onclick="switchVariable('gust')">Gust</button>
+    </div>
+
+    <!-- Schwebender Lade-Indikator -->
     <div id="loadingIndicator">Lade Wetterdaten...</div>
 
     <!-- VERTIKALES LÄUFE-PANEL (Rechts) -->
@@ -375,16 +415,9 @@
 
         <!-- Haupt-Steuerungszeile -->
         <div class="main-controls-row">
-            <!-- Linker Zeitpfeil -->
             <button class="nav-btn" onclick="navLeft()">◀</button>
-            
-            <!-- Der Slider -->
             <input type="range" id="timeSlider" min="0" max="0" value="0">
-            
-            <!-- Rechter Zeitpfeil -->
             <button class="nav-btn" onclick="navRight()">▶</button>
-
-            <!-- Member-Tasten übereinander -->
             <div class="member-nav-stack">
                 <button class="member-stack-btn" onclick="navUp()">▲</button>
                 <button class="member-stack-btn" onclick="navDown()">▼</button>
@@ -402,18 +435,15 @@
     <div class="legend-box">
         <div class="legend-title">km/h</div>
         <div class="legend-scale">
-            <div class="legend-bar" id="legendBar">
-                <!-- Dynamisch via JS befüllt -->
-            </div>
-            <div class="legend-labels" id="legendLabels">
-                <!-- Dynamisch via JS befüllt -->
-            </div>
+            <div class="legend-bar" id="legendBar"></div>
+            <div class="legend-labels" id="legendLabels"></div>
         </div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         var map, config, times;
+        var currentVar = "wind"; // "wind" oder "gust"
         var currentMemberIdx = 0;
         var currentStepIdx = 0;
         var contourLayer = null;
@@ -422,10 +452,20 @@
         var cacheArrows = {};
 
         var uniqueDays = [];
-        var dayBestIndices = {};
+        var dayTimesteps = {}; // Speichert alle Indizes pro Wochentag
         var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
-        // Navigations-Funktionen (Zeit)
+        // Umschalten zwischen Wind und Gust
+        function switchVariable(newVar) {
+            if (currentVar === newVar) return;
+            currentVar = newVar;
+            
+            document.getElementById("varBtnWind").classList.toggle("active", currentVar === "wind");
+            document.getElementById("varBtnGust").classList.toggle("active", currentVar === "gust");
+
+            updateForecast(currentMemberIdx, currentStepIdx);
+        }
+
         function navLeft() {
             var newStep = Math.max(0, currentStepIdx - 1);
             if (newStep !== currentStepIdx) updateForecast(currentMemberIdx, newStep);
@@ -434,8 +474,6 @@
             var newStep = Math.min(times.length - 1, currentStepIdx + 1);
             if (newStep !== currentStepIdx) updateForecast(currentMemberIdx, newStep);
         }
-
-        // Navigations-Funktionen (Members)
         function navUp() {
             var newMember = Math.max(0, currentMemberIdx - 1);
             if (newMember !== currentMemberIdx) updateForecast(newMember, currentStepIdx);
@@ -445,12 +483,12 @@
             if (newMember !== currentMemberIdx) updateForecast(newMember, currentStepIdx);
         }
 
-        // Dynamische Wochentags-Buttons generieren (Mit intelligentem Mittags-Target um 12:00 Uhr LT)
+        // Dynamische Wochentags-Buttons
         function initDayButtons() {
             var container = document.getElementById("dayButtonsContainer");
             container.innerHTML = "";
             uniqueDays = [];
-            dayBestIndices = {};
+            dayTimesteps = {};
             
             times.forEach((t, idx) => {
                 var dateParts = t.local_str.split(" ")[0].split(".");
@@ -460,20 +498,11 @@
                 var dateObj = new Date(year, month, day);
                 var dayName = weekdays[dateObj.getDay()];
                 
-                var timePart = t.local_str.split(" ")[1];
-                var hour = parseInt(timePart.split(":")[0]);
-                
                 if (!uniqueDays.includes(dayName)) {
                     uniqueDays.push(dayName);
-                    dayBestIndices[dayName] = idx;
+                    dayTimesteps[dayName] = [];
                 }
-                
-                var currentBestIdx = dayBestIndices[dayName];
-                var currentBestHour = parseInt(times[currentBestIdx].local_str.split(" ")[1].split(":")[0]);
-                
-                if (Math.abs(hour - 12) < Math.abs(currentBestHour - 12)) {
-                    dayBestIndices[dayName] = idx;
-                }
+                dayTimesteps[dayName].push(idx);
             });
             
             uniqueDays.forEach(dayName => {
@@ -481,14 +510,35 @@
                 btn.className = "day-btn";
                 btn.id = "day-btn-" + dayName;
                 btn.innerText = dayName;
+                
+                // NEU: Springt zur exakt gleichen Uhrzeit des Ziel-Tages (oder nächste verfügbare Stunde)
                 btn.onclick = function() {
-                    updateForecast(currentMemberIdx, dayBestIndices[dayName]);
+                    jumpToDaySameHour(dayName);
                 };
                 container.appendChild(btn);
             });
         }
 
-        // Läufe-Panel befüllen (Inklusive HL / M1 / MD / Min / Max / %25 / %75 / IQ Mobile-Optimierung!)
+        function jumpToDaySameHour(targetDayName) {
+            var currentHour = parseInt(times[currentStepIdx].local_str.split(" ")[1].split(":")[0]);
+            var targetIndices = dayTimesteps[targetDayName];
+            if (!targetIndices || targetIndices.length === 0) return;
+
+            var bestIdx = targetIndices[0];
+            var minDiff = 999;
+
+            targetIndices.forEach(idx => {
+                var h = parseInt(times[idx].local_str.split(" ")[1].split(":")[0]);
+                var diff = Math.abs(h - currentHour);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    bestIdx = idx;
+                }
+            });
+
+            updateForecast(currentMemberIdx, bestIdx);
+        }
+
         function initMemberPanel() {
             var hauptContainer = document.getElementById("hauptlaufContainer");
             var ensembleContainer = document.getElementById("ensembleContainer");
@@ -511,7 +561,6 @@
                     btn.innerText = isMobile ? "M" + idx : name;
                     ensembleContainer.appendChild(btn);
                 } else {
-                    // Statistiken (11 bis 16): Median, Min, Max, 25%, 75%, IQR
                     if (idx === 11) btn.innerText = isMobile ? "MD" : name;
                     else if (idx === 12) btn.innerText = "Min";
                     else if (idx === 13) btn.innerText = "Max";
@@ -527,7 +576,6 @@
             });
         }
 
-        // --- DYNAMISCHE FARBLEGENDE ---
         function updateLegend(isIQR) {
             var legendBar = document.getElementById("legendBar");
             var legendLabels = document.getElementById("legendLabels");
@@ -567,7 +615,6 @@
             }
         }
 
-        // Cache-Buster & Decompression
         async function fetchAndDecompress(url) {
             const response = await fetch(url);
             if (!response.ok) throw new Error("Fehler beim Laden von: " + url);
@@ -580,7 +627,6 @@
 
         async function init() {
             try {
-                // Cache-Buster für Konfigurationsdateien
                 const cacheBuster = Date.now();
                 const configRes = await fetch('data/config.json?t=' + cacheBuster);
                 config = await configRes.json();
@@ -635,14 +681,22 @@
             currentMemberIdx = parseInt(newMemberIdx);
             currentStepIdx = parseInt(newStepIdx);
             document.getElementById("timeSlider").value = currentStepIdx;
-            const cacheKey = currentMemberIdx + "_" + currentStepIdx;
+            
+            // Neuer Cache-Key inklusive Variable (wind / gust)
+            const cacheKey = currentVar + "_" + currentMemberIdx + "_" + currentStepIdx;
 
             if (!cacheContours[cacheKey]) {
                 document.getElementById("loadingIndicator").style.display = "block";
                 try {
                     const runBuster = encodeURIComponent(config.ref_time_utc);
-                    cacheContours[cacheKey] = await fetchAndDecompress(`data/contours_m${currentMemberIdx}_s${currentStepIdx}.json.gz?v=${runBuster}`);
-                    cacheArrows[cacheKey] = await fetchAndDecompress(`data/arrows_m${currentMemberIdx}_s${currentStepIdx}.json.gz?v=${runBuster}`);
+                    cacheContours[cacheKey] = await fetchAndDecompress(`data/contours_${currentVar}_m${currentMemberIdx}_s${currentStepIdx}.json.gz?v=${runBuster}`);
+                    
+                    // Pfeile nur für Wind laden
+                    if (currentVar === "wind" && currentMemberIdx < 11) {
+                        cacheArrows[cacheKey] = await fetchAndDecompress(`data/arrows_${currentVar}_m${currentMemberIdx}_s${currentStepIdx}.json.gz?v=${runBuster}`);
+                    } else {
+                        cacheArrows[cacheKey] = { "s": [], "d": [] };
+                    }
                 } catch (err) {
                     console.error("Fehler beim Laden des Zeitschritts:", err);
                     document.getElementById("loadingIndicator").style.display = "none";
@@ -675,11 +729,7 @@
             uniqueDays.forEach(dayName => {
                 var btn = document.getElementById("day-btn-" + dayName);
                 if (btn) {
-                    if (dayName === currentDayName) {
-                        btn.classList.add("active");
-                    } else {
-                        btn.classList.remove("active");
-                    }
+                    btn.classList.toggle("active", dayName === currentDayName);
                 }
             });
 
@@ -712,12 +762,12 @@
             if (!map || !config) return;
             if (!activeMarkers) { activeMarkers = L.layerGroup().addTo(map); } else { activeMarkers.clearLayers(); }
             
-            // Pfeil-Sperre für alle Statistiken (Member >= 11)
-            if (currentMemberIdx >= 11) return;
+            // Pfeilsperre: Keine Pfeile bei Böen (Gust) oder bei allen Statistiken (Member >= 11)
+            if (currentVar === "gust" || currentMemberIdx >= 11) return;
 
-            const cacheKey = currentMemberIdx + "_" + currentStepIdx;
+            const cacheKey = currentVar + "_" + currentMemberIdx + "_" + currentStepIdx;
             const arrowData = cacheArrows[cacheKey];
-            if (!arrowData) return;
+            if (!arrowData || !arrowData.s || arrowData.s.length === 0) return;
 
             var bounds = map.getBounds();
             var zoom = map.getZoom();
