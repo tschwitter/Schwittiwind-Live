@@ -127,13 +127,17 @@ def run_chunk(start_step, end_step, ref_time_str):
     import downloader
     import stats
 
+    # Ordner immer anlegen, damit der Upload-Schritt niemals fehlschlägt
+    os.makedirs("dist/data", exist_ok=True)
+
     if start_step > config.ANZAHL_STUNDEN:
         print(f"Chunk ({start_step} bis {end_step}) liegt über ANZAHL_STUNDEN ({config.ANZAHL_STUNDEN}). Nichts zu tun.", flush=True)
+        with open("dist/data/.dummy", "w") as f:
+            f.write("")
         return
 
     actual_end_step = min(end_step, config.ANZAHL_STUNDEN)
     num_chunk_steps = actual_end_step - start_step + 1
-    os.makedirs("dist/data", exist_ok=True)
 
     print(f"--- STARTE CHUNK: Schritte {start_step} bis {actual_end_step} ({num_chunk_steps} Schritte) ---", flush=True)
 
