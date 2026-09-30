@@ -20,7 +20,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # STUFE 1: Schnellprüfung & Vorbereitung der Basis-Website
   check-and-prepare:
     runs-on: ubuntu-latest
     outputs:
@@ -57,12 +56,12 @@ jobs:
           name: site-base
           path: dist/
 
-  # STUFE 2: 4 SERVER RECHNEN GLEICHZEITIG IN DER CLOUD!
   compute-matrix:
     needs: check-and-prepare
     if: needs.check-and-prepare.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false  # Verhindert, dass alle Server abgebrochen werden, falls einer kurz hakt
       matrix:
         include:
           - chunk: 0
@@ -101,7 +100,6 @@ jobs:
           name: chunk-${{ matrix.chunk }}
           path: dist/data/
 
-  # STUFE 3: Alle Daten zusammenführen und live schalten
   deploy:
     needs: [check-and-prepare, compute-matrix]
     if: needs.check-and-prepare.outputs.should_run == 'true'
