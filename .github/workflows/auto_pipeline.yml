@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # STUFE 1: 30-Sekunden Schnellprüfung & Erstellung der Basis-Website
+  # STUFE 1: Schnellprüfung & Vorbereitung der Basis-Website
   check-and-prepare:
     runs-on: ubuntu-latest
     outputs:
@@ -36,9 +36,10 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Basis-Tools installieren
+      - name: Werkzeuge installieren
         run: |
-          pip install meteodata-lab requests
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Schnellprüfung & Vorbereitung
         id: prep
@@ -100,7 +101,7 @@ jobs:
           name: chunk-${{ matrix.chunk }}
           path: dist/data/
 
-  # STUFE 3: Alle Daten zusammenführen und live schalten (Dauer: ~30 Sekunden)
+  # STUFE 3: Alle Daten zusammenführen und live schalten
   deploy:
     needs: [check-and-prepare, compute-matrix]
     if: needs.check-and-prepare.outputs.should_run == 'true'
