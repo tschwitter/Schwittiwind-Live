@@ -10,9 +10,6 @@ from zoneinfo import ZoneInfo
 from multiprocessing import get_context
 from meteodatalab import ogd_api
 import config
-import downloader
-import stats
-import exporter
 
 SHARED_DATA = {}
 
@@ -73,7 +70,6 @@ def prepare_base_site(ref_time_str, iso_str):
     else:
         ref_dt = datetime.now(ZoneInfo("UTC"))
 
-    # Generiere times.json für alle Stunden (0 bis ANZAHL_STUNDEN)
     times_by_step = []
     for h in range(config.ANZAHL_STUNDEN + 1):
         valid_local = (ref_dt + timedelta(hours=h)).astimezone(local_tz)
@@ -106,6 +102,9 @@ def prepare_base_site(ref_time_str, iso_str):
     print("✓ Basis-Dateien (index.html, times.json, config.json) bereitgestellt!", flush=True)
 
 def process_single_local_step(args):
+    import stats
+    import exporter
+
     local_idx, global_step_idx = args
     u_h = SHARED_DATA["u_h"]
     v_h = SHARED_DATA["v_h"]
@@ -125,6 +124,9 @@ def process_single_local_step(args):
     return global_step_idx
 
 def run_chunk(start_step, end_step, ref_time_str):
+    import downloader
+    import stats
+
     if start_step > config.ANZAHL_STUNDEN:
         print(f"Chunk ({start_step} bis {end_step}) liegt über ANZAHL_STUNDEN ({config.ANZAHL_STUNDEN}). Nichts zu tun.", flush=True)
         return
@@ -135,10 +137,8 @@ def run_chunk(start_step, end_step, ref_time_str):
 
     print(f"--- STARTE CHUNK: Schritte {start_step} bis {actual_end_step} ({num_chunk_steps} Schritte) ---", flush=True)
 
-    # 1. Download nur für die Schritte dieses Chunks
     u_h, v_h, g_h, u_e, v_e, g_e = downloader.fetch_weather_data(start_step, actual_end_step, ref_time_str)
 
-    # 2. Einmalige Vorberechnung der Regridding-Gewichte
     source_lons = u_h.coords['lon'].values
     source_lats = u_h.coords['lat'].values
     weights = stats.init_regrid_weights(source_lons, source_lats)
@@ -150,10 +150,8 @@ def run_chunk(start_step, end_step, ref_time_str):
         "weights": weights
     }
 
-    # Aufgaben-Liste: (lokaler Index 0..N, globaler Schritt start..end)
     tasks = [(local_idx, start_step + local_idx) for local_idx in range(num_chunk_steps)]
 
-    # Parallele 2-Kern-Berechnung
     ctx = get_context("fork")
     with ctx.Pool(processes=2) as pool:
         pool.map(process_single_local_step, tasks)
@@ -182,7 +180,6 @@ def main():
                 f.write(f"ref_time_str={iso_str}\n")
         sys.exit(0)
 
-    # Regulärer Chunk-Lauf
     run_chunk(args.start_step, args.end_step, args.ref_time)
 
 if __name__ == "__main__":
