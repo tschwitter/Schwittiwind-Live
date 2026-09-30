@@ -6,6 +6,13 @@ import numpy as np
 from meteodatalab import ogd_api
 import config
 
+def safe_squeeze(ds):
+    """Entfernt nur 1er-Dimensionen von ref_time, z und eps – NIEMALS lead_time!"""
+    drop_dims = [d for d in ['ref_time', 'z'] if d in ds.dims and ds.sizes[d] == 1]
+    if 'eps' in ds.dims and ds.sizes['eps'] == 1:
+        drop_dims.append('eps')
+    return ds.squeeze(drop_dims) if drop_dims else ds
+
 def _download_and_crop_task(args):
     var_name, perturbed, ref_time_str, lead_times, valid_cells = args
     label = f"{var_name} ({'Ensemble' if perturbed else 'Hauptlauf'})"
@@ -18,7 +25,6 @@ def _download_and_crop_task(args):
         lead_time=lead_times
     )
     
-    # Robuste Retry-Schleife gegen sporadische SSL- und Netzwerkfehler
     max_retries = 3
     for attempt in range(1, max_retries + 1):
         try:
@@ -26,14 +32,14 @@ def _download_and_crop_task(args):
             ds = ogd_api.get_from_ogd(req)
             if valid_cells is not None:
                 ds = ds.isel(cell=valid_cells)
-            ds = ds.squeeze()
+            ds = safe_squeeze(ds)
             print(f"✓ [Worker] Fertig & zugeschnitten: {label}", flush=True)
             return ds
         except Exception as e:
             print(f"⚠️ Warnung bei {label} (Versuch {attempt}): {e}", flush=True)
             if attempt == max_retries:
                 raise e
-            time.sleep(3 * attempt)  # Kurze Pause vor erneutem Versuch
+            time.sleep(3 * attempt)
 
 def fetch_weather_data(start_step, end_step, ref_time_str):
     lead_times = [timedelta(hours=h) for h in range(start_step, end_step + 1)]
@@ -47,7 +53,6 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
         lead_time=lead_times
     )
 
-    # Auch für den Pilot-Download eine Retry-Schleife
     for attempt in range(1, 4):
         try:
             ds_u_h_raw = ogd_api.get_from_ogd(req_pilot)
@@ -65,11 +70,10 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
         (lons >= config.LON_MIN) & (lons <= config.LON_MAX)
     )[0]
 
-    u_h = ds_u_h_raw.isel(cell=valid_cells).squeeze()
+    u_h = safe_squeeze(ds_u_h_raw.isel(cell=valid_cells))
     del ds_u_h_raw
     gc.collect()
 
-    # Paralleler Download der restlichen 5 Datensätze für diesen Chunk
     print(f"2. Starte parallelen Download für die restlichen 5 Datensätze...", flush=True)
     tasks = [
         ("V_10M", False, ref_time_str, lead_times, valid_cells),
