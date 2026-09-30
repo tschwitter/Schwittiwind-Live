@@ -1,4 +1,5 @@
 import gc
+import time
 from datetime import timedelta
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
@@ -8,8 +9,7 @@ import config
 def _download_and_crop_task(args):
     var_name, perturbed, ref_time_str, lead_times, valid_cells = args
     label = f"{var_name} ({'Ensemble' if perturbed else 'Hauptlauf'})"
-    print(f"-> [Worker] Starte Download für {label} ({len(lead_times)} Schritte)...", flush=True)
-
+    
     req = ogd_api.Request(
         collection="ogd-forecasting-icon-ch1",
         variable=var_name,
@@ -18,13 +18,22 @@ def _download_and_crop_task(args):
         lead_time=lead_times
     )
     
-    ds = ogd_api.get_from_ogd(req)
-    if valid_cells is not None:
-        ds = ds.isel(cell=valid_cells)
-    ds = ds.squeeze()
-        
-    print(f"✓ [Worker] Fertig & zugeschnitten: {label}", flush=True)
-    return ds
+    # Robuste Retry-Schleife gegen sporadische SSL- und Netzwerkfehler
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(f"-> [Worker] Starte Download für {label} (Versuch {attempt}/{max_retries})...", flush=True)
+            ds = ogd_api.get_from_ogd(req)
+            if valid_cells is not None:
+                ds = ds.isel(cell=valid_cells)
+            ds = ds.squeeze()
+            print(f"✓ [Worker] Fertig & zugeschnitten: {label}", flush=True)
+            return ds
+        except Exception as e:
+            print(f"⚠️ Warnung bei {label} (Versuch {attempt}): {e}", flush=True)
+            if attempt == max_retries:
+                raise e
+            time.sleep(3 * attempt)  # Kurze Pause vor erneutem Versuch
 
 def fetch_weather_data(start_step, end_step, ref_time_str):
     lead_times = [timedelta(hours=h) for h in range(start_step, end_step + 1)]
@@ -37,7 +46,16 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
         perturbed=False,
         lead_time=lead_times
     )
-    ds_u_h_raw = ogd_api.get_from_ogd(req_pilot)
+
+    # Auch für den Pilot-Download eine Retry-Schleife
+    for attempt in range(1, 4):
+        try:
+            ds_u_h_raw = ogd_api.get_from_ogd(req_pilot)
+            break
+        except Exception as e:
+            if attempt == 3:
+                raise e
+            time.sleep(3)
 
     # Gittermaske der Schweiz berechnen
     lats = ds_u_h_raw.coords['lat'].values
