@@ -23,11 +23,12 @@ def _download_and_crop_task(args):
     )
     
     # 1. Daten von MeteoSchweiz laden
-    ds = ogd_api.get_from_ogd(req).squeeze()
+    ds = ogd_api.get_from_ogd(req)
     
-    # 2. Sofortiger RAM-Schutz: Auf die Schweiz zuschneiden
+    # 2. Sofortiger RAM-Schutz: Erst auf die Schweiz zuschneiden, dann squeeze
     if valid_cells is not None:
         ds = ds.isel(cell=valid_cells)
+    ds = ds.squeeze()
         
     print(f"✓ [Download-Worker] Fertig & zugeschnitten: {label}", flush=True)
     return ds
@@ -44,9 +45,15 @@ def fetch_weather_data():
         perturbed=False,
         lead_time=lead_times
     )
-    ds_u_h_raw = ogd_api.get_from_ogd(req_pilot).squeeze()
+    ds_u_h_raw = ogd_api.get_from_ogd(req_pilot)
     
-    ref_time_raw = ds_u_h_raw.coords['ref_time'].values[0]
+    # FEHLER-FIX: Sicherer Zugriff auf ref_time (funktioniert als Array und als Skalar)
+    ref_val = ds_u_h_raw.coords['ref_time'].values
+    if getattr(ref_val, 'ndim', 0) > 0:
+        ref_time_raw = ref_val[0]
+    else:
+        ref_time_raw = ref_val.item() if hasattr(ref_val, 'item') else ref_val
+
     ref_time_str = str(ref_time_raw).split('.')[0] + "Z"
     print(f"-> Modellstart festgesetzt auf: {ref_time_str}", flush=True)
 
@@ -60,7 +67,7 @@ def fetch_weather_data():
     print(f"-> Schweizer Gittermaske aktiv ({len(valid_cells)} Zellen).", flush=True)
 
     # Pilot-Datensatz zuschneiden
-    u_h = ds_u_h_raw.isel(cell=valid_cells)
+    u_h = ds_u_h_raw.isel(cell=valid_cells).squeeze()
     del ds_u_h_raw
     gc.collect()
 
