@@ -61,7 +61,7 @@ jobs:
     if: needs.check-and-prepare.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false  # Verhindert, dass alle Server abgebrochen werden, falls einer kurz hakt
+      fail-fast: false
       matrix:
         include:
           - chunk: 0
@@ -99,6 +99,7 @@ jobs:
         with:
           name: chunk-${{ matrix.chunk }}
           path: dist/data/
+          if-no-files-found: ignore
 
   deploy:
     needs: [check-and-prepare, compute-matrix]
