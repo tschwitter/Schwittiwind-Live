@@ -20,11 +20,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # STUFE 1: Schnellprüfung & dynamische Matrix-Generierung
   check-and-prepare:
     runs-on: ubuntu-latest
     outputs:
       should_run: ${{ steps.prep.outputs.should_run }}
       ref_time_str: ${{ steps.prep.outputs.ref_time_str }}
+      matrix_config: ${{ steps.prep.outputs.matrix_config }}
     steps:
       - name: Code auschecken
         uses: actions/checkout@v4
@@ -56,26 +58,14 @@ jobs:
           name: site-base
           path: dist/
 
+  # STUFE 2: DYNAMISCHE MATRIX (Startet exakt so viele Server wie nötig!)
   compute-matrix:
     needs: check-and-prepare
     if: needs.check-and-prepare.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - chunk: 0
-            start: 0
-            end: 8
-          - chunk: 1
-            start: 9
-            end: 16
-          - chunk: 2
-            start: 17
-            end: 24
-          - chunk: 3
-            start: 25
-            end: 33
+      matrix: ${{ fromJson(needs.check-and-prepare.outputs.matrix_config) }}
     steps:
       - name: Code auschecken
         uses: actions/checkout@v4
@@ -101,6 +91,7 @@ jobs:
           path: dist/data/
           if-no-files-found: ignore
 
+  # STUFE 3: Alle aktiven Chunks zusammenführen und live schalten
   deploy:
     needs: [check-and-prepare, compute-matrix]
     if: needs.check-and-prepare.outputs.should_run == 'true'
@@ -115,7 +106,7 @@ jobs:
           name: site-base
           path: dist/
 
-      - name: Alle 4 Chunks zusammenführen
+      - name: Alle Chunks zusammenführen
         uses: actions/download-artifact@v4
         with:
           pattern: chunk-*
