@@ -28,12 +28,13 @@ def check_if_new_data_available():
         return True, None, None
 
     try:
+        # VOLLSTÄNDIGKEITS-CHECK: Prüfe, ob die LETZTE Stunde (+33h) bereits hochgeladen ist!
         check_req = ogd_api.Request(
             collection="ogd-forecasting-icon-ch1",
             variable="U_10M",
             ref_time="latest",
             perturbed=False,
-            horizon="P0DT0H"
+            horizon=f"P0DT{config.ANZAHL_STUNDEN}H"
         )
         ds_check = ogd_api.get_from_ogd(check_req)
         latest_ref_raw = ds_check.coords['ref_time'].values
@@ -46,7 +47,7 @@ def check_if_new_data_available():
         latest_ref_str = latest_dt.strftime("%d.%m.%Y %H:00 UTC")
         iso_str = str(latest_ref_raw).split('.')[0] + "Z"
 
-        print(f"-> Neuester Lauf bei MeteoSchweiz : {latest_ref_str}", flush=True)
+        print(f"-> Vollständig veröffentlichter Lauf: {latest_ref_str}", flush=True)
         
         if live_ref_time and (latest_ref_str == live_ref_time):
             print("=======================================================", flush=True)
@@ -54,14 +55,14 @@ def check_if_new_data_available():
             print("=======================================================", flush=True)
             return False, latest_ref_str, iso_str
         else:
-            print("-> NEUER LAUF GEFUNDEN! Bereite Matrix-Berechnung vor...", flush=True)
+            print("-> NEUER VOLLSTÄNDIGER LAUF BEREIT! Starte Matrix...", flush=True)
             return True, latest_ref_str, iso_str
     except Exception as e:
-        print(f"-> Fehler bei der Schnellabfrage ({e}). Fahre sicherheitshalber fort.", flush=True)
-        return True, None, "latest"
+        print(f"-> Hinweis: Neuester Lauf noch nicht vollständig bei MeteoSchweiz ({e}).", flush=True)
+        print("-> Warte auf den nächsten Check, bis alle 33h bereit sind.", flush=True)
+        return False, None, "latest"
 
 def prepare_base_site(ref_time_str, iso_str):
-    """Erstellt config.json, times.json und index.html im dist-Ordner."""
     os.makedirs("dist/data", exist_ok=True)
     local_tz = ZoneInfo("Europe/Zurich")
     
@@ -127,7 +128,6 @@ def run_chunk(start_step, end_step, ref_time_str):
     import downloader
     import stats
 
-    # Ordner immer anlegen, damit der Upload-Schritt niemals fehlschlägt
     os.makedirs("dist/data", exist_ok=True)
 
     if start_step > config.ANZAHL_STUNDEN:
