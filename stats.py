@@ -3,10 +3,6 @@ from scipy.spatial import Delaunay
 import config
 
 def init_regrid_weights(source_lons, source_lats):
-    """
-    Berechnet die Delaunay-Triangulierung und baryzentrischen Interpolationsgewichte
-    EINMALIG am Anfang für das gesamte Gitter.
-    """
     print("-> Berechne geometrische Regridding-Gewichte einmalig vor...", flush=True)
     source_points = np.column_stack([source_lons, source_lats])
     
@@ -15,13 +11,11 @@ def init_regrid_weights(source_lons, source_lats):
     grid_lon, grid_lat = np.meshgrid(target_lons, target_lats)
     target_points = np.column_stack([grid_lon.ravel(), grid_lat.ravel()])
 
-    # Delaunay-Triangulierung der unstrukturierten ICON-Punkte
     tri = Delaunay(source_points)
     simplex = tri.find_simplex(target_points)
     valid = simplex >= 0
     s = simplex[valid]
 
-    # Baryzentrische Koordinaten-Matrix
     T = tri.transform[s, :2]
     r = tri.transform[s, 2]
     delta = target_points[valid] - r
@@ -47,7 +41,6 @@ def init_regrid_weights(source_lons, source_lats):
     }
 
 def remap_fast(field, weights):
-    """Blitzschnelle Vektor-Interpolation in unter 1 Millisekunde."""
     vals = field.values if hasattr(field, "values") else field
     out = np.full(config.NY * config.NX, np.nan, dtype=np.float32)
     out[weights["valid"]] = (
@@ -74,6 +67,12 @@ def compute_statistics_for_array(all_speeds):
         16: {"speed": iqr, "has_arrows": False, "is_iqr": True}
     }
 
+def get_step_slice(da, step_idx):
+    """Sicherer Zeitschritt-Zugriff, selbst wenn nur 1 Zeitschritt im Array liegt."""
+    if "lead_time" in da.dims:
+        return da.isel(lead_time=step_idx)
+    return da
+
 def compute_timestep(u_h, v_h, g_h, u_e, v_e, g_e, step_idx, weights):
     ensemble_members = u_e.coords['eps'].values
     num_members = 1 + len(ensemble_members)
@@ -86,16 +85,19 @@ def compute_timestep(u_h, v_h, g_h, u_e, v_e, g_e, step_idx, weights):
 
     for m_idx in range(num_members):
         if m_idx == 0:
-            u_s = u_h.isel(lead_time=step_idx)
-            v_s = v_h.isel(lead_time=step_idx)
-            g_s = g_h.isel(lead_time=step_idx)
+            u_s = get_step_slice(u_h, step_idx)
+            v_s = get_step_slice(v_h, step_idx)
+            g_s = get_step_slice(g_h, step_idx)
         else:
             eps_val = ensemble_members[m_idx - 1]
-            u_s = u_e.sel(eps=eps_val).isel(lead_time=step_idx)
-            v_s = v_e.sel(eps=eps_val).isel(lead_time=step_idx)
-            g_s = g_e.sel(eps=eps_val).isel(lead_time=step_idx)
+            u_mem = u_e.sel(eps=eps_val) if "eps" in u_e.dims else u_e
+            v_mem = v_e.sel(eps=eps_val) if "eps" in v_e.dims else v_e
+            g_mem = g_e.sel(eps=eps_val) if "eps" in g_e.dims else g_e
+            
+            u_s = get_step_slice(u_mem, step_idx)
+            v_s = get_step_slice(v_mem, step_idx)
+            g_s = get_step_slice(g_mem, step_idx)
 
-        # Schnelles Vektor-Remapping ohne wiederholte Triangulation
         grid_u = remap_fast(u_s, weights)
         grid_v = remap_fast(v_s, weights)
         grid_g = remap_fast(g_s, weights)
