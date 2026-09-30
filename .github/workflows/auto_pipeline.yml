@@ -2,7 +2,6 @@ name: Wetterdaten berechnen und veröffentlichen
 
 on:
   schedule:
-    # Automatischer 5-Minuten-Takt nach Zeitplan
     - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
@@ -46,9 +45,9 @@ jobs:
         id: run_step
         run: |
           if [ "${{ github.event.inputs.force }}" = "true" ]; then
-            python run_pipeline.py --force
+            python -u run_pipeline.py --force
           else
-            python run_pipeline.py
+            python -u run_pipeline.py
           fi
 
       - name: GitHub Pages einrichten
