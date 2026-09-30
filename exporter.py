@@ -12,7 +12,7 @@ lon_1d = np.linspace(config.XMIN, config.XMAX, config.NX)
 lat_1d = np.linspace(config.YMIN, config.YMAX, config.NY)
 grid_lon, grid_lat = np.meshgrid(lon_1d, lat_1d)
 
-def export_member_step(m_idx, step_idx, data):
+def export_variable_step(var_name, m_idx, step_idx, data):
     ax.clear()
     speed = data["speed"]
     
@@ -22,10 +22,11 @@ def export_member_step(m_idx, step_idx, data):
         contourf = ax.contourf(grid_lon, grid_lat, speed, levels=config.LEVELS, colors=config.COLORS, alpha=0.55)
 
     raw_geojson = geojsoncontour.contourf_to_geojson(contourf=contourf, ndigits=3)
-    with gzip.open(f"dist/data/contours_m{m_idx}_s{step_idx}.json.gz", "wt", encoding="utf-8") as f:
+    with gzip.open(f"dist/data/contours_{var_name}_m{m_idx}_s{step_idx}.json.gz", "wt", encoding="utf-8") as f:
         f.write(raw_geojson)
 
-    if data.get("has_arrows", False):
+    # Pfeile nur für Wind mit Richtung exportieren, sonst leeres JSON
+    if data.get("has_arrows", False) and "dir" in data:
         direction = data["dir"]
         s_flat = np.where(np.isnan(speed) | (speed < 3.0), 0, np.round(speed * 10)).astype(int).flatten().tolist()
         d_flat = np.where(np.isnan(speed) | (speed < 3.0), 0, np.round(direction)).astype(int).flatten().tolist()
@@ -33,5 +34,5 @@ def export_member_step(m_idx, step_idx, data):
     else:
         arrow_data = {"s": [], "d": []}
 
-    with gzip.open(f"dist/data/arrows_m{m_idx}_s{step_idx}.json.gz", "wt", encoding="utf-8") as f:
+    with gzip.open(f"dist/data/arrows_{var_name}_m{m_idx}_s{step_idx}.json.gz", "wt", encoding="utf-8") as f:
         json.dump(arrow_data, f)
