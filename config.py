@@ -1,6 +1,6 @@
 # ================= CONFIGURATION =================
 # Prognose-Horizont in Stunden (Für Test auf 3h gesetzt)
-ANZAHL_STUNDEN = 33
+ANZAHL_STUNDEN = 2
 
 # 1km-Originalauflösung der Schweiz
 NX, NY = 400, 240
