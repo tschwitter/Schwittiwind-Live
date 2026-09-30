@@ -13,7 +13,6 @@ import downloader
 import stats
 import exporter
 
-# Globale Variablen für Copy-on-Write im Multiprocessing
 SHARED_DATA = {}
 
 def check_if_new_data_available():
@@ -58,33 +57,27 @@ def check_if_new_data_available():
         return True, None
 
 def process_single_step(s_idx):
-    """Verarbeitet einen einzelnen Zeitschritt parallel auf einem CPU-Kern."""
     u_h = SHARED_DATA["u_h"]
     v_h = SHARED_DATA["v_h"]
     g_h = SHARED_DATA["g_h"]
     u_e = SHARED_DATA["u_e"]
     v_e = SHARED_DATA["v_e"]
     g_e = SHARED_DATA["g_e"]
-    destination = SHARED_DATA["destination"]
+    weights = SHARED_DATA["weights"]
     ref_time_dt = SHARED_DATA["ref_time_dt"]
     local_tz = SHARED_DATA["local_tz"]
 
-    print(f"-> [Worker PID {os.getpid()}] Start Zeitschritt {s_idx + 1}...", flush=True)
-    
-    # 1. Regridding & Statistik-Berechnung für diesen Schritt
-    step_results = stats.compute_timestep(u_h, v_h, g_h, u_e, v_e, g_e, s_idx, destination)
+    step_results = stats.compute_timestep(u_h, v_h, g_h, u_e, v_e, g_e, s_idx, weights)
 
-    # 2. Exportiere Wind und Böen (Konturen + Pfeile)
     for var_name in config.VARIABLES:
         for m_idx, d in step_results[var_name].items():
             exporter.export_variable_step(var_name, m_idx, s_idx, d)
 
-    # 3. Zeitstempel erfassen
     lead_raw = u_h.coords['lead_time'].values[s_idx]
     delta = timedelta(microseconds=int(lead_raw / 1000))
     valid_local = (ref_time_dt + delta).astimezone(local_tz)
 
-    print(f"✓ [Worker PID {os.getpid()}] Fertig Zeitschritt {s_idx + 1} (+{int(lead_raw / 1e9 / 3600)}h)", flush=True)
+    print(f"✓ [Worker {os.getpid()}] Fertig Zeitschritt {s_idx + 1} (+{int(lead_raw / 1e9 / 3600)}h)", flush=True)
 
     return {
         "step_idx": s_idx,
@@ -110,9 +103,12 @@ def main():
 
     # 1. Download
     u_h, v_h, g_h, u_e, v_e, g_e, ref_time_raw = downloader.fetch_weather_data()
-    destination = stats.get_grid_destination()
 
-    # Zeitstempel & Metadaten
+    # 2. Einmalige Vorberechnung der Regridding-Gewichte
+    source_lons = u_h.coords['lon'].values
+    source_lats = u_h.coords['lat'].values
+    weights = stats.init_regrid_weights(source_lons, source_lats)
+
     local_tz = ZoneInfo("Europe/Zurich")
     ref_time_dt = datetime.fromisoformat(str(ref_time_raw).split('.')[0]).replace(tzinfo=ZoneInfo("UTC"))
     
@@ -125,24 +121,22 @@ def main():
 
     num_steps = len(u_h.coords['lead_time'])
 
-    # Daten für die parallelen Prozesse bereitstellen (Linux Copy-on-Write)
     global SHARED_DATA
     SHARED_DATA = {
         "u_h": u_h, "v_h": v_h, "g_h": g_h,
         "u_e": u_e, "v_e": v_e, "g_e": g_e,
-        "destination": destination,
+        "weights": weights,
         "ref_time_dt": ref_time_dt,
         "local_tz": local_tz
     }
 
-    print(f"Starte parallele 2-Kern-Berechnung für {num_steps} Zeitschritte, 2 Variablen und {len(member_names)} Läufe...", flush=True)
+    print(f"Starte beschleunigte 2-Kern-Berechnung für {num_steps} Zeitschritte und {len(member_names)} Läufe...", flush=True)
 
-    # 2. PARALLELE BERECHNUNG MIT 2 WORKERN (Volle Auslastung beider vCPUs)
+    # Parallele Ausführung auf 2 vCPUs
     ctx = get_context("fork")
     with ctx.Pool(processes=2) as pool:
         results = pool.map(process_single_step, range(num_steps))
 
-    # Ergebnisse nach Zeitschritt sortieren
     results.sort(key=lambda x: x["step_idx"])
     times_by_step = [{"step_hours": r["step_hours"], "local_str": r["local_str"]} for r in results]
 
