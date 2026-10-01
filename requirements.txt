@@ -1,4 +1,5 @@
 meteodata-lab[regrid]
+eccodes-cosmo-resources-python
 pyproj
 scipy
 xarray
