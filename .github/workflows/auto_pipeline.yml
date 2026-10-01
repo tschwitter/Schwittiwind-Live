@@ -21,7 +21,6 @@ concurrency:
 
 env:
   PYTHONUNBUFFERED: "1"
-  ECCODES_FAIL_IF_LOG_MESSAGE: "0"
 
 jobs:
   # STUFE 1: Schnellprüfung & dynamische Matrix-Generierung
@@ -45,10 +44,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          DEF_PATH=$(python -c "import eccodes_cosmo_resources as e; print(e.get_definitions_path())" 2>/dev/null || echo "")
-          if [ -n "$DEF_PATH" ]; then
-            echo "ECCODES_DEFINITION_PATH=$DEF_PATH" >> $GITHUB_ENV
-          fi
 
       - name: Schnellprüfung & Vorbereitung
         id: prep
@@ -88,10 +83,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          DEF_PATH=$(python -c "import eccodes_cosmo_resources as e; print(e.get_definitions_path())" 2>/dev/null || echo "")
-          if [ -n "$DEF_PATH" ]; then
-            echo "ECCODES_DEFINITION_PATH=$DEF_PATH" >> $GITHUB_ENV
-          fi
 
       - name: Berechne Chunk ${{ matrix.chunk }} (Schritte ${{ matrix.start }} bis ${{ matrix.end }})
         run: |
