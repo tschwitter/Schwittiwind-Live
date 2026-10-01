@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ICON-CH1 Wind & Böen (10m) - Ensembles</title>
+    <title>ICON-CH1 Wind & Böen - Ensembles</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         html, body { 
@@ -25,7 +25,7 @@
             box-shadow: none !important; 
         }
 
-        /* --- VARIABLEN-UMSCHALTER (WIND / GUST) OBEN MITTE --- */
+        /* --- VARIABLEN-UMSCHALTER (WIND / GUST / WIND1500) OBEN MITTE --- */
         .var-switch-container {
             position: fixed;
             top: 20px;
@@ -48,9 +48,10 @@
             font-family: Arial, sans-serif;
             font-size: 13px;
             font-weight: bold;
-            padding: 6px 16px;
+            padding: 6px 14px;
             cursor: pointer;
             transition: all 0.2s;
+            white-space: nowrap;
         }
         .var-btn.active {
             background-color: #007ab7;
@@ -58,7 +59,7 @@
             box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         }
 
-        /* --- SCHWEBENDER LADE-INDIKATOR (Unter dem Umschalter) --- */
+        /* --- SCHWEBENDER LADE-INDIKATOR --- */
         #loadingIndicator {
             display: none;
             position: fixed;
@@ -128,13 +129,8 @@
             box-shadow: 0 1px 3px rgba(0,0,0,0.2);
             transition: background 0.2s;
         }
-        .member-btn:hover {
-            background-color: rgba(255,255,255,0.25);
-        }
-        .member-btn.active {
-            background-color: #007ab7;
-            color: white;
-        }
+        .member-btn:hover { background-color: rgba(255,255,255,0.25); }
+        .member-btn.active { background-color: #007ab7; color: white; }
         
         .member-panel::-webkit-scrollbar { width: 6px; }
         .member-panel::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 3px; }
@@ -180,10 +176,7 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
             transition: background 0.2s;
         }
-        .day-btn.active {
-            background: #007ab7;
-            color: white;
-        }
+        .day-btn.active { background: #007ab7; color: white; }
 
         .main-controls-row {
             display: flex;
@@ -334,10 +327,11 @@
             .var-switch-container {
                 top: 10px;
                 padding: 3px;
+                gap: 2px;
             }
             .var-btn {
                 font-size: 11px;
-                padding: 4px 12px;
+                padding: 4px 10px;
             }
             #loadingIndicator {
                 top: 45px;
@@ -361,14 +355,8 @@
                 width: 55px; 
                 padding: 6px 2px;
             }
-            .member-panel-title, .member-section-title {
-                display: none; 
-            }
-            .member-btn {
-                font-size: 11px;
-                padding: 6px 2px;
-                margin: 2px 0;
-            }
+            .member-panel-title, .member-section-title { display: none; }
+            .member-btn { font-size: 11px; padding: 6px 2px; margin: 2px 0; }
             .legend-box {
                 bottom: 145px;
                 left: 10px; 
@@ -388,10 +376,11 @@
     <!-- Die Karte -->
     <div id="map"></div>
 
-    <!-- Variablen-Umschalter (Oben Mitte) -->
+    <!-- Variablen-Umschalter (Oben Mitte: 10m Wind / Böen / 1500m Wind) -->
     <div class="var-switch-container">
-        <button id="varBtnWind" class="var-btn active" onclick="switchVariable('wind')">Wind</button>
-        <button id="varBtnGust" class="var-btn" onclick="switchVariable('gust')">Gust</button>
+        <button id="varBtnWind" class="var-btn active" onclick="switchVariable('wind')">10m Wind</button>
+        <button id="varBtnGust" class="var-btn" onclick="switchVariable('gust')">Böen</button>
+        <button id="varBtnWind1500" class="var-btn" onclick="switchVariable('wind1500')">1500m Wind</button>
     </div>
 
     <!-- Schwebender Lade-Indikator -->
@@ -410,10 +399,8 @@
 
     <!-- KONTROLLZENTRUM (Unten Mitte) -->
     <div class="control-panel">
-        <!-- Dynamische Wochentags-Buttons -->
         <div class="day-buttons-row" id="dayButtonsContainer"></div>
 
-        <!-- Haupt-Steuerungszeile -->
         <div class="main-controls-row">
             <button class="nav-btn" onclick="navLeft()">◀</button>
             <input type="range" id="timeSlider" min="0" max="0" value="0">
@@ -424,7 +411,6 @@
             </div>
         </div>
 
-        <!-- Labels ganz unten -->
         <div class="bottom-labels-row">
             <span id="currentStepLabel">Wird geladen...</span>
             <span id="modelRunLabel">🕒 Wird geladen...</span>
@@ -443,7 +429,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         var map, config, times;
-        var currentVar = "wind"; // "wind" oder "gust"
+        var currentVar = "wind"; // "wind", "gust" oder "wind1500"
         var currentMemberIdx = 0;
         var currentStepIdx = 0;
         var contourLayer = null;
@@ -452,16 +438,16 @@
         var cacheArrows = {};
 
         var uniqueDays = [];
-        var dayTimesteps = {}; // Speichert alle Indizes pro Wochentag
+        var dayTimesteps = {};
         var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
-        // Umschalten zwischen Wind und Gust
         function switchVariable(newVar) {
             if (currentVar === newVar) return;
             currentVar = newVar;
             
             document.getElementById("varBtnWind").classList.toggle("active", currentVar === "wind");
             document.getElementById("varBtnGust").classList.toggle("active", currentVar === "gust");
+            document.getElementById("varBtnWind1500").classList.toggle("active", currentVar === "wind1500");
 
             updateForecast(currentMemberIdx, currentStepIdx);
         }
@@ -483,7 +469,6 @@
             if (newMember !== currentMemberIdx) updateForecast(newMember, currentStepIdx);
         }
 
-        // Dynamische Wochentags-Buttons
         function initDayButtons() {
             var container = document.getElementById("dayButtonsContainer");
             container.innerHTML = "";
@@ -510,11 +495,7 @@
                 btn.className = "day-btn";
                 btn.id = "day-btn-" + dayName;
                 btn.innerText = dayName;
-                
-                // NEU: Springt zur exakt gleichen Uhrzeit des Ziel-Tages (oder nächste verfügbare Stunde)
-                btn.onclick = function() {
-                    jumpToDaySameHour(dayName);
-                };
+                btn.onclick = function() { jumpToDaySameHour(dayName); };
                 container.appendChild(btn);
             });
         }
@@ -570,9 +551,7 @@
                     statistikenContainer.appendChild(btn);
                 }
 
-                btn.onclick = function() {
-                    updateForecast(idx, currentStepIdx);
-                };
+                btn.onclick = function() { updateForecast(idx, currentStepIdx); };
             });
         }
 
@@ -682,7 +661,6 @@
             currentStepIdx = parseInt(newStepIdx);
             document.getElementById("timeSlider").value = currentStepIdx;
             
-            // Neuer Cache-Key inklusive Variable (wind / gust)
             const cacheKey = currentVar + "_" + currentMemberIdx + "_" + currentStepIdx;
 
             if (!cacheContours[cacheKey]) {
@@ -691,8 +669,8 @@
                     const runBuster = encodeURIComponent(config.ref_time_utc);
                     cacheContours[cacheKey] = await fetchAndDecompress(`data/contours_${currentVar}_m${currentMemberIdx}_s${currentStepIdx}.json.gz?v=${runBuster}`);
                     
-                    // Pfeile nur für Wind laden
-                    if (currentVar === "wind" && currentMemberIdx < 11) {
+                    // Pfeile für 10m Wind & 1500m Wind (Member 0 bis 10)
+                    if ((currentVar === "wind" || currentVar === "wind1500") && currentMemberIdx < 11) {
                         cacheArrows[cacheKey] = await fetchAndDecompress(`data/arrows_${currentVar}_m${currentMemberIdx}_s${currentStepIdx}.json.gz?v=${runBuster}`);
                     } else {
                         cacheArrows[cacheKey] = { "s": [], "d": [] };
@@ -706,8 +684,6 @@
             }
 
             var tInfo = times[currentStepIdx];
-            
-            // Formatierung der Zeiten
             var parts = tInfo.local_str.split(" ");
             var dateParts = parts[0].split(".");
             var formattedLT = dateParts[0] + "." + dateParts[1] + " " + parts[1].substring(0, 5) + " LT";
@@ -728,9 +704,7 @@
 
             uniqueDays.forEach(dayName => {
                 var btn = document.getElementById("day-btn-" + dayName);
-                if (btn) {
-                    btn.classList.toggle("active", dayName === currentDayName);
-                }
+                if (btn) btn.classList.toggle("active", dayName === currentDayName);
             });
 
             for (var i = 0; i < config.member_names.length; i++) {
@@ -745,7 +719,6 @@
                 }
             }
 
-            // IQR ist Index 16
             updateLegend(currentMemberIdx === 16);
 
             if (contourLayer) { map.removeLayer(contourLayer); }
@@ -762,7 +735,7 @@
             if (!map || !config) return;
             if (!activeMarkers) { activeMarkers = L.layerGroup().addTo(map); } else { activeMarkers.clearLayers(); }
             
-            // Pfeilsperre: Keine Pfeile bei Böen (Gust) oder bei allen Statistiken (Member >= 11)
+            // Keine Pfeile bei Böen oder Statistiken
             if (currentVar === "gust" || currentMemberIdx >= 11) return;
 
             const cacheKey = currentVar + "_" + currentMemberIdx + "_" + currentStepIdx;
@@ -781,6 +754,7 @@
 
             var speeds = arrowData.s;
             var dirs = arrowData.d;
+            var labelType = (currentVar === "wind1500") ? "1500m ü. M." : "10m Boden";
 
             for (var i = 0; i < speeds.length; i++) {
                 var speed = speeds[i] / 10.0;
@@ -810,7 +784,7 @@
                               '</svg></div>';
 
                     var icon = L.divIcon({ html: svg, iconSize: [110, 110], iconAnchor: [55, 55], className: 'wind-arrow-icon' });
-                    L.marker(latlng, { icon: icon }).bindPopup('<b>Wind (1km ICON-CH1):</b><br>Stärke: ' + speed.toFixed(1) + ' km/h<br>Richtung: ' + dir.toFixed(0) + '°').addTo(activeMarkers);
+                    L.marker(latlng, { icon: icon }).bindPopup('<b>Wind (' + labelType + ' ICON-CH1):</b><br>Stärke: ' + speed.toFixed(1) + ' km/h<br>Richtung: ' + dir.toFixed(0) + '°').addTo(activeMarkers);
                 }
             }
         }
