@@ -3,7 +3,8 @@ import time
 from datetime import timedelta
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
-from meteodatalab import ogd_api
+import xarray as xr
+from meteodatalab import ogd_api, grib_decoder, data_source
 import config
 
 def safe_squeeze(ds):
@@ -13,8 +14,69 @@ def safe_squeeze(ds):
         drop_dims.append('eps')
     return ds.squeeze(drop_dims) if drop_dims else ds
 
+def get_hhl(valid_cells=None):
+    """Lädt die statische Geometrie (Höhe der Schichtgrenzen HHL) einmalig."""
+    print("-> Lade statische vertikale Gittergeometrie (HHL)...", flush=True)
+    url_ch1_vert = ogd_api.get_collection_asset_url(
+        collection_id="ch.meteoschweiz.ogd-forecasting-icon-ch1",
+        asset_id="vertical_constants_icon-ch1-eps.grib2"
+    )
+    ds_vert = grib_decoder.load(
+        source=data_source.URLDataSource(urls=[url_ch1_vert]),
+        request={"param": "HHL"},
+        geo_coords=lambda uuid: {}
+    )
+    hhl = ds_vert["HHL"]
+    if valid_cells is not None:
+        hhl = hhl.isel(cell=valid_cells)
+    return hhl.values  # Shape: (81, num_cells)
+
+def interpolate_3d_to_altitude(da_3d, hhl_values, target_alt=config.TARGET_ALTITUDE):
+    """
+    Interpoliert ein 3D-Feld (z, cell) oder (lead_time/eps, z, cell) linear auf target_alt.
+    Punkte, an denen das Gelände > target_alt liegt, werden auf NaN gesetzt.
+    """
+    # Schichthöhen der Vollschichten (Mittelwert der Halbschichten)
+    h_full = 0.5 * (hhl_values[:-1, :] + hhl_values[1:, :])  # Shape: (80, num_cells)
+    hsurf = hhl_values[-1, :]  # Gelände-Oberfläche
+
+    # Finde die Schichtgrenzen k und k+1 (h_full fällt mit steigendem Index von 22km auf Boden)
+    is_below = h_full < target_alt
+    idx_below = np.argmax(is_below, axis=0)
+    idx_above = np.maximum(0, idx_below - 1)
+
+    num_cells = hhl_values.shape[1]
+    col_idx = np.arange(num_cells)
+
+    h_a = h_full[idx_above, col_idx]
+    h_b = h_full[idx_below, col_idx]
+    dh = np.where((h_a - h_b) == 0, 1e-6, h_a - h_b)
+    weight = (target_alt - h_b) / dh
+
+    # Geländemaskierung: alles über 1500m ist Fels
+    mask_underground = (hsurf >= target_alt) | (~np.any(is_below, axis=0))
+
+    # Dimensions-Handling für Xarray (z-Dimension finden)
+    z_dim = [d for d in da_3d.dims if d in ['generalVerticalLayer', 'z', 'level']][0]
+    z_axis = da_3d.dims.index(z_dim)
+
+    vals = da_3d.values
+    # Bringt z-Dimension nach vorne für sauberes Slicing
+    vals_trans = np.moveaxis(vals, z_axis, 0)
+    
+    val_above = vals_trans[idx_above, ..., col_idx]
+    val_below = vals_trans[idx_below, ..., col_idx]
+    
+    val_interp = (1.0 - weight) * val_below + weight * val_above
+    val_interp[..., mask_underground] = np.nan
+
+    # Erzeuge 2D-DataArray ohne Z-Dimension zurück
+    new_dims = [d for d in da_3d.dims if d != z_dim]
+    coords = {c: da_3d.coords[c] for c in new_dims if c in da_3d.coords}
+    return xr.DataArray(val_interp, dims=new_dims, coords=coords)
+
 def _download_and_crop_task(args):
-    var_name, perturbed, ref_time_str, lead_times, valid_cells = args
+    var_name, perturbed, ref_time_str, lead_times, valid_cells, hhl_values = args
     label = f"{var_name} ({'Ensemble' if perturbed else 'Hauptlauf'})"
     
     req = ogd_api.Request(
@@ -33,7 +95,12 @@ def _download_and_crop_task(args):
             if valid_cells is not None:
                 ds = ds.isel(cell=valid_cells)
             ds = safe_squeeze(ds)
-            print(f"✓ [Worker] Fertig & zugeschnitten: {label}", flush=True)
+
+            # Wenn es eine 3D-Höhenvariable ist, sofort vertikal schneiden
+            if var_name in ["U", "V"]:
+                ds = interpolate_3d_to_altitude(ds, hhl_values, config.TARGET_ALTITUDE)
+
+            print(f"✓ [Worker] Fertig & verarbeitet: {label}", flush=True)
             return ds
         except Exception as e:
             print(f"⚠️ Warnung bei {label} (Versuch {attempt}): {e}", flush=True)
@@ -74,19 +141,27 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
     del ds_u_h_raw
     gc.collect()
 
-    print(f"2. Starte parallelen Download für die restlichen 5 Datensätze...", flush=True)
+    # Statisches Vertikalgitter HHL laden
+    hhl_values = get_hhl(valid_cells)
+
+    print("2. Starte parallelen Download (10m & 1500m Wind)...", flush=True)
     tasks = [
-        ("V_10M", False, ref_time_str, lead_times, valid_cells),
-        ("VMAX_10M", False, ref_time_str, lead_times, valid_cells),
-        ("U_10M", True, ref_time_str, lead_times, valid_cells),
-        ("V_10M", True, ref_time_str, lead_times, valid_cells),
-        ("VMAX_10M", True, ref_time_str, lead_times, valid_cells)
+        ("V_10M", False, ref_time_str, lead_times, valid_cells, None),
+        ("VMAX_10M", False, ref_time_str, lead_times, valid_cells, None),
+        ("U_10M", True, ref_time_str, lead_times, valid_cells, None),
+        ("V_10M", True, ref_time_str, lead_times, valid_cells, None),
+        ("VMAX_10M", True, ref_time_str, lead_times, valid_cells, None),
+        ("U", False, ref_time_str, lead_times, valid_cells, hhl_values),
+        ("V", False, ref_time_str, lead_times, valid_cells, hhl_values),
+        ("U", True, ref_time_str, lead_times, valid_cells, hhl_values),
+        ("V", True, ref_time_str, lead_times, valid_cells, hhl_values)
     ]
 
     with ProcessPoolExecutor(max_workers=2) as executor:
-        v_h, g_h, u_e, v_e, g_e = list(executor.map(_download_and_crop_task, tasks))
+        v_h, g_h, u_e, v_e, g_e, u15_h, v15_h, u15_e, v15_e = list(executor.map(_download_and_crop_task, tasks))
 
-    print("✓ Alle 6 Wetter-Datensätze für diesen Chunk empfangen!", flush=True)
+    print("✓ Alle 10 Wetter-Datensätze erfolgreich empfangen!", flush=True)
+    del hhl_values
     gc.collect()
 
-    return u_h, v_h, g_h, u_e, v_e, g_e
+    return u_h, v_h, g_h, u_e, v_e, g_e, u15_h, v15_h, u15_e, v15_e
