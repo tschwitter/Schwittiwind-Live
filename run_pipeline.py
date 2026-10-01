@@ -62,7 +62,6 @@ def check_if_new_data_available():
         return False, None, "latest"
 
 def get_dynamic_chunks(total_steps, max_chunks=4):
-    """Teilt die Zeitschritte mathematisch in gleichmässige Portionen auf."""
     k = min(max_chunks, total_steps)
     base = total_steps // k
     rem = total_steps % k
@@ -116,7 +115,7 @@ def prepare_base_site(ref_time_str, iso_str):
         json.dump(config_data, f)
 
     shutil.copy("index.html", "dist/index.html")
-    print("✓ Basis-Dateien (index.html, times.json, config.json) bereitgestellt!", flush=True)
+    print("✓ Basis-Dateien bereitgestellt!", flush=True)
 
 def process_single_local_step(args):
     import stats
@@ -129,9 +128,17 @@ def process_single_local_step(args):
     u_e = SHARED_DATA["u_e"]
     v_e = SHARED_DATA["v_e"]
     g_e = SHARED_DATA["g_e"]
+    u15_h = SHARED_DATA["u15_h"]
+    v15_h = SHARED_DATA["v15_h"]
+    u15_e = SHARED_DATA["u15_e"]
+    v15_e = SHARED_DATA["v15_e"]
     weights = SHARED_DATA["weights"]
 
-    step_results = stats.compute_timestep(u_h, v_h, g_h, u_e, v_e, g_e, local_idx, weights)
+    step_results = stats.compute_timestep(
+        u_h, v_h, g_h, u_e, v_e, g_e,
+        u15_h, v15_h, u15_e, v15_e,
+        local_idx, weights
+    )
 
     for var_name in config.VARIABLES:
         for m_idx, d in step_results[var_name].items():
@@ -149,7 +156,7 @@ def run_chunk(start_step, end_step, ref_time_str):
 
     print(f"--- STARTE CHUNK: Schritte {start_step} bis {end_step} ({num_chunk_steps} Schritte) ---", flush=True)
 
-    u_h, v_h, g_h, u_e, v_e, g_e = downloader.fetch_weather_data(start_step, end_step, ref_time_str)
+    u_h, v_h, g_h, u_e, v_e, g_e, u15_h, v15_h, u15_e, v15_e = downloader.fetch_weather_data(start_step, end_step, ref_time_str)
 
     source_lons = u_h.coords['lon'].values
     source_lats = u_h.coords['lat'].values
@@ -159,6 +166,8 @@ def run_chunk(start_step, end_step, ref_time_str):
     SHARED_DATA = {
         "u_h": u_h, "v_h": v_h, "g_h": g_h,
         "u_e": u_e, "v_e": v_e, "g_e": g_e,
+        "u15_h": u15_h, "v15_h": v15_h,
+        "u15_e": u15_e, "v15_e": v15_e,
         "weights": weights
     }
 
@@ -186,7 +195,6 @@ def main():
         if should_run:
             prepare_base_site(latest_ref_str, iso_str)
 
-        # Berechne dynamische Chunks für GitHub Actions Matrix
         total_steps = config.ANZAHL_STUNDEN + 1
         chunks = get_dynamic_chunks(total_steps, max_chunks=4)
         matrix_payload = {"include": chunks}
