@@ -1,5 +1,5 @@
 # ================= CONFIGURATION =================
-# Prognose-Horizont in Stunden (Für Test auf 3h gesetzt)
+# Prognose-Horizont in Stunden
 ANZAHL_STUNDEN = 33
 
 # 1km-Originalauflösung der Schweiz
@@ -13,8 +13,9 @@ YMIN, YMAX = 45.6, 47.9
 LAT_MIN, LAT_MAX = 45.5, 48.0
 LON_MIN, LON_MAX = 5.7, 10.8
 
-# Verfügbare Variablen
-VARIABLES = ["wind", "gust"]
+# Verfügbare Variablen (NEU: wind1500)
+VARIABLES = ["wind", "gust", "wind1500"]
+TARGET_ALTITUDE = 1500.0  # Meter über Meer
 
 # Standard-Farbskala für Wind & Böen (0 bis 45+ km/h)
 LEVELS = [0, 4, 7, 11, 14, 18, 23, 27, 36, 45, 120]
