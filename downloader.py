@@ -27,14 +27,12 @@ class SilenceStderr:
                 pass
 
 def safe_squeeze(ds):
-    """Entfernt nur 1er-Dimensionen von ref_time, z und eps – NIEMALS lead_time!"""
-    drop_dims = [d for d in ['ref_time', 'z'] if d in ds.dims and ds.sizes[d] == 1]
-    if 'eps' in ds.dims and ds.sizes['eps'] == 1:
-        drop_dims.append('eps')
+    """Entfernt nur 1er-Dimensionen von ref_time und eps – lead_time und vertikale Achsen bleiben erhalten."""
+    drop_dims = [d for d in ['ref_time', 'eps'] if d in ds.dims and ds.sizes[d] == 1]
     return ds.squeeze(drop_dims) if drop_dims else ds
 
 def get_hhl(valid_cells=None):
-    """Lädt die statische Geometrie (HHL) einmalig."""
+    """Lädt die statische Geometrie (HHL) und bringt sie garantiert auf Shape (81, cells)."""
     print("-> Lade statische vertikale Gittergeometrie (HHL)...", flush=True)
     url_ch1_vert = ogd_api.get_collection_asset_url(
         collection_id="ch.meteoschweiz.ogd-forecasting-icon-ch1",
@@ -46,39 +44,59 @@ def get_hhl(valid_cells=None):
             request={"param": "HHL"},
             geo_coords=lambda uuid: {}
         )
-    hhl = ds_vert["HHL"]
+    hhl_da = ds_vert["HHL"]
+    
+    # Alle Dummy-Dimensionen (wie eps=1, ref_time=1) entfernen
+    hhl_da = hhl_da.squeeze()
+
     if valid_cells is not None:
-        hhl = hhl.isel(cell=valid_cells)
-    return hhl.values  # Shape: (81, num_cells)
+        hhl_da = hhl_da.isel(cell=valid_cells)
+    
+    vals = hhl_da.values
+    # Sicherstellen, dass die vertikale Achse (81 Schichten) an Achse 0 liegt
+    if vals.shape[0] != 81 and vals.shape[-1] == 81:
+        vals = np.moveaxis(vals, -1, 0)
+    
+    print(f"✓ HHL geladen mit Form: {vals.shape} (81 Schichtgrenzen)", flush=True)
+    return vals
 
 def interpolate_3d_to_altitude(da_3d, hhl_values, target_alt=config.TARGET_ALTITUDE):
-    """Interpoliert 3D-Wind auf target_alt und maskiert Fels/Berge > target_alt als NaN."""
-    h_full = 0.5 * (hhl_values[:-1, :] + hhl_values[1:, :])
-    hsurf = hhl_values[-1, :]
-
-    is_below = h_full < target_alt
-    idx_below = np.argmax(is_below, axis=0)
-    idx_above = np.maximum(0, idx_below - 1)
+    """
+    Interpoliert ein 3D-Windfeld linear auf target_alt (1500m ü. M.).
+    Gitterpunkte mit Gelände >= target_alt werden auf NaN gesetzt.
+    """
+    # Schichthöhen der 80 Vollschichten (Mittelwert der 81 Schichtgrenzen)
+    h_full = 0.5 * (hhl_values[:-1, :] + hhl_values[1:, :])  # Shape: (80, num_cells)
+    hsurf = hhl_values[-1, :]  # Geländeoberkante (unterste Schichtgrenze)
 
     num_cells = hhl_values.shape[1]
     col_idx = np.arange(num_cells)
 
+    # In ICON fällt h_full von Level 0 (~22km) bis Level 79 (Boden)
+    is_below = (h_full < target_alt)
+    
+    # idx_below: Erste Schicht von oben, die unter target_alt liegt
+    idx_below = np.argmax(is_below, axis=0)
+    idx_above = np.maximum(0, idx_below - 1)
+
     h_a = h_full[idx_above, col_idx]
     h_b = h_full[idx_below, col_idx]
     dh = np.where((h_a - h_b) == 0, 1e-6, h_a - h_b)
-    weight = (target_alt - h_b) / dh
+    weight = np.clip((target_alt - h_b) / dh, 0.0, 1.0)
 
+    # Untergrund-Maskierung (Bergmassiv / Fels über 1500m)
     mask_underground = (hsurf >= target_alt) | (~np.any(is_below, axis=0))
 
+    # Finde vertikale Dimension im 3D Datensatz
     z_dim = [d for d in da_3d.dims if d in ['generalVerticalLayer', 'z', 'level']][0]
     z_axis = da_3d.dims.index(z_dim)
 
     vals = da_3d.values
     vals_trans = np.moveaxis(vals, z_axis, 0)
-    
+
     val_above = vals_trans[idx_above, ..., col_idx]
     val_below = vals_trans[idx_below, ..., col_idx]
-    
+
     val_interp = (1.0 - weight) * val_below + weight * val_above
     val_interp[..., mask_underground] = np.nan
 
@@ -87,7 +105,6 @@ def interpolate_3d_to_altitude(da_3d, hhl_values, target_alt=config.TARGET_ALTIT
     return xr.DataArray(val_interp, dims=new_dims, coords=coords)
 
 def fetch_single_2d(var_name, perturbed, ref_time_str, lead_times, valid_cells):
-    """Lädt 10m Standardvariablen (schnell, da nur 1 Ebene)."""
     req = ogd_api.Request(
         collection="ogd-forecasting-icon-ch1",
         variable=var_name,
@@ -102,10 +119,6 @@ def fetch_single_2d(var_name, perturbed, ref_time_str, lead_times, valid_cells):
     return safe_squeeze(ds)
 
 def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cells, hhl_values):
-    """
-    Lädt 3D-Variablen STUNDENWEISE herunter und schneidet sie direkt auf 1500m zu.
-    Verhindert den OOM-Absturz (30 GB -> wenige MB im RAM)!
-    """
     label = f"{var_name} 1500m ({'Ensemble' if perturbed else 'Hauptlauf'})"
     print(f"-> Verarbeite {label} stufenweise für {len(lead_times)} Zeitschritte...", flush=True)
     
@@ -125,14 +138,12 @@ def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cell
             ds_hour = ds_hour.isel(cell=valid_cells)
         ds_hour = safe_squeeze(ds_hour)
 
-        # Sofort vertikal auf 1500m reduzieren & 80 Ebenen freigeben
         ds_1500 = interpolate_3d_to_altitude(ds_hour, hhl_values, config.TARGET_ALTITUDE)
         hourly_slices.append(ds_1500)
         
         del ds_hour
         gc.collect()
 
-    # Nach der Reduktion wieder zu einem Zeitverlauf zusammenfügen
     if len(hourly_slices) > 1:
         return xr.concat(hourly_slices, dim="lead_time")
     return hourly_slices[0]
