@@ -43,17 +43,16 @@ def export_variable_step(var_name, m_idx, step_idx, data):
 
     raw_geojson = geojsoncontour.contourf_to_geojson(contourf=contourf, ndigits=3)
     
-    # compresslevel=3 ist 3-4x schneller als Default 9 bei fast identischer Dateigröße
     with gzip.open(f"dist/data/contours_{var_name}_m{m_idx}_s{step_idx}.json.gz", "wt", encoding="utf-8", compresslevel=3) as f:
         f.write(raw_geojson)
 
+    # Pfeile NUR speichern wenn echte Pfeile existieren (Member 0 bis 10 für Wind/Wind1500)
+    # Verhindert hunderte leere Dummy-Dateien bei Böen und Statistiken
     if data.get("has_arrows", False) and "dir" in data:
         direction = data["dir"]
         s_flat = np.where(np.isnan(speed) | (speed < 3.0), 0, np.round(speed * 10)).astype(int).flatten().tolist()
         d_flat = np.where(np.isnan(speed) | (speed < 3.0), 0, np.round(direction)).astype(int).flatten().tolist()
         arrow_data = {"s": s_flat, "d": d_flat}
-    else:
-        arrow_data = {"s": [], "d": []}
 
-    with gzip.open(f"dist/data/arrows_{var_name}_m{m_idx}_s{step_idx}.json.gz", "wt", encoding="utf-8", compresslevel=3) as f:
-        json.dump(arrow_data, f)
+        with gzip.open(f"dist/data/arrows_{var_name}_m{m_idx}_s{step_idx}.json.gz", "wt", encoding="utf-8", compresslevel=3) as f:
+            json.dump(arrow_data, f)
