@@ -5,7 +5,6 @@ from matplotlib.figure import Figure
 import geojsoncontour
 import config
 
-# Prozess-lokaler Render-Cache
 RENDER_ENV = None
 
 def get_render_env():
@@ -25,7 +24,6 @@ def export_variable_step(var_name, m_idx, step_idx, data):
     
     speed = data["speed"]
     
-    # corner_mask=True beschleunigt das Rendering bei NaN-Bereichen (Alpenfels) erheblich
     if data.get("is_iqr", False):
         contourf = ax.contourf(
             grid_lon, grid_lat, speed,
@@ -44,7 +42,9 @@ def export_variable_step(var_name, m_idx, step_idx, data):
         )
 
     raw_geojson = geojsoncontour.contourf_to_geojson(contourf=contourf, ndigits=3)
-    with gzip.open(f"dist/data/contours_{var_name}_m{m_idx}_s{step_idx}.json.gz", "wt", encoding="utf-8") as f:
+    
+    # compresslevel=3 ist 3-4x schneller als Default 9 bei fast identischer Dateigröße
+    with gzip.open(f"dist/data/contours_{var_name}_m{m_idx}_s{step_idx}.json.gz", "wt", encoding="utf-8", compresslevel=3) as f:
         f.write(raw_geojson)
 
     if data.get("has_arrows", False) and "dir" in data:
@@ -55,5 +55,5 @@ def export_variable_step(var_name, m_idx, step_idx, data):
     else:
         arrow_data = {"s": [], "d": []}
 
-    with gzip.open(f"dist/data/arrows_{var_name}_m{m_idx}_s{step_idx}.json.gz", "wt", encoding="utf-8") as f:
+    with gzip.open(f"dist/data/arrows_{var_name}_m{m_idx}_s{step_idx}.json.gz", "wt", encoding="utf-8", compresslevel=3) as f:
         json.dump(arrow_data, f)
