@@ -41,21 +41,30 @@ def init_regrid_weights(source_lons, source_lats):
     }
 
 def remap_fast(field, weights):
-    vals = field.values if hasattr(field, "values") else field
+    # Garantiert immer flaches 1D-Array (Shape: 104720,)
+    raw_vals = field.values if hasattr(field, "values") else field
+    vals = np.asarray(raw_vals).squeeze()
+    if vals.ndim > 1:
+        vals = vals.ravel()
+
     out = np.full(config.NY * config.NX, np.nan, dtype=np.float32)
-    
-    # Valid-Maske inklusive NaNs im Quellfeld (z. B. Berge/Fels bei 1500m)
-    v0, v1, v2 = weights["v0"], weights["v1"], weights["v2"]
-    val_v0, val_v1, val_v2 = vals[v0], vals[v1], vals[v2]
-    not_nan = ~np.isnan(val_v0) & ~np.isnan(val_v1) & ~np.isnan(val_v2)
 
-    valid_idx = weights["valid"].copy()
-    valid_idx[weights["valid"]] = not_nan
+    v0 = weights["v0"]
+    v1 = weights["v1"]
+    v2 = weights["v2"]
 
-    out[valid_idx] = (
-        weights["b0"][not_nan] * val_v0[not_nan] +
-        weights["b1"][not_nan] * val_v1[not_nan] +
-        weights["b2"][not_nan] * val_v2[not_nan]
+    val_v0 = vals[v0]
+    val_v1 = vals[v1]
+    val_v2 = vals[v2]
+
+    # Maskierung für ungültige Werte (z. B. Berge/Fels über 1500m)
+    valid_mask = ~(np.isnan(val_v0) | np.isnan(val_v1) | np.isnan(val_v2))
+
+    target_idx = np.where(weights["valid"])[0][valid_mask]
+    out[target_idx] = (
+        weights["b0"][valid_mask] * val_v0[valid_mask] +
+        weights["b1"][valid_mask] * val_v1[valid_mask] +
+        weights["b2"][valid_mask] * val_v2[valid_mask]
     )
     return out.reshape(config.NY, config.NX)
 
