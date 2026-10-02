@@ -27,7 +27,7 @@ class SilenceStderr:
                 pass
 
 def safe_squeeze(ds):
-    """Entfernt nur 1er-Dimensionen von ref_time und eps – lead_time und vertikale Achsen bleiben erhalten."""
+    """Entfernt nur 1er-Dimensionen von ref_time und eps – lead_time bleibt erhalten falls mehrere Schritte."""
     drop_dims = [d for d in ['ref_time', 'eps'] if d in ds.dims and ds.sizes[d] == 1]
     return ds.squeeze(drop_dims) if drop_dims else ds
 
@@ -44,65 +44,80 @@ def get_hhl(valid_cells=None):
             request={"param": "HHL"},
             geo_coords=lambda uuid: {}
         )
-    hhl_da = ds_vert["HHL"]
-    
-    # Alle Dummy-Dimensionen (wie eps=1, ref_time=1) entfernen
-    hhl_da = hhl_da.squeeze()
+    hhl_da = ds_vert["HHL"].squeeze()
 
     if valid_cells is not None:
         hhl_da = hhl_da.isel(cell=valid_cells)
     
     vals = hhl_da.values
-    # Sicherstellen, dass die vertikale Achse (81 Schichten) an Achse 0 liegt
     if vals.shape[0] != 81 and vals.shape[-1] == 81:
         vals = np.moveaxis(vals, -1, 0)
     
     print(f"✓ HHL geladen mit Form: {vals.shape} (81 Schichtgrenzen)", flush=True)
     return vals
 
-def interpolate_3d_to_altitude(da_3d, hhl_values, target_alt=config.TARGET_ALTITUDE):
+def interpolate_single_hour_to_1500m(da_hour, hhl_values, target_alt=config.TARGET_ALTITUDE):
     """
-    Interpoliert ein 3D-Windfeld linear auf target_alt (1500m ü. M.).
-    Gitterpunkte mit Gelände >= target_alt werden auf NaN gesetzt.
+    Interpoliert ein einzelnes einstündiges 3D-Feld auf target_alt (1500m ü. M.).
+    Unterstützt sowohl deterministische Läufe als auch Ensemble-Läufe mit Membern (eps).
     """
-    # Schichthöhen der 80 Vollschichten (Mittelwert der 81 Schichtgrenzen)
-    h_full = 0.5 * (hhl_values[:-1, :] + hhl_values[1:, :])  # Shape: (80, num_cells)
-    hsurf = hhl_values[-1, :]  # Geländeoberkante (unterste Schichtgrenze)
-
     num_cells = hhl_values.shape[1]
     col_idx = np.arange(num_cells)
 
-    # In ICON fällt h_full von Level 0 (~22km) bis Level 79 (Boden)
+    # 80 Schichthöhen (Mittelwert der Grenzen)
+    h_full = 0.5 * (hhl_values[:-1, :] + hhl_values[1:, :])  # Shape: (80, num_cells)
+    hsurf = hhl_values[-1, :]
+
     is_below = (h_full < target_alt)
-    
-    # idx_below: Erste Schicht von oben, die unter target_alt liegt
     idx_below = np.argmax(is_below, axis=0)
     idx_above = np.maximum(0, idx_below - 1)
 
     h_a = h_full[idx_above, col_idx]
     h_b = h_full[idx_below, col_idx]
     dh = np.where((h_a - h_b) == 0, 1e-6, h_a - h_b)
-    weight = np.clip((target_alt - h_b) / dh, 0.0, 1.0)
+    weight = np.clip((target_alt - h_b) / dh, 0.0, 1.0).astype(np.float32)
 
-    # Untergrund-Maskierung (Bergmassiv / Fels über 1500m)
     mask_underground = (hsurf >= target_alt) | (~np.any(is_below, axis=0))
 
-    # Finde vertikale Dimension im 3D Datensatz
-    z_dim = [d for d in da_3d.dims if d in ['generalVerticalLayer', 'z', 'level']][0]
-    z_axis = da_3d.dims.index(z_dim)
+    # Vertikale Dimension finden
+    z_dim = [d for d in da_hour.dims if d in ['generalVerticalLayer', 'z', 'level']][0]
 
-    vals = da_3d.values
-    vals_trans = np.moveaxis(vals, z_axis, 0)
+    # Falls Ensemble vorhanden ist (eps > 1)
+    if 'eps' in da_hour.dims and da_hour.sizes['eps'] > 1:
+        num_eps = da_hour.sizes['eps']
+        out_interp = np.zeros((num_eps, num_cells), dtype=np.float32)
+        
+        for e_i in range(num_eps):
+            sub = da_hour.isel(eps=e_i).squeeze()
+            if sub.dims[0] != z_dim:
+                vals_2d = np.moveaxis(sub.values, sub.dims.index(z_dim), 0)
+            else:
+                vals_2d = sub.values
 
-    val_above = vals_trans[idx_above, ..., col_idx]
-    val_below = vals_trans[idx_below, ..., col_idx]
+            v_a = vals_2d[idx_above, col_idx]
+            v_b = vals_2d[idx_below, col_idx]
+            v_int = (1.0 - weight) * v_b + weight * v_a
+            v_int[mask_underground] = np.nan
+            out_interp[e_i, :] = v_int
 
-    val_interp = (1.0 - weight) * val_below + weight * val_above
-    val_interp[..., mask_underground] = np.nan
+        coords = {c: da_hour.coords[c] for c in ['eps', 'cell'] if c in da_hour.coords}
+        return xr.DataArray(out_interp, dims=['eps', 'cell'], coords=coords)
 
-    new_dims = [d for d in da_3d.dims if d != z_dim]
-    coords = {c: da_3d.coords[c] for c in new_dims if c in da_3d.coords}
-    return xr.DataArray(val_interp, dims=new_dims, coords=coords)
+    else:
+        # Deterministischer Lauf (1 Member)
+        sub = da_hour.squeeze()
+        if sub.dims[0] != z_dim:
+            vals_2d = np.moveaxis(sub.values, sub.dims.index(z_dim), 0)
+        else:
+            vals_2d = sub.values
+
+        v_a = vals_2d[idx_above, col_idx]
+        v_b = vals_2d[idx_below, col_idx]
+        v_int = (1.0 - weight) * v_b + weight * v_a
+        v_int[mask_underground] = np.nan
+
+        coords = {'cell': da_hour.coords['cell']}
+        return xr.DataArray(v_int, dims=['cell'], coords=coords)
 
 def fetch_single_2d(var_name, perturbed, ref_time_str, lead_times, valid_cells):
     req = ogd_api.Request(
@@ -136,17 +151,20 @@ def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cell
         
         if valid_cells is not None:
             ds_hour = ds_hour.isel(cell=valid_cells)
-        ds_hour = safe_squeeze(ds_hour)
 
-        ds_1500 = interpolate_3d_to_altitude(ds_hour, hhl_values, config.TARGET_ALTITUDE)
+        # Vertikal auf 1500m schneiden
+        ds_1500 = interpolate_single_hour_to_1500m(ds_hour, hhl_values, config.TARGET_ALTITUDE)
         hourly_slices.append(ds_1500)
         
         del ds_hour
         gc.collect()
 
     if len(hourly_slices) > 1:
+        # Füge Zeitschritte zusammen entlang lead_time
         return xr.concat(hourly_slices, dim="lead_time")
-    return hourly_slices[0]
+    else:
+        # Auch bei 1 Zeitschritt lead_time-Dimension für einheitliche Slices beibehalten
+        return hourly_slices[0].expand_dims("lead_time")
 
 def fetch_weather_data(start_step, end_step, ref_time_str):
     lead_times = [timedelta(hours=h) for h in range(start_step, end_step + 1)]
