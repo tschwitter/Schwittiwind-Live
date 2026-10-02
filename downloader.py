@@ -1,33 +1,47 @@
 import os
 import gc
 import time
+import threading
 from datetime import timedelta
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import xarray as xr
 from meteodatalab import ogd_api, grib_decoder, data_source
 import config
 
 class SilenceStderr:
-    """Schaltet C-Level Meldungen (z.B. ecCodes Versions-Warnungen) zuverlässig stumm."""
+    """Thread-sicherer Silence-Context für C-Level Meldungen (ecCodes)."""
+    _lock = threading.Lock()
+    _refcount = 0
+    _save_fd = None
+    _null_fd = None
+
     def __enter__(self):
-        try:
-            self.null_fd = os.open(os.devnull, os.O_RDWR)
-            self.save_fd = os.dup(2)
-            os.dup2(self.null_fd, 2)
-        except Exception:
-            self.null_fd = None
+        with SilenceStderr._lock:
+            if SilenceStderr._refcount == 0:
+                try:
+                    SilenceStderr._null_fd = os.open(os.devnull, os.O_RDWR)
+                    SilenceStderr._save_fd = os.dup(2)
+                    os.dup2(SilenceStderr._null_fd, 2)
+                except Exception:
+                    pass
+            SilenceStderr._refcount += 1
 
     def __exit__(self, *_):
-        if self.null_fd is not None:
-            try:
-                os.dup2(self.save_fd, 2)
-                os.close(self.null_fd)
-                os.close(self.save_fd)
-            except Exception:
-                pass
+        with SilenceStderr._lock:
+            SilenceStderr._refcount -= 1
+            if SilenceStderr._refcount == 0 and SilenceStderr._save_fd is not None:
+                try:
+                    os.dup2(SilenceStderr._save_fd, 2)
+                    os.close(SilenceStderr._null_fd)
+                    os.close(SilenceStderr._save_fd)
+                except Exception:
+                    pass
+                SilenceStderr._save_fd = None
+                SilenceStderr._null_fd = None
 
 def safe_squeeze(ds):
-    """Entfernt alle 1er-Dimensionen von ref_time, z, höhe und eps – NIEMALS lead_time!"""
+    """Entfernt alle 1er-Dimensionen von ref_time, z, höhe und eps – lead_time bleibt erhalten."""
     drop_dims = [d for d in ['ref_time', 'z', 'generalVerticalLayer', 'heightAboveGround'] if d in ds.dims and ds.sizes[d] == 1]
     if 'eps' in ds.dims and ds.sizes['eps'] == 1:
         drop_dims.append('eps')
@@ -144,41 +158,50 @@ def fetch_single_2d(var_name, perturbed, ref_time_str, lead_times, valid_cells):
             print(f"⚠️ Netzwerkfehler bei {var_name} (Versuch {attempt}/3). Wiederhole in 3s...", flush=True)
             time.sleep(3)
 
+def _fetch_and_slice_single_hour(args):
+    """Worker-Funktion für paralleles Laden und Schneiden einer einzelnen 3D-Stunde."""
+    var_name, perturbed, ref_time_str, lt, valid_cells, hhl_values, step_num, total_steps = args
+    label = f"{var_name} ({'Ens' if perturbed else 'HL'})"
+    req = ogd_api.Request(
+        collection="ogd-forecasting-icon-ch1",
+        variable=var_name,
+        ref_time=ref_time_str,
+        perturbed=perturbed,
+        lead_time=[lt]
+    )
+    
+    ds_hour = None
+    for attempt in range(1, 4):
+        try:
+            with SilenceStderr():
+                ds_hour = ogd_api.get_from_ogd(req)
+            break
+        except Exception as e:
+            if attempt == 3:
+                raise e
+            time.sleep(3 * attempt)
+
+    if valid_cells is not None:
+        ds_hour = ds_hour.isel(cell=valid_cells)
+
+    ds_1500 = interpolate_single_hour_to_1500m(ds_hour, hhl_values, config.TARGET_ALTITUDE)
+    del ds_hour
+    gc.collect()
+    return ds_1500
+
 def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cells, hhl_values):
     label = f"{var_name} 1500m ({'Ensemble' if perturbed else 'Hauptlauf'})"
-    print(f"-> Verarbeite {label} stufenweise für {len(lead_times)} Zeitschritte...", flush=True)
-    
-    hourly_slices = []
-    for step_num, lt in enumerate(lead_times, start=1):
-        req = ogd_api.Request(
-            collection="ogd-forecasting-icon-ch1",
-            variable=var_name,
-            ref_time=ref_time_str,
-            perturbed=perturbed,
-            lead_time=[lt]
-        )
-        
-        # Robuste Retry-Schleife gegen IncompleteRead / Timeouts
-        ds_hour = None
-        for attempt in range(1, 4):
-            try:
-                with SilenceStderr():
-                    ds_hour = ogd_api.get_from_ogd(req)
-                break
-            except Exception as e:
-                print(f"⚠️ Verbindung unterbrochen bei {label} (Schritt {step_num}/{len(lead_times)}, Versuch {attempt}/3): {e}", flush=True)
-                if attempt == 3:
-                    raise e
-                time.sleep(4 * attempt)
-        
-        if valid_cells is not None:
-            ds_hour = ds_hour.isel(cell=valid_cells)
+    total = len(lead_times)
+    print(f"-> Verarbeite {label} parallel (2 Worker) für {total} Zeitschritte...", flush=True)
 
-        ds_1500 = interpolate_single_hour_to_1500m(ds_hour, hhl_values, config.TARGET_ALTITUDE)
-        hourly_slices.append(ds_1500)
-        
-        del ds_hour
-        gc.collect()
+    tasks = [
+        (var_name, perturbed, ref_time_str, lt, valid_cells, hhl_values, idx + 1, total)
+        for idx, lt in enumerate(lead_times)
+    ]
+
+    # 2 Worker überlappen Download & CPU-Interpolation optimal auf der 2-Core GitHub Actions VM
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        hourly_slices = list(pool.map(_fetch_and_slice_single_hour, tasks))
 
     if len(hourly_slices) > 1:
         return xr.concat(hourly_slices, dim="lead_time")
@@ -219,12 +242,22 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
     del ds_u_h_raw
     gc.collect()
 
-    print("2. Lade 10m Wind & Böen Felder...", flush=True)
-    v_h = fetch_single_2d("V_10M", False, ref_time_str, lead_times, valid_cells)
-    g_h = fetch_single_2d("VMAX_10M", False, ref_time_str, lead_times, valid_cells)
-    u_e = fetch_single_2d("U_10M", True, ref_time_str, lead_times, valid_cells)
-    v_e = fetch_single_2d("V_10M", True, ref_time_str, lead_times, valid_cells)
-    g_e = fetch_single_2d("VMAX_10M", True, ref_time_str, lead_times, valid_cells)
+    print("2. Lade 10m-Felder parallel (3 Streams)...", flush=True)
+    tasks_10m = [
+        ("V_10M", False),
+        ("VMAX_10M", False),
+        ("U_10M", True),
+        ("V_10M", True),
+        ("VMAX_10M", True)
+    ]
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        results_10m = list(pool.map(
+            lambda t: fetch_single_2d(t[0], t[1], ref_time_str, lead_times, valid_cells),
+            tasks_10m
+        ))
+
+    v_h, g_h, u_e, v_e, g_e = results_10m
 
     print("3. Lade vertikales Höhenprofil & berechne 1500m Wind...", flush=True)
     hhl_values = get_hhl(valid_cells)
@@ -237,5 +270,5 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
     del hhl_values
     gc.collect()
 
-    print("✓ Alle 10 Datensätze speicherschonend im RAM bereitgestellt!", flush=True)
+    print("✓ Alle Datensätze speicherschonend und parallel bereitgestellt!", flush=True)
     return u_h, v_h, g_h, u_e, v_e, g_e, u15_h, v15_h, u15_e, v15_e
