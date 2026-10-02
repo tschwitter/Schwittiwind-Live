@@ -27,8 +27,10 @@ class SilenceStderr:
                 pass
 
 def safe_squeeze(ds):
-    """Entfernt nur 1er-Dimensionen von ref_time und eps – lead_time bleibt erhalten falls mehrere Schritte."""
-    drop_dims = [d for d in ['ref_time', 'eps'] if d in ds.dims and ds.sizes[d] == 1]
+    """Entfernt alle 1er-Dimensionen von ref_time, z, höhe und eps – NIEMALS lead_time!"""
+    drop_dims = [d for d in ['ref_time', 'z', 'generalVerticalLayer', 'heightAboveGround'] if d in ds.dims and ds.sizes[d] == 1]
+    if 'eps' in ds.dims and ds.sizes['eps'] == 1:
+        drop_dims.append('eps')
     return ds.squeeze(drop_dims) if drop_dims else ds
 
 def get_hhl(valid_cells=None):
@@ -57,15 +59,11 @@ def get_hhl(valid_cells=None):
     return vals
 
 def interpolate_single_hour_to_1500m(da_hour, hhl_values, target_alt=config.TARGET_ALTITUDE):
-    """
-    Interpoliert ein einzelnes einstündiges 3D-Feld auf target_alt (1500m ü. M.).
-    Unterstützt sowohl deterministische Läufe als auch Ensemble-Läufe mit Membern (eps).
-    """
+    """Interpoliert ein einstündiges 3D-Feld auf target_alt (1500m ü. M.)."""
     num_cells = hhl_values.shape[1]
     col_idx = np.arange(num_cells)
 
-    # 80 Schichthöhen (Mittelwert der Grenzen)
-    h_full = 0.5 * (hhl_values[:-1, :] + hhl_values[1:, :])  # Shape: (80, num_cells)
+    h_full = 0.5 * (hhl_values[:-1, :] + hhl_values[1:, :])
     hsurf = hhl_values[-1, :]
 
     is_below = (h_full < target_alt)
@@ -79,10 +77,8 @@ def interpolate_single_hour_to_1500m(da_hour, hhl_values, target_alt=config.TARG
 
     mask_underground = (hsurf >= target_alt) | (~np.any(is_below, axis=0))
 
-    # Vertikale Dimension finden
     z_dim = [d for d in da_hour.dims if d in ['generalVerticalLayer', 'z', 'level']][0]
 
-    # Falls Ensemble vorhanden ist (eps > 1)
     if 'eps' in da_hour.dims and da_hour.sizes['eps'] > 1:
         num_eps = da_hour.sizes['eps']
         out_interp = np.zeros((num_eps, num_cells), dtype=np.float32)
@@ -104,7 +100,6 @@ def interpolate_single_hour_to_1500m(da_hour, hhl_values, target_alt=config.TARG
         return xr.DataArray(out_interp, dims=['eps', 'cell'], coords=coords)
 
     else:
-        # Deterministischer Lauf (1 Member)
         sub = da_hour.squeeze()
         if sub.dims[0] != z_dim:
             vals_2d = np.moveaxis(sub.values, sub.dims.index(z_dim), 0)
@@ -152,7 +147,6 @@ def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cell
         if valid_cells is not None:
             ds_hour = ds_hour.isel(cell=valid_cells)
 
-        # Vertikal auf 1500m schneiden
         ds_1500 = interpolate_single_hour_to_1500m(ds_hour, hhl_values, config.TARGET_ALTITUDE)
         hourly_slices.append(ds_1500)
         
@@ -160,10 +154,8 @@ def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cell
         gc.collect()
 
     if len(hourly_slices) > 1:
-        # Füge Zeitschritte zusammen entlang lead_time
         return xr.concat(hourly_slices, dim="lead_time")
     else:
-        # Auch bei 1 Zeitschritt lead_time-Dimension für einheitliche Slices beibehalten
         return hourly_slices[0].expand_dims("lead_time")
 
 def fetch_weather_data(start_step, end_step, ref_time_str):
