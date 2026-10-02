@@ -4,6 +4,8 @@ import numpy as np
 from matplotlib.figure import Figure
 import geojsoncontour
 import config
+import os
+os.environ["MPLBACKEND"] = "Agg"
 
 RENDER_ENV = None
 
