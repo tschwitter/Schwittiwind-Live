@@ -25,10 +25,23 @@ def export_variable_step(var_name, m_idx, step_idx, data):
     
     speed = data["speed"]
     
+    # corner_mask=True beschleunigt das Rendering bei NaN-Bereichen (Alpenfels) erheblich
     if data.get("is_iqr", False):
-        contourf = ax.contourf(grid_lon, grid_lat, speed, levels=config.IQR_LEVELS, colors=config.IQR_COLORS, alpha=0.55)
+        contourf = ax.contourf(
+            grid_lon, grid_lat, speed,
+            levels=config.IQR_LEVELS,
+            colors=config.IQR_COLORS,
+            alpha=0.55,
+            corner_mask=True
+        )
     else:
-        contourf = ax.contourf(grid_lon, grid_lat, speed, levels=config.LEVELS, colors=config.COLORS, alpha=0.55)
+        contourf = ax.contourf(
+            grid_lon, grid_lat, speed,
+            levels=config.LEVELS,
+            colors=config.COLORS,
+            alpha=0.55,
+            corner_mask=True
+        )
 
     raw_geojson = geojsoncontour.contourf_to_geojson(contourf=contourf, ndigits=3)
     with gzip.open(f"dist/data/contours_{var_name}_m{m_idx}_s{step_idx}.json.gz", "wt", encoding="utf-8") as f:
