@@ -186,8 +186,9 @@ def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cell
     label = f"{var_name} 1500m ({'Ensemble' if perturbed else 'Hauptlauf'})"
     total = len(lead_times)
     
-    # 2 Worker für den schlanken Hauptlauf, 1 Worker für das 10-Member Ensemble
-    num_workers = 1 if perturbed else 2
+    # Der "Sweet Spot": 2 Worker halbieren die Wartezeit gegenüber 1 Worker,
+    # bleiben aber mit max. ~4.2 GB RAM absolut sicher unter dem 7-GB-Limit!
+    num_workers = 2
     print(f"-> Verarbeite {label} ({num_workers} Worker) für {total} Zeitschritte...", flush=True)
 
     tasks = [
