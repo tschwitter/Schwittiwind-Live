@@ -36,7 +36,7 @@ def init_regrid_weights(source_lons, source_lats):
         "b1": b1.astype(np.float32),
         "b2": b2.astype(np.float32),
         "valid": valid,
-        "valid_indices": np.where(valid)[0],  # Einmalig vorberechnen spart Hunderte Aufrufe
+        "valid_indices": np.where(valid)[0],
         "grid_lon": grid_lon,
         "grid_lat": grid_lat
     }
@@ -64,11 +64,11 @@ def remap_fast(field, weights):
     return out.reshape(config.NY, config.NX)
 
 def compute_statistics_for_array(all_speeds):
-    median = np.nanmedian(all_speeds, axis=0)
     s_min = np.nanmin(all_speeds, axis=0)
     s_max = np.nanmax(all_speeds, axis=0)
-    q25 = np.nanpercentile(all_speeds, 25, axis=0)
-    q75 = np.nanpercentile(all_speeds, 75, axis=0)
+    
+    # 25%, Median (50%) und 75% in einem einzigen Sortierdurchlauf berechnen
+    q25, median, q75 = np.nanpercentile(all_speeds, [25, 50, 75], axis=0)
     iqr = q75 - q25
 
     return {
