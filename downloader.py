@@ -10,7 +10,6 @@ from meteodatalab import ogd_api, grib_decoder, data_source
 import config
 
 class SilenceStderr:
-    """Thread-sicherer Silence-Context für C-Level Meldungen (ecCodes)."""
     _lock = threading.Lock()
     _refcount = 0
     _save_fd = None
@@ -41,14 +40,12 @@ class SilenceStderr:
                 SilenceStderr._null_fd = None
 
 def safe_squeeze(ds):
-    """Entfernt alle 1er-Dimensionen von ref_time, z, höhe und eps – lead_time bleibt erhalten."""
     drop_dims = [d for d in ['ref_time', 'z', 'generalVerticalLayer', 'heightAboveGround'] if d in ds.dims and ds.sizes[d] == 1]
     if 'eps' in ds.dims and ds.sizes['eps'] == 1:
         drop_dims.append('eps')
     return ds.squeeze(drop_dims) if drop_dims else ds
 
 def get_hhl(valid_cells=None):
-    """Lädt die statische Geometrie (HHL) mit Retry-Schutz."""
     print("-> Lade statische vertikale Gittergeometrie (HHL)...", flush=True)
     url_ch1_vert = ogd_api.get_collection_asset_url(
         collection_id="ch.meteoschweiz.ogd-forecasting-icon-ch1",
@@ -82,7 +79,7 @@ def get_hhl(valid_cells=None):
     return vals
 
 def interpolate_single_hour_to_1500m(da_hour, hhl_values, target_alt=config.TARGET_ALTITUDE):
-    """Interpoliert ein einstündiges 3D-Feld auf target_alt (1500m ü. M.)."""
+    """Vollständig vektorisierte vertikale Interpolation (über alle Member & Zellen gleichzeitig)."""
     num_cells = hhl_values.shape[1]
     col_idx = np.arange(num_cells)
 
@@ -99,30 +96,30 @@ def interpolate_single_hour_to_1500m(da_hour, hhl_values, target_alt=config.TARG
     weight = np.clip((target_alt - h_b) / dh, 0.0, 1.0).astype(np.float32)
 
     mask_underground = (hsurf >= target_alt) | (~np.any(is_below, axis=0))
-
     z_dim = [d for d in da_hour.dims if d in ['generalVerticalLayer', 'z', 'level']][0]
 
+    # Vektorisierte Berechnung für Ensembles (ohne Python-Schleife!)
     if 'eps' in da_hour.dims and da_hour.sizes['eps'] > 1:
-        num_eps = da_hour.sizes['eps']
-        out_interp = np.zeros((num_eps, num_cells), dtype=np.float32)
+        # Array so ausrichten, dass: Achse 0 = eps, Achse 1 = Vertikalschicht, Achse 2 = cell
+        sub = da_hour.squeeze()
+        z_axis = sub.dims.index(z_dim)
+        eps_axis = sub.dims.index('eps')
+        cell_axis = sub.dims.index('cell')
         
-        for e_i in range(num_eps):
-            sub = da_hour.isel(eps=e_i).squeeze()
-            if sub.dims[0] != z_dim:
-                vals_2d = np.moveaxis(sub.values, sub.dims.index(z_dim), 0)
-            else:
-                vals_2d = sub.values
-
-            v_a = vals_2d[idx_above, col_idx]
-            v_b = vals_2d[idx_below, col_idx]
-            v_int = (1.0 - weight) * v_b + weight * v_a
-            v_int[mask_underground] = np.nan
-            out_interp[e_i, :] = v_int
+        vals_3d = np.transpose(sub.values, (eps_axis, z_axis, cell_axis))  # Shape: (num_eps, 80, num_cells)
+        
+        # NumPy Advanced Indexing greift alle Member in 1 Operation ab
+        v_a = vals_3d[:, idx_above, col_idx]
+        v_b = vals_3d[:, idx_below, col_idx]
+        
+        out_interp = (1.0 - weight) * v_b + weight * v_a
+        out_interp[:, mask_underground] = np.nan
 
         coords = {c: da_hour.coords[c] for c in ['eps', 'cell'] if c in da_hour.coords}
         return xr.DataArray(out_interp, dims=['eps', 'cell'], coords=coords)
 
     else:
+        # Deterministisch (1 Member)
         sub = da_hour.squeeze()
         if sub.dims[0] != z_dim:
             vals_2d = np.moveaxis(sub.values, sub.dims.index(z_dim), 0)
@@ -159,9 +156,7 @@ def fetch_single_2d(var_name, perturbed, ref_time_str, lead_times, valid_cells):
             time.sleep(3)
 
 def _fetch_and_slice_single_hour(args):
-    """Worker-Funktion für paralleles Laden und Schneiden einer einzelnen 3D-Stunde."""
-    var_name, perturbed, ref_time_str, lt, valid_cells, hhl_values, step_num, total_steps = args
-    label = f"{var_name} ({'Ens' if perturbed else 'HL'})"
+    var_name, perturbed, ref_time_str, lt, valid_cells, hhl_values = args
     req = ogd_api.Request(
         collection="ogd-forecasting-icon-ch1",
         variable=var_name,
@@ -192,15 +187,15 @@ def _fetch_and_slice_single_hour(args):
 def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cells, hhl_values):
     label = f"{var_name} 1500m ({'Ensemble' if perturbed else 'Hauptlauf'})"
     total = len(lead_times)
-    print(f"-> Verarbeite {label} parallel (2 Worker) für {total} Zeitschritte...", flush=True)
+    print(f"-> Verarbeite {label} parallel (3 Worker) für {total} Zeitschritte...", flush=True)
 
     tasks = [
-        (var_name, perturbed, ref_time_str, lt, valid_cells, hhl_values, idx + 1, total)
-        for idx, lt in enumerate(lead_times)
+        (var_name, perturbed, ref_time_str, lt, valid_cells, hhl_values)
+        for lt in lead_times
     ]
 
-    # 2 Worker überlappen Download & CPU-Interpolation optimal auf der 2-Core GitHub Actions VM
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    # 3 Worker lasten die Netzwerk-Bandbreite optimal aus
+    with ThreadPoolExecutor(max_workers=3) as pool:
         hourly_slices = list(pool.map(_fetch_and_slice_single_hour, tasks))
 
     if len(hourly_slices) > 1:
