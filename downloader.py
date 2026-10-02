@@ -34,20 +34,29 @@ def safe_squeeze(ds):
     return ds.squeeze(drop_dims) if drop_dims else ds
 
 def get_hhl(valid_cells=None):
-    """Lädt die statische Geometrie (HHL) und bringt sie garantiert auf Shape (81, cells)."""
+    """Lädt die statische Geometrie (HHL) mit Retry-Schutz."""
     print("-> Lade statische vertikale Gittergeometrie (HHL)...", flush=True)
     url_ch1_vert = ogd_api.get_collection_asset_url(
         collection_id="ch.meteoschweiz.ogd-forecasting-icon-ch1",
         asset_id="vertical_constants_icon-ch1-eps.grib2"
     )
-    with SilenceStderr():
-        ds_vert = grib_decoder.load(
-            source=data_source.URLDataSource(urls=[url_ch1_vert]),
-            request={"param": "HHL"},
-            geo_coords=lambda uuid: {}
-        )
-    hhl_da = ds_vert["HHL"].squeeze()
+    
+    for attempt in range(1, 4):
+        try:
+            with SilenceStderr():
+                ds_vert = grib_decoder.load(
+                    source=data_source.URLDataSource(urls=[url_ch1_vert]),
+                    request={"param": "HHL"},
+                    geo_coords=lambda uuid: {}
+                )
+            break
+        except Exception as e:
+            if attempt == 3:
+                raise e
+            print(f"⚠️ Netzwerkunterbrechung bei HHL (Versuch {attempt}/3). Wiederhole in 3s...", flush=True)
+            time.sleep(3)
 
+    hhl_da = ds_vert["HHL"].squeeze()
     if valid_cells is not None:
         hhl_da = hhl_da.isel(cell=valid_cells)
     
@@ -122,18 +131,25 @@ def fetch_single_2d(var_name, perturbed, ref_time_str, lead_times, valid_cells):
         perturbed=perturbed,
         lead_time=lead_times
     )
-    with SilenceStderr():
-        ds = ogd_api.get_from_ogd(req)
-    if valid_cells is not None:
-        ds = ds.isel(cell=valid_cells)
-    return safe_squeeze(ds)
+    for attempt in range(1, 4):
+        try:
+            with SilenceStderr():
+                ds = ogd_api.get_from_ogd(req)
+            if valid_cells is not None:
+                ds = ds.isel(cell=valid_cells)
+            return safe_squeeze(ds)
+        except Exception as e:
+            if attempt == 3:
+                raise e
+            print(f"⚠️ Netzwerkfehler bei {var_name} (Versuch {attempt}/3). Wiederhole in 3s...", flush=True)
+            time.sleep(3)
 
 def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cells, hhl_values):
     label = f"{var_name} 1500m ({'Ensemble' if perturbed else 'Hauptlauf'})"
     print(f"-> Verarbeite {label} stufenweise für {len(lead_times)} Zeitschritte...", flush=True)
     
     hourly_slices = []
-    for lt in lead_times:
+    for step_num, lt in enumerate(lead_times, start=1):
         req = ogd_api.Request(
             collection="ogd-forecasting-icon-ch1",
             variable=var_name,
@@ -141,8 +157,19 @@ def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cell
             perturbed=perturbed,
             lead_time=[lt]
         )
-        with SilenceStderr():
-            ds_hour = ogd_api.get_from_ogd(req)
+        
+        # Robuste Retry-Schleife gegen IncompleteRead / Timeouts
+        ds_hour = None
+        for attempt in range(1, 4):
+            try:
+                with SilenceStderr():
+                    ds_hour = ogd_api.get_from_ogd(req)
+                break
+            except Exception as e:
+                print(f"⚠️ Verbindung unterbrochen bei {label} (Schritt {step_num}/{len(lead_times)}, Versuch {attempt}/3): {e}", flush=True)
+                if attempt == 3:
+                    raise e
+                time.sleep(4 * attempt)
         
         if valid_cells is not None:
             ds_hour = ds_hour.isel(cell=valid_cells)
@@ -170,8 +197,16 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
         lead_time=lead_times
     )
 
-    with SilenceStderr():
-        ds_u_h_raw = ogd_api.get_from_ogd(req_pilot)
+    for attempt in range(1, 4):
+        try:
+            with SilenceStderr():
+                ds_u_h_raw = ogd_api.get_from_ogd(req_pilot)
+            break
+        except Exception as e:
+            if attempt == 3:
+                raise e
+            print(f"⚠️ Netzwerkfehler beim Pilot-Download (Versuch {attempt}/3). Wiederhole in 3s...", flush=True)
+            time.sleep(3)
 
     lats = ds_u_h_raw.coords['lat'].values
     lons = ds_u_h_raw.coords['lon'].values
