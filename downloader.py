@@ -10,6 +10,7 @@ from meteodatalab import ogd_api, grib_decoder, data_source
 import config
 
 class SilenceStderr:
+    """Thread-sicherer Silence-Context für C-Level Meldungen (ecCodes)."""
     _lock = threading.Lock()
     _refcount = 0
     _save_fd = None
@@ -40,12 +41,14 @@ class SilenceStderr:
                 SilenceStderr._null_fd = None
 
 def safe_squeeze(ds):
+    """Entfernt alle 1er-Dimensionen von ref_time, z, höhe und eps – lead_time bleibt erhalten."""
     drop_dims = [d for d in ['ref_time', 'z', 'generalVerticalLayer', 'heightAboveGround'] if d in ds.dims and ds.sizes[d] == 1]
     if 'eps' in ds.dims and ds.sizes['eps'] == 1:
         drop_dims.append('eps')
     return ds.squeeze(drop_dims) if drop_dims else ds
 
 def get_hhl(valid_cells=None):
+    """Lädt die statische Geometrie (HHL) mit Retry-Schutz."""
     print("-> Lade statische vertikale Gittergeometrie (HHL)...", flush=True)
     url_ch1_vert = ogd_api.get_collection_asset_url(
         collection_id="ch.meteoschweiz.ogd-forecasting-icon-ch1",
@@ -98,17 +101,13 @@ def interpolate_single_hour_to_1500m(da_hour, hhl_values, target_alt=config.TARG
     mask_underground = (hsurf >= target_alt) | (~np.any(is_below, axis=0))
     z_dim = [d for d in da_hour.dims if d in ['generalVerticalLayer', 'z', 'level']][0]
 
-    # Vektorisierte Berechnung für Ensembles (ohne Python-Schleife!)
     if 'eps' in da_hour.dims and da_hour.sizes['eps'] > 1:
-        # Array so ausrichten, dass: Achse 0 = eps, Achse 1 = Vertikalschicht, Achse 2 = cell
         sub = da_hour.squeeze()
         z_axis = sub.dims.index(z_dim)
         eps_axis = sub.dims.index('eps')
         cell_axis = sub.dims.index('cell')
         
-        vals_3d = np.transpose(sub.values, (eps_axis, z_axis, cell_axis))  # Shape: (num_eps, 80, num_cells)
-        
-        # NumPy Advanced Indexing greift alle Member in 1 Operation ab
+        vals_3d = np.transpose(sub.values, (eps_axis, z_axis, cell_axis))
         v_a = vals_3d[:, idx_above, col_idx]
         v_b = vals_3d[:, idx_below, col_idx]
         
@@ -119,7 +118,6 @@ def interpolate_single_hour_to_1500m(da_hour, hhl_values, target_alt=config.TARG
         return xr.DataArray(out_interp, dims=['eps', 'cell'], coords=coords)
 
     else:
-        # Deterministisch (1 Member)
         sub = da_hour.squeeze()
         if sub.dims[0] != z_dim:
             vals_2d = np.moveaxis(sub.values, sub.dims.index(z_dim), 0)
@@ -187,15 +185,17 @@ def _fetch_and_slice_single_hour(args):
 def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cells, hhl_values):
     label = f"{var_name} 1500m ({'Ensemble' if perturbed else 'Hauptlauf'})"
     total = len(lead_times)
-    print(f"-> Verarbeite {label} parallel (3 Worker) für {total} Zeitschritte...", flush=True)
+    
+    # 2 Worker für den schlanken Hauptlauf, 1 Worker für das 10-Member Ensemble
+    num_workers = 1 if perturbed else 2
+    print(f"-> Verarbeite {label} ({num_workers} Worker) für {total} Zeitschritte...", flush=True)
 
     tasks = [
         (var_name, perturbed, ref_time_str, lt, valid_cells, hhl_values)
         for lt in lead_times
     ]
 
-    # 3 Worker lasten die Netzwerk-Bandbreite optimal aus
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=num_workers) as pool:
         hourly_slices = list(pool.map(_fetch_and_slice_single_hour, tasks))
 
     if len(hourly_slices) > 1:
@@ -237,7 +237,7 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
     del ds_u_h_raw
     gc.collect()
 
-    print("2. Lade 10m-Felder parallel (3 Streams)...", flush=True)
+    print("2. Lade 10m-Felder parallel (2 Streams)...", flush=True)
     tasks_10m = [
         ("V_10M", False),
         ("VMAX_10M", False),
@@ -246,7 +246,7 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
         ("VMAX_10M", True)
     ]
 
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         results_10m = list(pool.map(
             lambda t: fetch_single_2d(t[0], t[1], ref_time_str, lead_times, valid_cells),
             tasks_10m
