@@ -36,12 +36,12 @@ def init_regrid_weights(source_lons, source_lats):
         "b1": b1.astype(np.float32),
         "b2": b2.astype(np.float32),
         "valid": valid,
+        "valid_indices": np.where(valid)[0],  # Einmalig vorberechnen spart Hunderte Aufrufe
         "grid_lon": grid_lon,
         "grid_lat": grid_lat
     }
 
 def remap_fast(field, weights):
-    # Garantiert immer flaches 1D-Array (Shape: 104720,)
     raw_vals = field.values if hasattr(field, "values") else field
     vals = np.asarray(raw_vals).squeeze()
     if vals.ndim > 1:
@@ -49,18 +49,13 @@ def remap_fast(field, weights):
 
     out = np.full(config.NY * config.NX, np.nan, dtype=np.float32)
 
-    v0 = weights["v0"]
-    v1 = weights["v1"]
-    v2 = weights["v2"]
+    val_v0 = vals[weights["v0"]]
+    val_v1 = vals[weights["v1"]]
+    val_v2 = vals[weights["v2"]]
 
-    val_v0 = vals[v0]
-    val_v1 = vals[v1]
-    val_v2 = vals[v2]
-
-    # Maskierung für ungültige Werte (z. B. Berge/Fels über 1500m)
     valid_mask = ~(np.isnan(val_v0) | np.isnan(val_v1) | np.isnan(val_v2))
+    target_idx = weights["valid_indices"][valid_mask]
 
-    target_idx = np.where(weights["valid"])[0][valid_mask]
     out[target_idx] = (
         weights["b0"][valid_mask] * val_v0[valid_mask] +
         weights["b1"][valid_mask] * val_v1[valid_mask] +
@@ -123,7 +118,6 @@ def compute_timestep(u_h, v_h, g_h, u_e, v_e, g_e, u15_h, v15_h, u15_e, v15_e, s
             u15_s = get_step_slice(u15_mem, step_idx)
             v15_s = get_step_slice(v15_mem, step_idx)
 
-        # 10m Wind & Böen
         grid_u = remap_fast(u_s, weights)
         grid_v = remap_fast(v_s, weights)
         grid_g = remap_fast(g_s, weights)
@@ -137,7 +131,6 @@ def compute_timestep(u_h, v_h, g_h, u_e, v_e, g_e, u15_h, v15_h, u15_e, v15_e, s
         all_speeds_gust[m_idx, :, :] = speed_gust
         gust_data[m_idx] = {"speed": speed_gust, "has_arrows": False}
 
-        # 1500m Höhenwind
         grid_u15 = remap_fast(u15_s, weights)
         grid_v15 = remap_fast(v15_s, weights)
         speed_w15 = np.sqrt(grid_u15**2 + grid_v15**2) * 3.6
