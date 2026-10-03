@@ -17,8 +17,12 @@ LON_MIN, LON_MAX = 5.7, 10.8
 VARIABLES_CONFIG = {
     "wind":     {"label": "10m Wind",   "type": "surface",  "has_ensemble": True,  "has_arrows": True},
     "gust":     {"label": "Böen",       "type": "surface",  "has_ensemble": True,  "has_arrows": False},
-    "wind1500": {"label": "1500m Wind", "type": "altitude", "altitude": 1500.0, "has_ensemble": True,  "has_arrows": True},
     "wind1000": {"label": "1000m Wind", "type": "altitude", "altitude": 1000.0, "has_ensemble": False, "has_arrows": True},
+    "wind1500": {"label": "1500m Wind", "type": "altitude", "altitude": 1500.0, "has_ensemble": True,  "has_arrows": True},
+    "wind2000": {"label": "2000m Wind", "type": "altitude", "altitude": 2000.0, "has_ensemble": False, "has_arrows": True},
+    "wind2500": {"label": "2500m Wind", "type": "altitude", "altitude": 2500.0, "has_ensemble": False, "has_arrows": True},
+    "wind3000": {"label": "3000m Wind", "type": "altitude", "altitude": 3000.0, "has_ensemble": False, "has_arrows": True},
+    "wind3500": {"label": "3500m Wind", "type": "altitude", "altitude": 3500.0, "has_ensemble": False, "has_arrows": True},
 }
 
 VARIABLES = list(VARIABLES_CONFIG.keys())
