@@ -11,6 +11,7 @@ from multiprocessing import get_context
 from meteodatalab import ogd_api
 import config
 
+os.environ["MPLBACKEND"] = "Agg"
 SHARED_DATA = {}
 
 def check_if_new_data_available():
@@ -109,7 +110,8 @@ def prepare_base_site(ref_time_str, iso_str):
         "nx": config.NX, "ny": config.NY,
         "ref_time_utc": ref_time_str or ref_dt.strftime("%d.%m.%Y %H:00 UTC"),
         "member_names": member_names,
-        "variables": config.VARIABLES
+        "variables": config.VARIABLES,
+        "variables_config": config.VARIABLES_CONFIG
     }
     with open("dist/data/config.json", "w") as f:
         json.dump(config_data, f)
@@ -122,23 +124,10 @@ def process_single_local_step(args):
     import exporter
 
     local_idx, global_step_idx = args
-    u_h = SHARED_DATA["u_h"]
-    v_h = SHARED_DATA["v_h"]
-    g_h = SHARED_DATA["g_h"]
-    u_e = SHARED_DATA["u_e"]
-    v_e = SHARED_DATA["v_e"]
-    g_e = SHARED_DATA["g_e"]
-    u15_h = SHARED_DATA["u15_h"]
-    v15_h = SHARED_DATA["v15_h"]
-    u15_e = SHARED_DATA["u15_e"]
-    v15_e = SHARED_DATA["v15_e"]
+    weather_data = SHARED_DATA["weather_data"]
     weights = SHARED_DATA["weights"]
 
-    step_results = stats.compute_timestep(
-        u_h, v_h, g_h, u_e, v_e, g_e,
-        u15_h, v15_h, u15_e, v15_e,
-        local_idx, weights
-    )
+    step_results = stats.compute_timestep(weather_data, local_idx, weights)
 
     for var_name in config.VARIABLES:
         for m_idx, d in step_results[var_name].items():
@@ -156,18 +145,16 @@ def run_chunk(start_step, end_step, ref_time_str):
 
     print(f"--- STARTE CHUNK: Schritte {start_step} bis {end_step} ({num_chunk_steps} Schritte) ---", flush=True)
 
-    u_h, v_h, g_h, u_e, v_e, g_e, u15_h, v15_h, u15_e, v15_e = downloader.fetch_weather_data(start_step, end_step, ref_time_str)
+    weather_data = downloader.fetch_weather_data(start_step, end_step, ref_time_str)
 
+    u_h = weather_data["surface"]["u_h"]
     source_lons = u_h.coords['lon'].values
     source_lats = u_h.coords['lat'].values
     weights = stats.init_regrid_weights(source_lons, source_lats)
 
     global SHARED_DATA
     SHARED_DATA = {
-        "u_h": u_h, "v_h": v_h, "g_h": g_h,
-        "u_e": u_e, "v_e": v_e, "g_e": g_e,
-        "u15_h": u15_h, "v15_h": v15_h,
-        "u15_e": u15_e, "v15_e": v15_e,
+        "weather_data": weather_data,
         "weights": weights
     }
 
