@@ -13,9 +13,15 @@ YMIN, YMAX = 45.6, 47.9
 LAT_MIN, LAT_MAX = 45.5, 48.0
 LON_MIN, LON_MAX = 5.7, 10.8
 
-# Verfügbare Variablen (NEU: wind1500)
-VARIABLES = ["wind", "gust", "wind1500"]
-TARGET_ALTITUDE = 1500.0  # Meter über Meer
+# Modulare Variablen-Konfiguration
+VARIABLES_CONFIG = {
+    "wind":     {"label": "10m Wind",   "type": "surface",  "has_ensemble": True,  "has_arrows": True},
+    "gust":     {"label": "Böen",       "type": "surface",  "has_ensemble": True,  "has_arrows": False},
+    "wind1500": {"label": "1500m Wind", "type": "altitude", "altitude": 1500.0, "has_ensemble": True,  "has_arrows": True},
+    "wind1000": {"label": "1000m Wind", "type": "altitude", "altitude": 1000.0, "has_ensemble": False, "has_arrows": True},
+}
+
+VARIABLES = list(VARIABLES_CONFIG.keys())
 
 # Standard-Farbskala für Wind & Böen (0 bis 45+ km/h)
 LEVELS = [0, 4, 7, 11, 14, 18, 23, 27, 36, 45, 120]
