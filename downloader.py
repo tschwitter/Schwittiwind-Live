@@ -173,7 +173,6 @@ def _fetch_and_slice_single_hour(args):
     if valid_cells is not None:
         ds_hour = ds_hour.isel(cell=valid_cells)
 
-    # Schneidet aus EINEM Stunden-Download ALLE geforderten Höhen heraus
     alt_slices = {}
     for alt in target_alts:
         alt_slices[alt] = interpolate_single_hour_to_altitude(ds_hour, hhl_values, alt)
@@ -185,7 +184,9 @@ def _fetch_and_slice_single_hour(args):
 def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cells, hhl_values, target_alts):
     label = f"{var_name} Höhen {[int(a) for a in target_alts]}m ({'Ensemble' if perturbed else 'Hauptlauf'})"
     total = len(lead_times)
-    num_workers = 1 if perturbed else 2
+    
+    # 3 Worker für den leichten Hauptlauf, 2 Worker für das 10-Member Ensemble
+    num_workers = 2 if perturbed else 3
     print(f"-> Verarbeite {label} ({num_workers} Worker) für {total} Zeitschritte...", flush=True)
 
     tasks = [
@@ -196,7 +197,6 @@ def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cell
     with ThreadPoolExecutor(max_workers=num_workers) as pool:
         hourly_results = list(pool.map(_fetch_and_slice_single_hour, tasks))
 
-    # Strukturieren nach Höhe
     results_by_alt = {}
     for alt in target_alts:
         slices = [hr[alt] for hr in hourly_results]
@@ -258,15 +258,14 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
     print("3. Lade vertikales Höhenprofil & berechne Höhenwinde...", flush=True)
     hhl_values = get_hhl(valid_cells)
 
-    # Automatische Erkennung aller Höhen aus config.py
     hl_altitudes = [v["altitude"] for v in config.VARIABLES_CONFIG.values() if v.get("type") == "altitude"]
     ens_altitudes = [v["altitude"] for v in config.VARIABLES_CONFIG.values() if v.get("type") == "altitude" and v.get("has_ensemble")]
 
-    # Hauptlauf lädt 1500m UND 1000m in einem einzigen Durchlauf herunter!
+    # Hauptlauf mit 3 Workern
     u_hl_by_alt = fetch_3d_and_slice("U", False, ref_time_str, lead_times, valid_cells, hhl_values, hl_altitudes)
     v_hl_by_alt = fetch_3d_and_slice("V", False, ref_time_str, lead_times, valid_cells, hhl_values, hl_altitudes)
 
-    # Ensemble lädt nur diejenigen Höhen, die auch wirklich Ensemble benötigen (nur 1500m)
+    # Ensemble mit 2 Workern
     u_ens_by_alt = fetch_3d_and_slice("U", True, ref_time_str, lead_times, valid_cells, hhl_values, ens_altitudes)
     v_ens_by_alt = fetch_3d_and_slice("V", True, ref_time_str, lead_times, valid_cells, hhl_values, ens_altitudes)
 
