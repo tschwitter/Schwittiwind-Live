@@ -45,7 +45,8 @@ def safe_squeeze(ds):
         drop_dims.append('eps')
     return ds.squeeze(drop_dims) if drop_dims else ds
 
-def get_hhl(valid_cells=None):
+def get_hhl_and_weights(valid_cells=None, target_alts=None):
+    """Lädt HHL und berechnet vertikale Gewichte und Felsmasken für alle Höhen EINMALIG vor."""
     print("-> Lade statische vertikale Gittergeometrie (HHL)...", flush=True)
     url_ch1_vert = ogd_api.get_collection_asset_url(
         collection_id="ch.meteoschweiz.ogd-forecasting-icon-ch1",
@@ -75,26 +76,43 @@ def get_hhl(valid_cells=None):
     if vals.shape[0] != 81 and vals.shape[-1] == 81:
         vals = np.moveaxis(vals, -1, 0)
     
-    print(f"✓ HHL geladen mit Form: {vals.shape} (81 Schichtgrenzen)", flush=True)
-    return vals
-
-def interpolate_single_hour_to_altitude(da_hour, hhl_values, target_alt):
-    num_cells = hhl_values.shape[1]
+    num_cells = vals.shape[1]
     col_idx = np.arange(num_cells)
+    h_full = 0.5 * (vals[:-1, :] + vals[1:, :])
+    hsurf = vals[-1, :]
 
-    h_full = 0.5 * (hhl_values[:-1, :] + hhl_values[1:, :])
-    hsurf = hhl_values[-1, :]
+    # Vorberechnung pro Zielhöhe spart hunderte redundante Schleifen
+    alt_prep = {}
+    for alt in (target_alts or []):
+        is_below = (h_full < alt)
+        idx_below = np.argmax(is_below, axis=0)
+        idx_above = np.maximum(0, idx_below - 1)
 
-    is_below = (h_full < target_alt)
-    idx_below = np.argmax(is_below, axis=0)
-    idx_above = np.maximum(0, idx_below - 1)
+        h_a = h_full[idx_above, col_idx]
+        h_b = h_full[idx_below, col_idx]
+        dh = np.where((h_a - h_b) == 0, 1e-6, h_a - h_b)
+        weight = np.clip((alt - h_b) / dh, 0.0, 1.0).astype(np.float32)
+        mask_underground = (hsurf >= alt) | (~np.any(is_below, axis=0))
 
-    h_a = h_full[idx_above, col_idx]
-    h_b = h_full[idx_below, col_idx]
-    dh = np.where((h_a - h_b) == 0, 1e-6, h_a - h_b)
-    weight = np.clip((target_alt - h_b) / dh, 0.0, 1.0).astype(np.float32)
+        alt_prep[alt] = {
+            "idx_above": idx_above,
+            "idx_below": idx_below,
+            "weight": weight,
+            "mask_underground": mask_underground,
+            "col_idx": col_idx
+        }
 
-    mask_underground = (hsurf >= target_alt) | (~np.any(is_below, axis=0))
+    print(f"✓ HHL geladen & Gewichte für {len(target_alts)} Höhen vorberechnet!", flush=True)
+    return alt_prep
+
+def interpolate_fast_precomputed(da_hour, prep):
+    """Ultraschnelle Interpolation mit vorberechneten Gewichten (nur noch Array-Indexing)."""
+    idx_above = prep["idx_above"]
+    idx_below = prep["idx_below"]
+    weight = prep["weight"]
+    mask = prep["mask_underground"]
+    col_idx = prep["col_idx"]
+
     z_dim = [d for d in da_hour.dims if d in ['generalVerticalLayer', 'z', 'level']][0]
 
     if 'eps' in da_hour.dims and da_hour.sizes['eps'] > 1:
@@ -108,22 +126,17 @@ def interpolate_single_hour_to_altitude(da_hour, hhl_values, target_alt):
         v_b = vals_3d[:, idx_below, col_idx]
         
         out_interp = (1.0 - weight) * v_b + weight * v_a
-        out_interp[:, mask_underground] = np.nan
+        out_interp[:, mask] = np.nan
 
         coords = {c: da_hour.coords[c] for c in ['eps', 'cell'] if c in da_hour.coords}
         return xr.DataArray(out_interp, dims=['eps', 'cell'], coords=coords)
-
     else:
         sub = da_hour.squeeze()
-        if sub.dims[0] != z_dim:
-            vals_2d = np.moveaxis(sub.values, sub.dims.index(z_dim), 0)
-        else:
-            vals_2d = sub.values
-
+        vals_2d = np.moveaxis(sub.values, sub.dims.index(z_dim), 0) if sub.dims[0] != z_dim else sub.values
         v_a = vals_2d[idx_above, col_idx]
         v_b = vals_2d[idx_below, col_idx]
         v_int = (1.0 - weight) * v_b + weight * v_a
-        v_int[mask_underground] = np.nan
+        v_int[mask] = np.nan
 
         coords = {'cell': da_hour.coords['cell']}
         return xr.DataArray(v_int, dims=['cell'], coords=coords)
@@ -150,7 +163,7 @@ def fetch_single_2d(var_name, perturbed, ref_time_str, lead_times, valid_cells):
             time.sleep(3)
 
 def _fetch_and_slice_single_hour(args):
-    var_name, perturbed, ref_time_str, lt, valid_cells, hhl_values, target_alts = args
+    var_name, perturbed, ref_time_str, lt, valid_cells, alt_prep, target_alts = args
     req = ogd_api.Request(
         collection="ogd-forecasting-icon-ch1",
         variable=var_name,
@@ -175,22 +188,20 @@ def _fetch_and_slice_single_hour(args):
 
     alt_slices = {}
     for alt in target_alts:
-        alt_slices[alt] = interpolate_single_hour_to_altitude(ds_hour, hhl_values, alt)
+        alt_slices[alt] = interpolate_fast_precomputed(ds_hour, alt_prep[alt])
 
     del ds_hour
     gc.collect()
     return alt_slices
 
-def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cells, hhl_values, target_alts):
+def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cells, alt_prep, target_alts):
     label = f"{var_name} Höhen {[int(a) for a in target_alts]}m ({'Ensemble' if perturbed else 'Hauptlauf'})"
     total = len(lead_times)
-    
-    # 3 Worker für den leichten Hauptlauf, 2 Worker für das 10-Member Ensemble
     num_workers = 2 if perturbed else 3
     print(f"-> Verarbeite {label} ({num_workers} Worker) für {total} Zeitschritte...", flush=True)
 
     tasks = [
-        (var_name, perturbed, ref_time_str, lt, valid_cells, hhl_values, target_alts)
+        (var_name, perturbed, ref_time_str, lt, valid_cells, alt_prep, target_alts)
         for lt in lead_times
     ]
 
@@ -255,21 +266,27 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
             tasks_10m
         ))
 
-    print("3. Lade vertikales Höhenprofil & berechne Höhenwinde...", flush=True)
-    hhl_values = get_hhl(valid_cells)
-
+    print("3. Bereite vertikales Gitter vor...", flush=True)
     hl_altitudes = [v["altitude"] for v in config.VARIABLES_CONFIG.values() if v.get("type") == "altitude"]
     ens_altitudes = [v["altitude"] for v in config.VARIABLES_CONFIG.values() if v.get("type") == "altitude" and v.get("has_ensemble")]
+    all_target_alts = sorted(list(set(hl_altitudes + ens_altitudes)))
 
-    # Hauptlauf mit 3 Workern
-    u_hl_by_alt = fetch_3d_and_slice("U", False, ref_time_str, lead_times, valid_cells, hhl_values, hl_altitudes)
-    v_hl_by_alt = fetch_3d_and_slice("V", False, ref_time_str, lead_times, valid_cells, hhl_values, hl_altitudes)
+    alt_prep = get_hhl_and_weights(valid_cells, all_target_alts)
 
-    # Ensemble mit 2 Workern
-    u_ens_by_alt = fetch_3d_and_slice("U", True, ref_time_str, lead_times, valid_cells, hhl_values, ens_altitudes)
-    v_ens_by_alt = fetch_3d_and_slice("V", True, ref_time_str, lead_times, valid_cells, hhl_values, ens_altitudes)
+    # PARALLELER HAUPTLAUF: U und V gleichzeitig abrufen (spart 1.5 - 2 Min!)
+    print("4. Lade 3D-Hauptlauf (U und V simultan)...", flush=True)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        future_u_hl = pool.submit(fetch_3d_and_slice, "U", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
+        future_v_hl = pool.submit(fetch_3d_and_slice, "V", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
+        u_hl_by_alt = future_u_hl.result()
+        v_hl_by_alt = future_v_hl.result()
 
-    del hhl_values
+    # Ensemble-Wind sequentiell mit 2 Workern (stabil bei ~4 GB RAM)
+    print("5. Lade 3D-Ensemble...", flush=True)
+    u_ens_by_alt = fetch_3d_and_slice("U", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
+    v_ens_by_alt = fetch_3d_and_slice("V", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
+
+    del alt_prep
     gc.collect()
 
     print("✓ Alle Datensätze hochoptimiert bereitgestellt!", flush=True)
