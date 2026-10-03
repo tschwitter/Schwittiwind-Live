@@ -3,6 +3,3 @@ pyproj
 scipy
 xarray
 numpy
-matplotlib
-geojsoncontour
-rasterio
