@@ -66,8 +66,6 @@ def remap_fast(field, weights):
 def compute_statistics_for_array(all_speeds):
     s_min = np.nanmin(all_speeds, axis=0)
     s_max = np.nanmax(all_speeds, axis=0)
-    
-    # 25%, Median (50%) und 75% in einem einzigen Sortierdurchlauf berechnen
     q25, median, q75 = np.nanpercentile(all_speeds, [25, 50, 75], axis=0)
     iqr = q75 - q25
 
@@ -85,38 +83,35 @@ def get_step_slice(da, step_idx):
         return da.isel(lead_time=step_idx)
     return da
 
-def compute_timestep(u_h, v_h, g_h, u_e, v_e, g_e, u15_h, v15_h, u15_e, v15_e, step_idx, weights):
+def compute_timestep(weather_data, step_idx, weights):
+    surface = weather_data["surface"]
+    altitude_hl = weather_data["altitude_hl"]
+    altitude_ens = weather_data["altitude_ens"]
+
+    u_h, v_h, g_h = surface["u_h"], surface["v_h"], surface["g_h"]
+    u_e, v_e, g_e = surface["u_e"], surface["v_e"], surface["g_e"]
+
     ensemble_members = u_e.coords['eps'].values
     num_members = 1 + len(ensemble_members)
-    
+
+    step_results = {}
+
+    # 1. BODEN-WIND & BÖEN
     all_speeds_wind = np.zeros((num_members, config.NY, config.NX), dtype=np.float32)
     all_speeds_gust = np.zeros((num_members, config.NY, config.NX), dtype=np.float32)
-    all_speeds_w15 = np.zeros((num_members, config.NY, config.NX), dtype=np.float32)
-    
     wind_data = {}
     gust_data = {}
-    wind1500_data = {}
 
     for m_idx in range(num_members):
         if m_idx == 0:
             u_s = get_step_slice(u_h, step_idx)
             v_s = get_step_slice(v_h, step_idx)
             g_s = get_step_slice(g_h, step_idx)
-            u15_s = get_step_slice(u15_h, step_idx)
-            v15_s = get_step_slice(v15_h, step_idx)
         else:
             eps_val = ensemble_members[m_idx - 1]
-            u_mem = u_e.sel(eps=eps_val) if "eps" in u_e.dims else u_e
-            v_mem = v_e.sel(eps=eps_val) if "eps" in v_e.dims else v_e
-            g_mem = g_e.sel(eps=eps_val) if "eps" in g_e.dims else g_e
-            u15_mem = u15_e.sel(eps=eps_val) if "eps" in u15_e.dims else u15_e
-            v15_mem = v15_e.sel(eps=eps_val) if "eps" in v15_e.dims else v15_e
-            
-            u_s = get_step_slice(u_mem, step_idx)
-            v_s = get_step_slice(v_mem, step_idx)
-            g_s = get_step_slice(g_mem, step_idx)
-            u15_s = get_step_slice(u15_mem, step_idx)
-            v15_s = get_step_slice(v15_mem, step_idx)
+            u_s = get_step_slice(u_e.sel(eps=eps_val), step_idx)
+            v_s = get_step_slice(v_e.sel(eps=eps_val), step_idx)
+            g_s = get_step_slice(g_e.sel(eps=eps_val), step_idx)
 
         grid_u = remap_fast(u_s, weights)
         grid_v = remap_fast(v_s, weights)
@@ -131,15 +126,56 @@ def compute_timestep(u_h, v_h, g_h, u_e, v_e, g_e, u15_h, v15_h, u15_e, v15_e, s
         all_speeds_gust[m_idx, :, :] = speed_gust
         gust_data[m_idx] = {"speed": speed_gust, "has_arrows": False}
 
-        grid_u15 = remap_fast(u15_s, weights)
-        grid_v15 = remap_fast(v15_s, weights)
-        speed_w15 = np.sqrt(grid_u15**2 + grid_v15**2) * 3.6
-        dir_w15 = (np.arctan2(grid_u15, grid_v15) * 180 / np.pi) % 360
-        all_speeds_w15[m_idx, :, :] = speed_w15
-        wind1500_data[m_idx] = {"speed": speed_w15, "dir": dir_w15, "has_arrows": True}
-
     wind_data.update(compute_statistics_for_array(all_speeds_wind))
     gust_data.update(compute_statistics_for_array(all_speeds_gust))
-    wind1500_data.update(compute_statistics_for_array(all_speeds_w15))
+    step_results["wind"] = wind_data
+    step_results["gust"] = gust_data
 
-    return {"wind": wind_data, "gust": gust_data, "wind1500": wind1500_data}
+    # 2. HÖHEN-WINDE (Voll modular!)
+    for var_name, var_cfg in config.VARIABLES_CONFIG.items():
+        if var_cfg.get("type") != "altitude":
+            continue
+
+        alt = var_cfg["altitude"]
+        has_ens = var_cfg.get("has_ensemble", False)
+        u_hl, v_hl = altitude_hl[alt]
+
+        if has_ens:
+            # Vollständiges Ensemble berechnen (1500m)
+            u_ens, v_ens = altitude_ens[alt]
+            all_speeds_alt = np.zeros((num_members, config.NY, config.NX), dtype=np.float32)
+            alt_data = {}
+
+            for m_idx in range(num_members):
+                if m_idx == 0:
+                    u_s = get_step_slice(u_hl, step_idx)
+                    v_s = get_step_slice(v_hl, step_idx)
+                else:
+                    eps_val = ensemble_members[m_idx - 1]
+                    u_s = get_step_slice(u_ens.sel(eps=eps_val), step_idx)
+                    v_s = get_step_slice(v_ens.sel(eps=eps_val), step_idx)
+
+                grid_u = remap_fast(u_s, weights)
+                grid_v = remap_fast(v_s, weights)
+                speed = np.sqrt(grid_u**2 + grid_v**2) * 3.6
+                direction = (np.arctan2(grid_u, grid_v) * 180 / np.pi) % 360
+                all_speeds_alt[m_idx, :, :] = speed
+                alt_data[m_idx] = {"speed": speed, "dir": direction, "has_arrows": True}
+
+            alt_data.update(compute_statistics_for_array(all_speeds_alt))
+            step_results[var_name] = alt_data
+
+        else:
+            # PERFORMANCE-BOOST: Nur Hauptlauf (Member 0) berechnen (1000m)!
+            u_s = get_step_slice(u_hl, step_idx)
+            v_s = get_step_slice(v_hl, step_idx)
+            grid_u = remap_fast(u_s, weights)
+            grid_v = remap_fast(v_s, weights)
+            speed = np.sqrt(grid_u**2 + grid_v**2) * 3.6
+            direction = (np.arctan2(grid_u, grid_v) * 180 / np.pi) % 360
+
+            step_results[var_name] = {
+                0: {"speed": speed, "dir": direction, "has_arrows": True}
+            }
+
+    return step_results
