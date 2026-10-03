@@ -11,7 +11,6 @@ from multiprocessing import get_context
 from meteodatalab import ogd_api
 import config
 
-os.environ["MPLBACKEND"] = "Agg"
 SHARED_DATA = {}
 
 def check_if_new_data_available():
@@ -111,7 +110,11 @@ def prepare_base_site(ref_time_str, iso_str):
         "ref_time_utc": ref_time_str or ref_dt.strftime("%d.%m.%Y %H:00 UTC"),
         "member_names": member_names,
         "variables": config.VARIABLES,
-        "variables_config": config.VARIABLES_CONFIG
+        "variables_config": config.VARIABLES_CONFIG,
+        "levels": config.LEVELS,
+        "colors": config.COLORS,
+        "iqr_levels": config.IQR_LEVELS,
+        "iqr_colors": config.IQR_COLORS
     }
     with open("dist/data/config.json", "w") as f:
         json.dump(config_data, f)
