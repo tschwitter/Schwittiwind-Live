@@ -10,7 +10,6 @@ from meteodatalab import ogd_api, grib_decoder, data_source
 import config
 
 class SilenceStderr:
-    """Thread-sicherer Silence-Context für C-Level Meldungen (ecCodes)."""
     _lock = threading.Lock()
     _refcount = 0
     _save_fd = None
@@ -41,14 +40,12 @@ class SilenceStderr:
                 SilenceStderr._null_fd = None
 
 def safe_squeeze(ds):
-    """Entfernt alle 1er-Dimensionen von ref_time, z, höhe und eps – lead_time bleibt erhalten."""
     drop_dims = [d for d in ['ref_time', 'z', 'generalVerticalLayer', 'heightAboveGround'] if d in ds.dims and ds.sizes[d] == 1]
     if 'eps' in ds.dims and ds.sizes['eps'] == 1:
         drop_dims.append('eps')
     return ds.squeeze(drop_dims) if drop_dims else ds
 
 def get_hhl(valid_cells=None):
-    """Lädt die statische Geometrie (HHL) mit Retry-Schutz."""
     print("-> Lade statische vertikale Gittergeometrie (HHL)...", flush=True)
     url_ch1_vert = ogd_api.get_collection_asset_url(
         collection_id="ch.meteoschweiz.ogd-forecasting-icon-ch1",
@@ -81,8 +78,7 @@ def get_hhl(valid_cells=None):
     print(f"✓ HHL geladen mit Form: {vals.shape} (81 Schichtgrenzen)", flush=True)
     return vals
 
-def interpolate_single_hour_to_1500m(da_hour, hhl_values, target_alt=config.TARGET_ALTITUDE):
-    """Vollständig vektorisierte vertikale Interpolation (über alle Member & Zellen gleichzeitig)."""
+def interpolate_single_hour_to_altitude(da_hour, hhl_values, target_alt):
     num_cells = hhl_values.shape[1]
     col_idx = np.arange(num_cells)
 
@@ -154,7 +150,7 @@ def fetch_single_2d(var_name, perturbed, ref_time_str, lead_times, valid_cells):
             time.sleep(3)
 
 def _fetch_and_slice_single_hour(args):
-    var_name, perturbed, ref_time_str, lt, valid_cells, hhl_values = args
+    var_name, perturbed, ref_time_str, lt, valid_cells, hhl_values, target_alts = args
     req = ogd_api.Request(
         collection="ogd-forecasting-icon-ch1",
         variable=var_name,
@@ -177,32 +173,38 @@ def _fetch_and_slice_single_hour(args):
     if valid_cells is not None:
         ds_hour = ds_hour.isel(cell=valid_cells)
 
-    ds_1500 = interpolate_single_hour_to_1500m(ds_hour, hhl_values, config.TARGET_ALTITUDE)
+    # Schneidet aus EINEM Stunden-Download ALLE geforderten Höhen heraus
+    alt_slices = {}
+    for alt in target_alts:
+        alt_slices[alt] = interpolate_single_hour_to_altitude(ds_hour, hhl_values, alt)
+
     del ds_hour
     gc.collect()
-    return ds_1500
+    return alt_slices
 
-def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cells, hhl_values):
-    label = f"{var_name} 1500m ({'Ensemble' if perturbed else 'Hauptlauf'})"
+def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cells, hhl_values, target_alts):
+    label = f"{var_name} Höhen {[int(a) for a in target_alts]}m ({'Ensemble' if perturbed else 'Hauptlauf'})"
     total = len(lead_times)
-    
-    # Der "Sweet Spot": 2 Worker halbieren die Wartezeit gegenüber 1 Worker,
-    # bleiben aber mit max. ~4.2 GB RAM absolut sicher unter dem 7-GB-Limit!
-    num_workers = 2
+    num_workers = 1 if perturbed else 2
     print(f"-> Verarbeite {label} ({num_workers} Worker) für {total} Zeitschritte...", flush=True)
 
     tasks = [
-        (var_name, perturbed, ref_time_str, lt, valid_cells, hhl_values)
+        (var_name, perturbed, ref_time_str, lt, valid_cells, hhl_values, target_alts)
         for lt in lead_times
     ]
 
     with ThreadPoolExecutor(max_workers=num_workers) as pool:
-        hourly_slices = list(pool.map(_fetch_and_slice_single_hour, tasks))
+        hourly_results = list(pool.map(_fetch_and_slice_single_hour, tasks))
 
-    if len(hourly_slices) > 1:
-        return xr.concat(hourly_slices, dim="lead_time")
-    else:
-        return hourly_slices[0].expand_dims("lead_time")
+    # Strukturieren nach Höhe
+    results_by_alt = {}
+    for alt in target_alts:
+        slices = [hr[alt] for hr in hourly_results]
+        if len(slices) > 1:
+            results_by_alt[alt] = xr.concat(slices, dim="lead_time")
+        else:
+            results_by_alt[alt] = slices[0].expand_dims("lead_time")
+    return results_by_alt
 
 def fetch_weather_data(start_step, end_step, ref_time_str):
     lead_times = [timedelta(hours=h) for h in range(start_step, end_step + 1)]
@@ -248,23 +250,32 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
     ]
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        results_10m = list(pool.map(
+        v_h, g_h, u_e, v_e, g_e = list(pool.map(
             lambda t: fetch_single_2d(t[0], t[1], ref_time_str, lead_times, valid_cells),
             tasks_10m
         ))
 
-    v_h, g_h, u_e, v_e, g_e = results_10m
-
-    print("3. Lade vertikales Höhenprofil & berechne 1500m Wind...", flush=True)
+    print("3. Lade vertikales Höhenprofil & berechne Höhenwinde...", flush=True)
     hhl_values = get_hhl(valid_cells)
 
-    u15_h = fetch_3d_and_slice("U", False, ref_time_str, lead_times, valid_cells, hhl_values)
-    v15_h = fetch_3d_and_slice("V", False, ref_time_str, lead_times, valid_cells, hhl_values)
-    u15_e = fetch_3d_and_slice("U", True, ref_time_str, lead_times, valid_cells, hhl_values)
-    v15_e = fetch_3d_and_slice("V", True, ref_time_str, lead_times, valid_cells, hhl_values)
+    # Automatische Erkennung aller Höhen aus config.py
+    hl_altitudes = [v["altitude"] for v in config.VARIABLES_CONFIG.values() if v.get("type") == "altitude"]
+    ens_altitudes = [v["altitude"] for v in config.VARIABLES_CONFIG.values() if v.get("type") == "altitude" and v.get("has_ensemble")]
+
+    # Hauptlauf lädt 1500m UND 1000m in einem einzigen Durchlauf herunter!
+    u_hl_by_alt = fetch_3d_and_slice("U", False, ref_time_str, lead_times, valid_cells, hhl_values, hl_altitudes)
+    v_hl_by_alt = fetch_3d_and_slice("V", False, ref_time_str, lead_times, valid_cells, hhl_values, hl_altitudes)
+
+    # Ensemble lädt nur diejenigen Höhen, die auch wirklich Ensemble benötigen (nur 1500m)
+    u_ens_by_alt = fetch_3d_and_slice("U", True, ref_time_str, lead_times, valid_cells, hhl_values, ens_altitudes)
+    v_ens_by_alt = fetch_3d_and_slice("V", True, ref_time_str, lead_times, valid_cells, hhl_values, ens_altitudes)
 
     del hhl_values
     gc.collect()
 
-    print("✓ Alle Datensätze speicherschonend und parallel bereitgestellt!", flush=True)
-    return u_h, v_h, g_h, u_e, v_e, g_e, u15_h, v15_h, u15_e, v15_e
+    print("✓ Alle Datensätze hochoptimiert bereitgestellt!", flush=True)
+    return {
+        "surface": {"u_h": u_h, "v_h": v_h, "g_h": g_h, "u_e": u_e, "v_e": v_e, "g_e": g_e},
+        "altitude_hl": {alt: (u_hl_by_alt[alt], v_hl_by_alt[alt]) for alt in hl_altitudes},
+        "altitude_ens": {alt: (u_ens_by_alt[alt], v_ens_by_alt[alt]) for alt in ens_altitudes}
+    }
