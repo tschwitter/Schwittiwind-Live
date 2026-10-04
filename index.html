@@ -142,25 +142,30 @@
         }
         .bottom-labels-row { display: flex; justify-content: space-between; font-size: 12px; font-weight: bold; color: white; padding: 0 4px; }
 
-        /* Dynamische Legende */
+        /* ================= DYNAMISCHE LEGENDE ================= */
         .legend-box { 
             position: fixed; 
             bottom: 30px; left: 20px; 
             z-index: 9999; 
-            background-color: rgba(33, 43, 54, 0.85); 
+            background-color: rgba(33, 43, 54, 0.9); 
             border: 1px solid rgba(255,255,255,0.15); 
             border-radius: 8px; 
-            padding: 10px 8px 8px 8px; 
+            padding: 10px 8px 10px 8px; 
             font-family: Arial, sans-serif; color: white; 
             box-shadow: 4px 4px 12px rgba(0,0,0,0.5); 
-            width: 82px; box-sizing: border-box; font-size: 11px; 
+            width: 86px; box-sizing: border-box; font-size: 11px; 
         }
         .legend-title { font-weight: bold; font-size: 13px; text-align: center; margin-bottom: 6px; }
-        .legend-scale { position: relative; height: 260px; display: flex; }
-        .legend-bar { width: 22px; height: 260px; display: flex; flex-direction: column; border-radius: 2px; overflow: hidden; border: 1px solid #000; }
+        .legend-scale { position: relative; height: 280px; display: flex; }
+        .legend-bar { 
+            width: 22px; height: 280px; 
+            display: flex; flex-direction: column; 
+            border-radius: 2px; overflow: hidden; 
+            border: 1px solid #000; 
+        }
         .legend-labels { 
             position: absolute; left: 30px; top: -6px; 
-            height: 272px; font-size: 9px; font-weight: bold; 
+            height: 292px; font-size: 9px; font-weight: bold; 
             display: flex; flex-direction: column; justify-content: space-between; 
         }
 
@@ -171,10 +176,10 @@
             .member-panel { top: 50px; right: 10px; width: 55px; padding: 6px 2px; }
             .member-panel-title, .member-section-title { display: none; }
             .member-btn { font-size: 11px; padding: 6px 2px; }
-            .legend-box { bottom: 145px; left: 10px; width: 68px; padding: 6px 4px; }
-            .legend-scale { height: 180px; }
-            .legend-bar { width: 16px; height: 180px; }
-            .legend-labels { left: 24px; height: 190px; font-size: 8px; }
+            .legend-box { bottom: 145px; left: 10px; width: 72px; padding: 6px 4px; }
+            .legend-scale { height: 210px; }
+            .legend-bar { width: 16px; height: 210px; }
+            .legend-labels { left: 24px; height: 220px; font-size: 8px; }
         }
     </style>
 </head>
@@ -376,7 +381,6 @@
             var labelsEl = document.getElementById("legendLabels");
 
             var p = config.palettes[paletteType] || config.palettes["wind"];
-            var levels = p.levels;
             var colors = p.colors;
 
             if (paletteType === "sun") {
@@ -387,12 +391,15 @@
                 titleEl.innerText = "km/h";
             }
 
-            // Exakt 1 Block pro Farbband
+            // Exakte Farbbalken mit feinen weißen Trennlinien laut Screenshot
             var barHtml = "";
             for (var i = colors.length - 1; i >= 0; i--) {
                 var c = colors[i];
-                var bg = (c === '#ffffff00' || c.endsWith('00')) ? 'transparent' : c;
-                barHtml += `<div style="background-color: ${bg}; flex: 1;"></div>`;
+                // KORREKTUR: Nur echte Transparenzen filtern, niemals 6-stellige Farben mit Blau=00!
+                var isTrans = (c === 'transparent' || c === '#ffffff00' || (c.length === 9 && c.endsWith('00')));
+                var bg = isTrans ? 'transparent' : c;
+                var border = (paletteType === "dbz" && !isTrans) ? "border-bottom: 1px solid rgba(255,255,255,0.4);" : "";
+                barHtml += `<div style="background-color: ${bg}; flex: 1; ${border}"></div>`;
             }
             barEl.innerHTML = barHtml;
 
@@ -573,9 +580,11 @@
             contourLayer = L.geoJson(cacheContours[cacheKey], {
                 pane: 'contourPane',
                 style: function(feature) {
-                    var isTrans = (feature.properties.fill === '#ffffff00' || feature.properties.fill.endsWith('00'));
+                    var fill = feature.properties.fill;
+                    // KORREKTUR: Nur echte Transparenzen filtern!
+                    var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
                     return { 
-                        fillColor: feature.properties.fill, 
+                        fillColor: fill, 
                         color: isTrans ? 'transparent' : feature.properties.stroke, 
                         weight: 0.5, 
                         fillOpacity: isTrans ? 0 : 1.0 
