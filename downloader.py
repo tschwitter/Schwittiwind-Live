@@ -159,16 +159,13 @@ def fetch_single_2d(var_name, perturbed, ref_time_str, lead_times, valid_cells):
             time.sleep(3)
 
 def fetch_dursun_hourly(perturbed, ref_time_str, start_step, end_step, valid_cells):
-    """De-akkumuliert DURSUN sauber zu stündlicher Sonnenscheindauer in Sekunden."""
     actual_start = max(0, start_step - 1)
     fetch_lts = [timedelta(hours=h) for h in range(actual_start, end_step + 1)]
-    
     ds = fetch_single_2d("DURSUN", perturbed, ref_time_str, fetch_lts, valid_cells)
     
     if "lead_time" in ds.dims and ds.sizes["lead_time"] > 1:
         diff = ds.diff(dim="lead_time")
         diff = xr.where(diff < 0, 0, diff)
-        
         if start_step == 0:
             step0 = ds.isel(lead_time=0) * 0.0
             return xr.concat([step0, diff], dim="lead_time")
@@ -232,7 +229,6 @@ def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cell
 def fetch_weather_data(start_step, end_step, ref_time_str):
     lead_times = [timedelta(hours=h) for h in range(start_step, end_step + 1)]
 
-    # Pilot-Download für Koordinaten
     print(f"1. Pilot-Download: Hole Referenzgitter...", flush=True)
     req_pilot = ogd_api.Request(
         collection="ogd-forecasting-icon-ch1",
@@ -258,7 +254,6 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
         (lons >= config.LON_MIN) & (lons <= config.LON_MAX)
     )[0]
     
-    # Referenzkoordinaten für Delaunay
     ref_lon = ds_pilot.coords['lon'].values[valid_cells]
     ref_lat = ds_pilot.coords['lat'].values[valid_cells]
     del ds_pilot
@@ -266,10 +261,8 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
 
     surface_results = {}
 
-    # 2. Nur diejenigen 2D-Felder laden, die in config.VARIABLES aktiv sind!
     print(f"2. Lade aktive 2D-Oberflächenfelder ({config.VARIABLES})...", flush=True)
     
-    # Wind 10m
     if "wind" in config.VARIABLES:
         surface_results["u_h"] = fetch_single_2d("U_10M", False, ref_time_str, lead_times, valid_cells)
         surface_results["v_h"] = fetch_single_2d("V_10M", False, ref_time_str, lead_times, valid_cells)
@@ -277,25 +270,36 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
             surface_results["u_e"] = fetch_single_2d("U_10M", True, ref_time_str, lead_times, valid_cells)
             surface_results["v_e"] = fetch_single_2d("V_10M", True, ref_time_str, lead_times, valid_cells)
 
-    # Böen
     if "gust" in config.VARIABLES:
         surface_results["g_h"] = fetch_single_2d("VMAX_10M", False, ref_time_str, lead_times, valid_cells)
         if config.VARIABLES_CONFIG["gust"].get("has_ensemble"):
             surface_results["g_e"] = fetch_single_2d("VMAX_10M", True, ref_time_str, lead_times, valid_cells)
 
-    # Radar dBZ
     if "dbz" in config.VARIABLES:
         surface_results["dbz_h"] = fetch_single_2d("DBZ_CMAX", False, ref_time_str, lead_times, valid_cells)
         if config.VARIABLES_CONFIG["dbz"].get("has_ensemble"):
             surface_results["dbz_e"] = fetch_single_2d("DBZ_CMAX", True, ref_time_str, lead_times, valid_cells)
 
-    # Sonnenschein (de-akkumuliert)
     if "sun" in config.VARIABLES:
         surface_results["sun_h"] = fetch_dursun_hourly(False, ref_time_str, start_step, end_step, valid_cells)
         if config.VARIABLES_CONFIG["sun"].get("has_ensemble"):
             surface_results["sun_e"] = fetch_dursun_hourly(True, ref_time_str, start_step, end_step, valid_cells)
 
-    # 3. 3D-Höhenwinde (nur wenn überhaupt eine altitude-Variable aktiv ist!)
+    # 2D-Wolkenfelder dynamisch laden
+    CLOUD_VAR_MAP = {
+        "clct": "CLCT",
+        "clch": "CLCH",
+        "clcm": "CLCM",
+        "clcl": "CLCL"
+    }
+
+    for key, grib_name in CLOUD_VAR_MAP.items():
+        if key in config.VARIABLES:
+            surface_results[f"{key}_h"] = fetch_single_2d(grib_name, False, ref_time_str, lead_times, valid_cells)
+            if config.VARIABLES_CONFIG[key].get("has_ensemble"):
+                surface_results[f"{key}_e"] = fetch_single_2d(grib_name, True, ref_time_str, lead_times, valid_cells)
+
+    # 3D-Höhenwinde
     hl_altitudes = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and k in config.VARIABLES]
     ens_altitudes = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and v.get("has_ensemble") and k in config.VARIABLES]
     all_target_alts = sorted(list(set(hl_altitudes + ens_altitudes)))
