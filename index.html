@@ -3,56 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ICON-CH1 Wind & Böen - Ensembles</title>
+    <title>ICON-CH1 Wetter & Ensembles</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         html, body { 
-            margin: 0; 
-            padding: 0; 
-            width: 100%; 
-            height: 100%; 
+            margin: 0; padding: 0; 
+            width: 100%; height: 100%; 
             overflow: hidden; 
             background-color: #141a21; 
         }
-        #map { 
-            width: 100%; 
-            height: 100%; 
-            z-index: 1; 
-        }
-        .wind-arrow-icon { 
-            background: transparent !important; 
-            border: none !important; 
-            box-shadow: none !important; 
-        }
+        #map { width: 100%; height: 100%; z-index: 1; }
+        .wind-arrow-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
 
-        /* --- VARIABLEN-UMSCHALTER OBEN MITTE --- */
         .var-switch-container {
             position: fixed;
-            top: 20px;
-            left: 50%;
+            top: 20px; left: 50%;
             transform: translateX(-50%);
             z-index: 9999;
             background-color: rgba(33, 43, 54, 0.9);
             border: 1px solid rgba(255,255,255,0.15);
             border-radius: 20px;
             padding: 4px;
-            display: flex;
-            gap: 4px;
+            display: flex; gap: 4px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.4);
             max-width: 95vw;
             overflow-x: auto;
         }
         .var-btn {
             background: transparent;
-            border: none;
-            border-radius: 16px;
+            border: none; border-radius: 16px;
             color: #aaa;
             font-family: Arial, sans-serif;
-            font-size: 13px;
-            font-weight: bold;
+            font-size: 13px; font-weight: bold;
             padding: 6px 14px;
-            cursor: pointer;
-            transition: all 0.2s;
+            cursor: pointer; transition: all 0.2s;
             white-space: nowrap;
         }
         .var-btn.active {
@@ -61,31 +45,24 @@
             box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         }
 
-        /* --- SCHWEBENDER LADE-INDIKATOR --- */
         #loadingIndicator {
             display: none;
             position: fixed;
-            top: 65px;
-            left: 50%;
+            top: 65px; left: 50%;
             transform: translateX(-50%);
             z-index: 100000;
             background-color: rgba(33, 43, 54, 0.95);
             border: 1px solid rgba(255,255,255,0.15);
             border-radius: 20px;
             padding: 6px 14px;
-            font-family: Arial, sans-serif;
-            font-size: 12px;
-            font-weight: bold;
+            font-family: Arial, sans-serif; font-size: 12px; font-weight: bold;
             color: #d9534f;
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
 
-        /* --- VERTIKALES LÄUFE-PANEL (Rechts) --- */
         .member-panel {
             position: fixed;
-            top: 20px;
-            right: 20px;
-            bottom: 150px;
+            top: 20px; right: 20px; bottom: 150px;
             width: 150px;
             background-color: rgba(33, 43, 54, 0.85);
             border: 1px solid rgba(255,255,255,0.15);
@@ -93,298 +70,117 @@
             padding: 12px 8px;
             z-index: 9999;
             box-shadow: 4px 4px 12px rgba(0,0,0,0.5);
-            font-family: Arial, sans-serif;
-            color: white;
-            display: flex;
-            flex-direction: column;
-            overflow-y: auto;
-            box-sizing: border-box;
+            font-family: Arial, sans-serif; color: white;
+            display: flex; flex-direction: column;
+            overflow-y: auto; box-sizing: border-box;
         }
         .member-panel-title {
-            font-weight: bold;
-            font-size: 15px;
-            text-align: center;
-            margin-bottom: 10px;
-            border-bottom: 1px solid rgba(255,255,255,0.2);
+            font-weight: bold; font-size: 15px; text-align: center;
+            margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.2);
             padding-bottom: 6px;
         }
         .member-section-title {
-            font-size: 11px;
-            font-weight: bold;
-            color: #aaa;
-            margin: 8px 0 4px 2px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            font-size: 11px; font-weight: bold; color: #aaa;
+            margin: 8px 0 4px 2px; text-transform: uppercase; letter-spacing: 0.5px;
         }
         .member-btn {
             width: 100%;
             background-color: rgba(255,255,255,0.15);
-            border: none;
-            border-radius: 6px;
-            color: white;
-            font-weight: bold;
-            font-size: 12px;
-            padding: 8px 6px;
-            margin: 3px 0;
-            cursor: pointer;
-            text-align: center;
+            border: none; border-radius: 6px;
+            color: white; font-weight: bold; font-size: 12px;
+            padding: 8px 6px; margin: 3px 0;
+            cursor: pointer; text-align: center;
             box-shadow: 0 1px 3px rgba(0,0,0,0.2);
             transition: background 0.2s;
         }
         .member-btn:hover { background-color: rgba(255,255,255,0.25); }
         .member-btn.active { background-color: #007ab7; color: white; }
-        
-        .member-panel::-webkit-scrollbar { width: 6px; }
-        .member-panel::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 3px; }
-        .member-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 3px; }
-        .member-panel::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); border-radius: 3px; }
+        .only-hl-info { display: none; font-size: 11px; color: #aaa; text-align: center; padding: 10px 4px; font-style: italic; }
 
-        .only-hl-info {
-            display: none;
-            font-size: 11px;
-            color: #aaa;
-            text-align: center;
-            padding: 10px 4px;
-            font-style: italic;
-        }
-
-        /* --- KONTROLLZENTRUM (Unten Mitte) --- */
         .control-panel {
             position: fixed;
-            bottom: 30px;
-            left: 50%;
+            bottom: 30px; left: 50%;
             transform: translateX(-50%);
-            width: 90%;
-            max-width: 500px;
+            width: 90%; max-width: 500px;
             background-color: rgba(33, 43, 54, 0.9);
             border: 1px solid rgba(255,255,255,0.15);
             border-radius: 10px;
             padding: 12px 16px;
             z-index: 9999;
             box-shadow: 4px 4px 15px rgba(0,0,0,0.5);
-            font-family: Arial, sans-serif;
-            color: white;
+            font-family: Arial, sans-serif; color: white;
             box-sizing: border-box;
         }
-
-        .day-buttons-row {
-            display: flex;
-            justify-content: space-between;
-            gap: 6px;
-            margin-bottom: 12px;
-        }
+        .day-buttons-row { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 12px; }
         .day-btn {
-            flex: 1;
-            background: white;
-            border: none;
-            border-radius: 6px;
-            color: black;
-            font-weight: bold;
-            font-size: 13px;
-            padding: 6px 0;
-            cursor: pointer;
-            text-align: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-            transition: background 0.2s;
+            flex: 1; background: white; border: none; border-radius: 6px;
+            color: black; font-weight: bold; font-size: 13px;
+            padding: 6px 0; cursor: pointer; text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: background 0.2s;
         }
         .day-btn.active { background: #007ab7; color: white; }
-
-        .main-controls-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 8px;
-        }
-
+        .main-controls-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
         .nav-btn {
-            width: 36px;
-            height: 36px;
-            background: white;
-            border: none;
-            border-radius: 6px;
-            color: black;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-            font-size: 16px;
-            font-weight: bold;
+            width: 36px; height: 36px; background: white; border: none; border-radius: 6px;
+            color: black; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); font-size: 16px; font-weight: bold;
         }
-        .nav-btn:active { background: #eee; }
-
         #timeSlider {
-            -webkit-appearance: none;
-            appearance: none;
-            background: #007ab7;
-            height: 6px;
-            border-radius: 3px;
-            outline: none;
-            flex-grow: 1;
-            margin: 0 12px;
-            cursor: pointer;
+            -webkit-appearance: none; appearance: none;
+            background: #007ab7; height: 6px; border-radius: 3px; outline: none;
+            flex-grow: 1; margin: 0 12px; cursor: pointer;
         }
         #timeSlider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 14px;
-            height: 24px;
-            border-radius: 4px;
-            background: white;
-            border: 1px solid #333;
-            cursor: pointer;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            -webkit-appearance: none; appearance: none;
+            width: 14px; height: 24px; border-radius: 4px; background: white; border: 1px solid #333; cursor: pointer;
         }
-        #timeSlider::-moz-range-thumb {
-            width: 14px;
-            height: 24px;
-            border-radius: 4px;
-            background: white;
-            border: 1px solid #333;
-            cursor: pointer;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-
-        .member-nav-stack {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-            margin-left: 8px;
-        }
+        .member-nav-stack { display: flex; flex-direction: column; gap: 2px; margin-left: 8px; }
         .member-stack-btn {
-            width: 28px;
-            height: 18px;
-            background: white;
-            border: 1px solid #ccc;
-            border-radius: 3px;
-            color: black;
-            font-size: 9px;
-            font-weight: bold;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            padding: 0;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            width: 28px; height: 18px; background: white; border: 1px solid #ccc;
+            border-radius: 3px; color: black; font-size: 9px; font-weight: bold;
+            display: flex; align-items: center; justify-content: center; cursor: pointer;
         }
-        .member-stack-btn:active { background: #eee; }
+        .bottom-labels-row { display: flex; justify-content: space-between; font-size: 12px; font-weight: bold; color: white; padding: 0 4px; }
 
-        .bottom-labels-row {
-            display: flex;
-            justify-content: space-between;
-            font-size: 12px;
-            font-weight: bold;
-            color: white;
-            padding: 0 4px;
-        }
-        #currentStepLabel { color: white; }
-        #modelRunLabel { color: white; }
-
-        /* Legende */
+        /* Dynamische Legende */
         .legend-box { 
             position: fixed; 
-            bottom: 30px; 
-            left: 20px; 
-            right: auto;
+            bottom: 30px; left: 20px; 
             z-index: 9999; 
             background-color: rgba(33, 43, 54, 0.85); 
             border: 1px solid rgba(255,255,255,0.15); 
             border-radius: 8px; 
-            padding: 15px 12px 10px 12px; 
-            font-family: Arial, sans-serif; 
-            color: white; 
+            padding: 12px 10px 8px 10px; 
+            font-family: Arial, sans-serif; color: white; 
             box-shadow: 4px 4px 12px rgba(0,0,0,0.5); 
-            width: 85px; 
-            box-sizing: border-box; 
-            font-size: 11px; 
+            width: 80px; box-sizing: border-box; font-size: 11px; 
         }
-        .legend-title { 
-            font-weight: bold; 
-            font-size: 14px; 
-            text-align: center; 
-            margin-bottom: 8px; 
-            letter-spacing: 0.5px; 
-        }
-        .legend-scale { 
-            position: relative; 
-            height: 200px; 
-            display: flex; 
-            flex-direction: column; 
-        }
-        .legend-bar { 
-            width: 25px; 
-            height: 200px; 
-            display: flex; 
-            flex-direction: column; 
-            border-radius: 3px; 
-            overflow: hidden; 
-            border: 1.5px solid rgba(0,0,0,0.5) !important; 
-        }
+        .legend-title { font-weight: bold; font-size: 13px; text-align: center; margin-bottom: 6px; }
+        .legend-scale { position: relative; height: 210px; display: flex; }
+        .legend-bar { width: 20px; height: 210px; display: flex; flex-direction: column; border-radius: 3px; overflow: hidden; border: 1px solid #000; }
         .legend-labels { 
-            position: absolute; 
-            left: 35px; 
-            top: -7px; 
-            height: 214px; 
-            font-size: 12px; 
-            font-weight: bold; 
-            line-height: 1; 
-            display: flex; 
-            flex-direction: column; 
-            justify-content: space-between; 
+            position: absolute; left: 28px; top: -6px; 
+            height: 222px; font-size: 10px; font-weight: bold; 
+            display: flex; flex-direction: column; justify-content: space-between; 
         }
 
         @media (max-width: 768px) {
-            .var-switch-container {
-                top: 10px;
-                padding: 3px;
-                gap: 2px;
-            }
-            .var-btn {
-                font-size: 11px;
-                padding: 4px 8px;
-            }
-            #loadingIndicator {
-                top: 45px;
-                font-size: 10px;
-                padding: 4px 10px;
-            }
-            .control-panel {
-                bottom: 10px;
-                left: 10px;
-                right: 10px;
-                width: auto;
-                transform: none;
-                max-width: none;
-                padding: 10px 12px;
-            }
-            .member-panel {
-                top: 50px; 
-                right: 10px;
-                bottom: auto; 
-                max-height: calc(100% - 200px); 
-                width: 55px; 
-                padding: 6px 2px;
-            }
+            .var-switch-container { top: 10px; padding: 3px; gap: 2px; }
+            .var-btn { font-size: 11px; padding: 4px 8px; }
+            .control-panel { bottom: 10px; left: 10px; right: 10px; width: auto; transform: none; padding: 10px; }
+            .member-panel { top: 50px; right: 10px; width: 55px; padding: 6px 2px; }
             .member-panel-title, .member-section-title { display: none; }
-            .member-btn { font-size: 11px; padding: 6px 2px; margin: 2px 0; }
-            .legend-box {
-                bottom: 145px;
-                left: 10px; 
-                right: auto;
-                padding: 8px 6px 5px 6px;
-                width: 65px;
-            }
-            .legend-title { font-size: 11px; margin-bottom: 4px; }
-            .legend-scale { height: 140px; }
-            .legend-bar { width: 15px; height: 140px; }
-            .legend-labels { left: 22px; height: 150px; font-size: 9px; }
+            .member-btn { font-size: 11px; padding: 6px 2px; }
+            .legend-box { bottom: 145px; left: 10px; width: 65px; padding: 6px 4px; }
+            .legend-scale { height: 150px; }
+            .legend-bar { width: 14px; height: 150px; }
+            .legend-labels { left: 20px; height: 160px; font-size: 8px; }
         }
     </style>
 </head>
 <body>
 
     <div id="map"></div>
-
     <div class="var-switch-container" id="varSwitchContainer"></div>
     <div id="loadingIndicator">Lade Wetterdaten...</div>
 
@@ -392,19 +188,17 @@
         <div class="member-panel-title">Läufe</div>
         <div class="member-section-title">Hauptlauf</div>
         <div id="hauptlaufContainer"></div>
-        
         <div id="ensembleGroup">
             <div class="member-section-title">Ensemble</div>
             <div id="ensembleContainer"></div>
             <div class="member-section-title">Statistiken</div>
             <div id="statistikenContainer"></div>
         </div>
-        <div id="onlyHlNotice" class="only-hl-info">Nur Hauptlauf verfügbar</div>
+        <div id="onlyHlNotice" class="only-hl-info">Nur Hauptlauf</div>
     </div>
 
     <div class="control-panel">
         <div class="day-buttons-row" id="dayButtonsContainer"></div>
-
         <div class="main-controls-row">
             <button class="nav-btn" onclick="navLeft()">◀</button>
             <input type="range" id="timeSlider" min="0" max="0" value="0">
@@ -414,7 +208,6 @@
                 <button class="member-stack-btn" onclick="navDown()">▼</button>
             </div>
         </div>
-
         <div class="bottom-labels-row">
             <span id="currentStepLabel">Wird geladen...</span>
             <span id="modelRunLabel">🕒 Wird geladen...</span>
@@ -422,14 +215,13 @@
     </div>
 
     <div class="legend-box">
-        <div class="legend-title">km/h</div>
+        <div class="legend-title" id="legendTitle">km/h</div>
         <div class="legend-scale">
             <div class="legend-bar" id="legendBar"></div>
             <div class="legend-labels" id="legendLabels"></div>
         </div>
     </div>
 
-    <!-- Leaflet & D3-Contour -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
     <script>
@@ -474,10 +266,7 @@
 
             var vCfg = config.variables_config[currentVar];
             var hasEns = vCfg ? vCfg.has_ensemble : true;
-
-            if (!hasEns) {
-                currentMemberIdx = 0;
-            }
+            if (!hasEns) currentMemberIdx = 0;
 
             updateMemberPanelVisibility(hasEns);
             updateForecast(currentMemberIdx, currentStepIdx);
@@ -490,25 +279,17 @@
             if (notice) notice.style.display = hasEns ? "none" : "block";
         }
 
-        function navLeft() {
-            var newStep = Math.max(0, currentStepIdx - 1);
-            if (newStep !== currentStepIdx) updateForecast(currentMemberIdx, newStep);
-        }
-        function navRight() {
-            var newStep = Math.min(times.length - 1, currentStepIdx + 1);
-            if (newStep !== currentStepIdx) updateForecast(currentMemberIdx, newStep);
-        }
+        function navLeft() { updateForecast(currentMemberIdx, Math.max(0, currentStepIdx - 1)); }
+        function navRight() { updateForecast(currentMemberIdx, Math.min(times.length - 1, currentStepIdx + 1)); }
         function navUp() {
             var vCfg = config.variables_config[currentVar];
             if (vCfg && !vCfg.has_ensemble) return;
-            var newMember = Math.max(0, currentMemberIdx - 1);
-            if (newMember !== currentMemberIdx) updateForecast(newMember, currentStepIdx);
+            updateForecast(Math.max(0, currentMemberIdx - 1), currentStepIdx);
         }
         function navDown() {
             var vCfg = config.variables_config[currentVar];
             if (vCfg && !vCfg.has_ensemble) return;
-            var newMember = Math.min(config.member_names.length - 1, currentMemberIdx + 1);
-            if (newMember !== currentMemberIdx) updateForecast(newMember, currentStepIdx);
+            updateForecast(Math.min(config.member_names.length - 1, currentMemberIdx + 1), currentStepIdx);
         }
 
         function initDayButtons() {
@@ -518,13 +299,9 @@
             dayTimesteps = {};
             
             times.forEach((t, idx) => {
-                var dateParts = t.local_str.split(" ")[0].split(".");
-                var day = parseInt(dateParts[0]);
-                var month = parseInt(dateParts[1]) - 1;
-                var year = parseInt(dateParts[2]);
-                var dateObj = new Date(year, month, day);
+                var parts = t.local_str.split(" ")[0].split(".");
+                var dateObj = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
                 var dayName = weekdays[dateObj.getDay()];
-                
                 if (!uniqueDays.includes(dayName)) {
                     uniqueDays.push(dayName);
                     dayTimesteps[dayName] = [];
@@ -549,16 +326,11 @@
 
             var bestIdx = targetIndices[0];
             var minDiff = 999;
-
             targetIndices.forEach(idx => {
                 var h = parseInt(times[idx].local_str.split(" ")[1].split(":")[0]);
                 var diff = Math.abs(h - currentHour);
-                if (diff < minDiff) {
-                    minDiff = diff;
-                    bestIdx = idx;
-                }
+                if (diff < minDiff) { minDiff = diff; bestIdx = idx; }
             });
-
             updateForecast(currentMemberIdx, bestIdx);
         }
 
@@ -566,10 +338,7 @@
             var hauptContainer = document.getElementById("hauptlaufContainer");
             var ensembleContainer = document.getElementById("ensembleContainer");
             var statistikenContainer = document.getElementById("statistikenContainer");
-            hauptContainer.innerHTML = "";
-            ensembleContainer.innerHTML = "";
-            statistikenContainer.innerHTML = "";
-            
+            hauptContainer.innerHTML = ""; ensembleContainer.innerHTML = ""; statistikenContainer.innerHTML = "";
             var isMobile = window.innerWidth <= 768;
 
             config.member_names.forEach((name, idx) => {
@@ -592,48 +361,49 @@
                     else if (idx === 16) btn.innerText = isMobile ? "IQ" : name;
                     statistikenContainer.appendChild(btn);
                 }
-
                 btn.onclick = function() { updateForecast(idx, currentStepIdx); };
             });
         }
 
-        function updateLegend(isIQR) {
-            var legendBar = document.getElementById("legendBar");
-            var legendLabels = document.getElementById("legendLabels");
-            
-            if (isIQR) {
-                legendBar.innerHTML = `
-                    <div style="background-color: #d7301f; flex: 1;"></div>
-                    <div style="background-color: #ec7014; flex: 1;"></div>
-                    <div style="background-color: #fe9929; flex: 1;"></div>
-                    <div style="background-color: #fec44f; flex: 1;"></div>
-                    <div style="background-color: #2b8cbe; flex: 1;"></div>
-                    <div style="background-color: #4eb3d3; flex: 1;"></div>
-                    <div style="background-color: #7bccc4; flex: 1;"></div>
-                    <div style="background-color: #a8ddb5; flex: 1;"></div>
-                    <div style="background-color: #e0f3db; flex: 1;"></div>
-                    <div style="background-color: #ffffff00; flex: 1;"></div>
-                `;
-                legendLabels.innerHTML = `
-                    <div>+</div><div>30</div><div>20</div><div>15</div><div>12</div><div>10</div><div>8</div><div>6</div><div>4</div><div>2</div><div>0</div>
-                `;
+        // ================= DYNAMISCHE LEGENDE FÜR ALLE VARIABLEN =================
+        function updateLegend(paletteType) {
+            var titleEl  = document.getElementById("legendTitle");
+            var barEl    = document.getElementById("legendBar");
+            var labelsEl = document.getElementById("legendLabels");
+
+            var p = config.palettes[paletteType] || config.palettes["wind"];
+            var levels = p.levels;
+            var colors = p.colors;
+
+            if (paletteType === "sun") {
+                titleEl.innerText = "Sun %";
+            } else if (paletteType === "dbz") {
+                titleEl.innerText = "dBZ";
             } else {
-                legendBar.innerHTML = `
-                    <div style="background-color: #2d21a9; flex: 1;"></div>
-                    <div style="background-color: #7a0fd1; flex: 1;"></div>
-                    <div style="background-color: #9c285e; flex: 1;"></div>
-                    <div style="background-color: #eb4d3c; flex: 1;"></div>
-                    <div style="background-color: #fca643; flex: 1;"></div>
-                    <div style="background-color: #fed148; flex: 1;"></div>
-                    <div style="background-color: #89db4c; flex: 1;"></div>
-                    <div style="background-color: #5cd184; flex: 1;"></div>
-                    <div style="background-color: #baddf3; flex: 1;"></div>
-                    <div style="background-color: #f1f6ff; flex: 1;"></div>
-                `;
-                legendLabels.innerHTML = `
-                    <div>+</div><div>45</div><div>36</div><div>27</div><div>23</div><div>18</div><div>14</div><div>11</div><div>7</div><div>4</div><div>0</div>
-                `;
+                titleEl.innerText = "km/h";
             }
+
+            // Balken von oben nach unten (höchste Werte zuerst)
+            var barHtml = "";
+            for (var i = colors.length - 1; i >= 0; i--) {
+                var c = colors[i];
+                var bg = (c === '#ffffff00' || c.endsWith('00')) ? 'transparent' : c;
+                barHtml += `<div style="background-color: ${bg}; flex: 1;"></div>`;
+            }
+            barEl.innerHTML = barHtml;
+
+            // Labels
+            var labelsHtml = "";
+            if (paletteType === "dbz") {
+                labelsHtml = `<div>64</div><div>60</div><div>58</div><div>56</div><div>54</div><div>51</div><div>45</div><div>41</div><div>31</div><div>24</div><div>19</div><div>7</div>`;
+            } else if (paletteType === "sun") {
+                labelsHtml = `<div>100</div><div>80</div><div>60</div><div>40</div><div>20</div><div>0</div>`;
+            } else if (paletteType === "iqr") {
+                labelsHtml = `<div>+</div><div>30</div><div>20</div><div>15</div><div>12</div><div>10</div><div>8</div><div>6</div><div>4</div><div>2</div><div>0</div>`;
+            } else {
+                labelsHtml = `<div>+</div><div>45</div><div>36</div><div>27</div><div>23</div><div>18</div><div>14</div><div>11</div><div>7</div><div>4</div><div>0</div>`;
+            }
+            labelsEl.innerHTML = labelsHtml;
         }
 
         async function fetchAndDecompress(url) {
@@ -646,33 +416,29 @@
             return JSON.parse(text);
         }
 
-        // ================= CLIENT-SEITIGE KONTURBERECHNUNG =================
-        function generateContoursClient(s_flat, isIQR) {
-            const levels = isIQR ? config.iqr_levels : config.levels;
-            const colors = isIQR ? config.iqr_colors : config.colors;
+        function generateContoursClient(s_flat, paletteType) {
+            const p = config.palettes[paletteType] || config.palettes["wind"];
+            const levels = p.levels;
+            const colors = p.colors;
             
             const values = new Float32Array(s_flat.length);
             for (let i = 0; i < s_flat.length; i++) {
-                // -1 = Fels/Berg -> NaN
                 values[i] = (s_flat[i] < 0) ? NaN : (s_flat[i] / 10.0);
             }
             
             const thresholds = levels.slice(0, levels.length - 1);
-            
             const contourGen = d3.contours()
                 .size([config.nx, config.ny])
                 .smooth(true)
                 .thresholds(thresholds);
                 
             const rawContours = contourGen(values);
-            
             const xMin = config.xmin, xMax = config.xmax;
             const yMin = config.ymin, yMax = config.ymax;
             const dx = (xMax - xMin) / (config.nx - 1);
             const dy = (yMax - yMin) / (config.ny - 1);
             
             const features = [];
-            
             for (let i = 0; i < rawContours.length; i++) {
                 const c = rawContours[i];
                 if (!c.coordinates || c.coordinates.length === 0) continue;
@@ -689,22 +455,11 @@
                 
                 features.push({
                     type: "Feature",
-                    properties: {
-                        fill: color,
-                        stroke: color,
-                        value: c.value
-                    },
-                    geometry: {
-                        type: "MultiPolygon",
-                        coordinates: geoCoords
-                    }
+                    properties: { fill: color, stroke: color },
+                    geometry: { type: "MultiPolygon", coordinates: geoCoords }
                 });
             }
-            
-            return {
-                type: "FeatureCollection",
-                features: features
-            };
+            return { type: "FeatureCollection", features: features };
         }
 
         async function init() {
@@ -725,21 +480,17 @@
                 var swisstopo_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg";
                 map = L.map('map', {
                     center: [46.8182, 8.2275],
-                    zoom: 9,
-                    minZoom: 7,
-                    maxZoom: 15,
+                    zoom: 9, minZoom: 7, maxZoom: 15,
                     preferCanvas: true
                 });
 
-                // Dediziertes Pane für Konturen mit 55% Opacity
                 map.createPane('contourPane');
                 map.getPane('contourPane').style.opacity = '0.55';
                 map.getPane('contourPane').style.zIndex = '400';
 
                 L.tileLayer(swisstopo_url, {
                     attribution: '&copy; <a href="https://www.swisstopo.admin.ch/">swisstopo</a>',
-                    maxZoom: 15,
-                    maxNativeZoom: 10
+                    maxZoom: 15, maxNativeZoom: 10
                 }).addTo(map);
 
                 map.on('moveend', drawVisibleArrows);
@@ -761,7 +512,7 @@
 
                 await updateForecast(0, 0);
             } catch (err) {
-                console.error("Fehler beim Laden der App:", err);
+                console.error("Fehler beim Laden:", err);
             }
         }
 
@@ -771,19 +522,18 @@
             document.getElementById("timeSlider").value = currentStepIdx;
             
             const cacheKey = currentVar + "_" + currentMemberIdx + "_" + currentStepIdx;
+            const vCfg = config.variables_config[currentVar] || {};
             const isIQR = (currentMemberIdx === 16);
+            const paletteType = isIQR ? "iqr" : (vCfg.palette || "wind");
 
             if (!cacheContours[cacheKey]) {
                 document.getElementById("loadingIndicator").style.display = "block";
                 try {
                     const runBuster = encodeURIComponent(config.ref_time_utc);
-                    
                     if (!cacheGrid[cacheKey]) {
                         cacheGrid[cacheKey] = await fetchAndDecompress(`data/grid_${currentVar}_m${currentMemberIdx}_s${currentStepIdx}.json.gz?v=${runBuster}`);
                     }
-                    
-                    // Konturen live im Browser berechnen (dauert nur ca. 20-30 ms!)
-                    cacheContours[cacheKey] = generateContoursClient(cacheGrid[cacheKey].s, isIQR);
+                    cacheContours[cacheKey] = generateContoursClient(cacheGrid[cacheKey].s, paletteType);
                 } catch (err) {
                     console.error("Fehler beim Laden des Zeitschritts:", err);
                     document.getElementById("loadingIndicator").style.display = "none";
@@ -795,40 +545,25 @@
             var tInfo = times[currentStepIdx];
             var parts = tInfo.local_str.split(" ");
             var dateParts = parts[0].split(".");
-            var formattedLT = dateParts[0] + "." + dateParts[1] + " " + parts[1].substring(0, 5) + " LT";
+            document.getElementById("currentStepLabel").innerText = dateParts[0] + "." + dateParts[1] + " " + parts[1].substring(0, 5) + " LT";
             
             var refParts = config.ref_time_utc.split(" ");
             var refDateParts = refParts[0].split(".");
             var refTimeHour = refParts[1].split(":")[0];
-            var formattedRef = "🕒" + refDateParts[0] + "." + refDateParts[1] + " " + refTimeHour + "Z CH1";
+            document.getElementById("modelRunLabel").innerText = "🕒" + refDateParts[0] + "." + refDateParts[1] + " " + refTimeHour + "Z CH1";
 
-            document.getElementById("currentStepLabel").innerText = formattedLT;
-            document.getElementById("modelRunLabel").innerText = formattedRef;
-
-            var day = parseInt(dateParts[0]);
-            var month = parseInt(dateParts[1]) - 1;
-            var year = parseInt(dateParts[2]);
-            var dateObj = new Date(year, month, day);
-            var currentDayName = weekdays[dateObj.getDay()];
-
-            uniqueDays.forEach(dayName => {
-                var btn = document.getElementById("day-btn-" + dayName);
-                if (btn) btn.classList.toggle("active", dayName === currentDayName);
+            var dayName = weekdays[(new Date(parseInt(dateParts[2]), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]))).getDay()];
+            uniqueDays.forEach(d => {
+                var btn = document.getElementById("day-btn-" + d);
+                if (btn) btn.classList.toggle("active", d === dayName);
             });
 
             for (var i = 0; i < config.member_names.length; i++) {
                 var btn = document.getElementById("member-btn-" + i);
-                if (btn) {
-                    if (i === currentMemberIdx) {
-                        btn.classList.add("active");
-                        btn.scrollIntoView({ block: "nearest", behavior: "smooth" });
-                    } else {
-                        btn.classList.remove("active");
-                    }
-                }
+                if (btn) btn.classList.toggle("active", i === currentMemberIdx);
             }
 
-            updateLegend(isIQR);
+            updateLegend(paletteType);
 
             if (contourLayer) { map.removeLayer(contourLayer); }
             contourLayer = L.geoJson(cacheContours[cacheKey], {
@@ -860,7 +595,6 @@
 
             var bounds = map.getBounds();
             var zoom = map.getZoom();
-            
             var step = 32;
             if (zoom > 8 && zoom <= 10) step = 16;
             else if (zoom > 10 && zoom <= 11) step = 8;
@@ -874,11 +608,10 @@
 
             for (var i = 0; i < speeds.length; i++) {
                 var sVal = speeds[i];
-                if (sVal < 30) continue; // Unter 3.0 km/h oder NaN (-1) ignorieren
+                if (sVal < 30) continue;
 
                 var r = Math.floor(i / config.nx);
                 var c = i % config.nx;
-
                 if (r % step !== 0 || c % step !== 0) continue;
 
                 var lat = config.ymin + r * (config.ymax - config.ymin) / (config.ny - 1);
@@ -888,15 +621,11 @@
                 if (bounds.contains(latlng)) {
                     var speed = sVal / 10.0;
                     var dir = dirs[i];
-                    var arrow_w = 6 + Math.pow(speed, 1.15) * 0.55;
-                    if (arrow_w > 35) arrow_w = 35;
-                    if (arrow_w < 8) arrow_w = 8;
-                    var arrow_h = 12 + Math.pow(speed, 1.4) * 1.0;
-                    if (arrow_h > 100) arrow_h = 100;
-                    if (arrow_h < 16) arrow_h = 16;
+                    var arrow_w = Math.min(35, Math.max(8, 6 + Math.pow(speed, 1.15) * 0.55));
+                    var arrow_h = Math.min(100, Math.max(16, 12 + Math.pow(speed, 1.4) * 1.0));
 
-                    var svg = '<div style="transform: rotate(' + dir + 'deg); width: 110px; height: 110px; display: flex; align-items: center; justify-content: center; transform-origin: center center;">' +
-                              '<svg viewBox="0 0 24 24" width="' + arrow_w.toFixed(1) + 'px" height="' + arrow_h.toFixed(1) + 'px" xmlns="http://www.w3.org/2000/svg">' +
+                    var svg = '<div style="transform: rotate(' + dir + 'deg); width: 110px; height: 110px; display: flex; align-items: center; justify-content: center;">' +
+                              '<svg viewBox="0 0 24 24" width="' + arrow_w.toFixed(1) + 'px" height="' + arrow_h.toFixed(1) + 'px">' +
                               '<path d="M11 22 H13 V10 H17 L12 2 L7 10 H11 Z" fill="black" stroke="white" stroke-width="0.8"/>' +
                               '</svg></div>';
 
