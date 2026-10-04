@@ -22,8 +22,8 @@ VARIABLES_CONFIG = {
     # NEU: Die 4 Wolkenstockwerke
     "clct":     {"label": "Wolken",       "type": "surface",  "has_ensemble": True,  "has_arrows": False, "palette": "cloud"},
     "clch":     {"label": "Hohe Wolken",  "type": "surface",  "has_ensemble": False, "has_arrows": False, "palette": "cloud"},
-    "clcm":     {"label": "Mittl. Wolken","type": "surface",  "has_ensemble": False, "has_arrows": False, "palette": "cloud"},
-    "clcl":     {"label": "Tiefe Wolken", "type": "surface",  "has_ensemble": False, "has_arrows": False, "palette": "cloud"},
+    "clcm":     {"label": "Mittl. Wolken","type": "surface",  "has_ensemble": True, "has_arrows": False, "palette": "cloud"},
+    "clcl":     {"label": "Tiefe Wolken", "type": "surface",  "has_ensemble": True, "has_arrows": False, "palette": "cloud"},
 
     # Höhenwinde
     "wind1000": {"label": "1000m Wind",   "type": "altitude", "altitude": 1000.0, "has_ensemble": False, "has_arrows": True, "palette": "wind"},
