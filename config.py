@@ -71,24 +71,24 @@ SUN_COLORS = [
     '#932512'     # 90-100%
 ]
 
-# Radar-Reflektivität (dBZ) – Exakt 20 Stufen laut Screenshot
+# Radar-Reflektivität (dBZ) – Exakt 20 Stufen laut Kachelmann/Meteologix
 DBZ_LEVELS = [
     7.0, 19.0, 24.0, 31.0, 41.0, 45.0, 47.0, 49.0, 51.0, 52.0,
     53.0, 54.0, 55.0, 56.0, 57.0, 58.0, 59.0, 60.0, 61.0, 64.0, 100.0
 ]
 
 DBZ_COLORS = [
-    '#687484',  # 7-19:  Dunkles Blaugrau / Schiefer
-    '#3e5c80',  # 19-24: Stahlblau
-    '#1952e6',  # 24-31: Kräftiges Blau
-    '#009e00',  # 31-41: Reines Grün
+    '#687687',  # 7-19:  Dunkles Blaugrau / Schiefer
+    '#395b87',  # 19-24: Stahlblau
+    '#1a57f5',  # 24-31: Kräftiges Blau
+    '#00a600',  # 31-41: Reines Grün
     '#ffee00',  # 41-45: Gelb
     '#ffb300',  # 45-47: Bernstein / Gelborange
     '#ff7800',  # 47-49: Orange
     '#ff4000',  # 49-51: Dunkelorange
     '#ff1400',  # 51-52: Rotorange
     '#d80000',  # 52-53: Helles Rot
-    '#b00000',  # 53-54: Dunkelrot
+    '#ad0000',  # 53-54: Dunkelrot
     '#580036',  # 54-55: Tiefes Weinrot / Aubergine
     '#440064',  # 55-56: Dunkelviolett
     '#6c0096',  # 56-57: Violett
