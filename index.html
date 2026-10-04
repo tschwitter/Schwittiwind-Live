@@ -15,7 +15,7 @@
         #map { width: 100%; height: 100%; z-index: 1; }
         .wind-arrow-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
 
-        /* --- OBERES KONTROLL-PANEL (HIERARCHISCHE LEISTEN) --- */
+        /* --- OBERES KONTROLL-PANEL --- */
         .top-control-panel {
             position: fixed;
             top: 10px; left: 50%;
@@ -120,7 +120,6 @@
         .layer2-btn.active { background-color: #2e7d32; color: white; border-color: #81c784; }
         .settings-btn { padding: 4px 8px; font-size: 13px; }
 
-        /* --- MENÜS & POPUPS --- */
         .dropdown-menu, .settings-popup {
             display: none;
             position: fixed;
@@ -170,7 +169,7 @@
             font-size: 11px; margin-bottom: 6px;
         }
         .mode-toggle-group {
-            display: flex gap: 2px; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 2px;
+            display: flex; gap: 2px; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 2px;
         }
         .mode-btn {
             background: transparent; border: none; border-radius: 10px; color: #aaa;
@@ -194,7 +193,6 @@
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
 
-        /* --- VERTICAL PANEL (RECHTS) --- */
         .member-panel {
             position: fixed;
             top: 70px; right: 20px; bottom: 150px;
@@ -232,7 +230,6 @@
         .member-btn.active { background-color: #007ab7; color: white; }
         .only-hl-info { display: none; font-size: 11px; color: #aaa; text-align: center; padding: 10px 4px; font-style: italic; }
 
-        /* --- KONTROLLZENTRUM (UNTEN MITTE) --- */
         .control-panel {
             position: fixed;
             bottom: 30px; left: 50%;
@@ -516,7 +513,6 @@
             var vars = config.variables || Object.keys(config.variables_config);
             if (!layer1Var || !vars.includes(layer1Var)) layer1Var = vars[0];
 
-            // Sichtbarkeit der festen Buttons prüfen
             var btnWind = document.getElementById("varBtn-wind");
             var btnGust = document.getElementById("varBtn-gust");
             if (btnWind) btnWind.style.display = vars.includes("wind") ? "inline-block" : "none";
@@ -766,6 +762,7 @@
             });
         }
 
+        // ================= DYNAMISCHE LEGENDE =================
         function renderSingleLegendCol(varName, isIQR) {
             var vCfg = config.variables_config[varName] || {};
             var paletteType = isIQR ? ("iqr_" + (vCfg.palette || "wind")) : (vCfg.palette || "wind");
@@ -774,9 +771,14 @@
 
             var title = "";
             if (isIQR) {
-                title = (vCfg.palette === "sun") ? "% (IQR)" : ((vCfg.palette === "dbz") ? "dBZ (IQR)" : "km/h (IQR)");
+                if (vCfg.palette === "sun" || vCfg.palette === "cloud") title = "% (IQR)";
+                else if (vCfg.palette === "dbz") title = "dBZ (IQR)";
+                else title = "km/h (IQR)";
             } else {
-                title = (vCfg.palette === "sun") ? "Sun %" : ((vCfg.palette === "dbz") ? "dBZ" : "km/h");
+                if (vCfg.palette === "sun") title = "Sun %";
+                else if (vCfg.palette === "cloud") title = "Cloud %";
+                else if (vCfg.palette === "dbz") title = "dBZ";
+                else title = "km/h";
             }
 
             var barHtml = "";
@@ -784,7 +786,7 @@
                 var c = colors[i];
                 var isTrans = (c === 'transparent' || c === '#ffffff00' || (c.length === 9 && c.endsWith('00')));
                 var bg = isTrans ? 'transparent' : c;
-                var border = (paletteType === "dbz" && !isTrans) ? "border-bottom: 1px solid rgba(255,255,255,0.4);" : "";
+                var border = ((paletteType === "dbz" || paletteType === "cloud") && !isTrans) ? "border-bottom: 1px solid rgba(255,255,255,0.4);" : "";
                 barHtml += `<div style="background-color: ${bg}; flex: 1; ${border}"></div>`;
             }
 
@@ -793,9 +795,11 @@
                 labelsHtml = `<div>64</div><div>61</div><div>60</div><div>59</div><div>58</div><div>57</div><div>56</div><div>55</div><div>54</div><div>53</div><div>52</div><div>51</div><div>49</div><div>47</div><div>45</div><div>41</div><div>31</div><div>24</div><div>19</div><div>7</div>`;
             } else if (paletteType === "sun") {
                 labelsHtml = `<div>100</div><div>80</div><div>60</div><div>40</div><div>20</div><div>0</div>`;
+            } else if (paletteType === "cloud") {
+                labelsHtml = `<div>100</div><div>95</div><div>90</div><div>80</div><div>70</div><div>60</div><div>50</div><div>40</div><div>30</div><div>20</div><div>10</div>`;
             } else if (paletteType === "iqr_dbz") {
                 labelsHtml = `<div>+</div><div>65</div><div>56</div><div>48</div><div>40</div><div>32</div><div>25</div><div>18</div><div>12</div><div>6</div><div>0</div>`;
-            } else if (paletteType === "iqr_sun") {
+            } else if (paletteType === "iqr_sun" || paletteType === "iqr_cloud") {
                 labelsHtml = `<div>100</div><div>90</div><div>80</div><div>70</div><div>60</div><div>50</div><div>40</div><div>30</div><div>20</div><div>10</div><div>0</div>`;
             } else if (paletteType === "iqr_wind") {
                 labelsHtml = `<div>+</div><div>30</div><div>24</div><div>18</div><div>14</div><div>10</div><div>8</div><div>6</div><div>4</div><div>2</div><div>0</div>`;
@@ -1001,9 +1005,9 @@
             document.getElementById("loadingIndicator").style.display = "none";
 
             var tInfo = times[currentStepIdx];
-            var parts = tInfo.local_str.split(" ");
-            var dateParts = parts[0].split(".");
-            document.getElementById("currentStepLabel").innerText = dateParts[0] + "." + dateParts[1] + " " + parts[1].substring(0, 5) + " LT";
+            var parts = tInfo.local_str.split(" ")[0].split(".");
+            var hourMin = tInfo.local_str.split(" ")[1].substring(0, 5);
+            document.getElementById("currentStepLabel").innerText = parts[0] + "." + parts[1] + " " + hourMin + " LT";
             
             var refParts = config.ref_time_utc.split(" ");
             var refDateParts = refParts[0].split(".");
