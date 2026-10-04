@@ -47,7 +47,6 @@ def check_if_new_data_available():
         iso_str = str(latest_ref_raw).split('.')[0] + "Z"
 
         print(f"-> Vollständig veröffentlichter Lauf: {latest_ref_str}", flush=True)
-        
         if live_ref_time and (latest_ref_str == live_ref_time):
             print("=======================================================", flush=True)
             print(" Kein neuer Modelllauf vorhanden. Website ist aktuell!", flush=True)
@@ -58,7 +57,6 @@ def check_if_new_data_available():
             return True, latest_ref_str, iso_str
     except Exception as e:
         print(f"-> Hinweis: Neuester Lauf noch nicht vollständig bei MeteoSchweiz ({e}).", flush=True)
-        print("-> Warte auf den nächsten Check, bis alle Stunden bereit sind.", flush=True)
         return False, None, "latest"
 
 def get_dynamic_chunks(total_steps, max_chunks=4):
@@ -69,11 +67,7 @@ def get_dynamic_chunks(total_steps, max_chunks=4):
     cur = 0
     for i in range(k):
         size = base + (1 if i < rem else 0)
-        chunks.append({
-            "chunk": i,
-            "start": cur,
-            "end": cur + size - 1
-        })
+        chunks.append({"chunk": i, "start": cur, "end": cur + size - 1})
         cur += size
     return chunks
 
@@ -110,7 +104,7 @@ def prepare_base_site(ref_time_str, iso_str):
         "ref_time_utc": ref_time_str or ref_dt.strftime("%d.%m.%Y %H:00 UTC"),
         "member_names": member_names,
         "variables": config.VARIABLES,
-        "variables_config": config.VARIABLES_CONFIG,
+        "variables_config": {k: v for k, v in config.VARIABLES_CONFIG.items() if k in config.VARIABLES},
         "palettes": {
             "wind": {"levels": config.LEVELS, "colors": config.COLORS},
             "iqr":  {"levels": config.IQR_LEVELS, "colors": config.IQR_COLORS},
@@ -135,10 +129,11 @@ def process_single_local_step(args):
     step_results = stats.compute_timestep(weather_data, local_idx, weights)
 
     for var_name in config.VARIABLES:
-        for m_idx, d in step_results[var_name].items():
-            exporter.export_variable_step(var_name, m_idx, global_step_idx, d)
+        if var_name in step_results:
+            for m_idx, d in step_results[var_name].items():
+                exporter.export_variable_step(var_name, m_idx, global_step_idx, d)
 
-    print(f"✓ [Worker {os.getpid()}] Fertig Zeitschritt +{global_step_idx}h (Datei s{global_step_idx})", flush=True)
+    print(f"✓ [Worker {os.getpid()}] Fertig Zeitschritt +{global_step_idx}h", flush=True)
     return global_step_idx
 
 def run_chunk(start_step, end_step, ref_time_str):
@@ -149,13 +144,9 @@ def run_chunk(start_step, end_step, ref_time_str):
     num_chunk_steps = end_step - start_step + 1
 
     print(f"--- STARTE CHUNK: Schritte {start_step} bis {end_step} ({num_chunk_steps} Schritte) ---", flush=True)
-
     weather_data = downloader.fetch_weather_data(start_step, end_step, ref_time_str)
 
-    u_h = weather_data["surface"]["u_h"]
-    source_lons = u_h.coords['lon'].values
-    source_lats = u_h.coords['lat'].values
-    weights = stats.init_regrid_weights(source_lons, source_lats)
+    weights = stats.init_regrid_weights(weather_data["ref_lon"], weather_data["ref_lat"])
 
     global SHARED_DATA
     SHARED_DATA = {
@@ -173,8 +164,8 @@ def run_chunk(start_step, end_step, ref_time_str):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--prepare", action="store_true", help="Führt Schnellprüfung aus und baut Basisdateien")
-    parser.add_argument("--force", action="store_true", help="Erzwingt Neuberechnung")
+    parser.add_argument("--prepare", action="store_true")
+    parser.add_argument("--force", action="store_true")
     parser.add_argument("--start-step", type=int, default=0)
     parser.add_argument("--end-step", type=int, default=33)
     parser.add_argument("--ref-time", type=str, default="latest")
@@ -183,7 +174,6 @@ def main():
     if args.prepare:
         is_new, latest_ref_str, iso_str = check_if_new_data_available()
         should_run = is_new or args.force
-        
         if should_run:
             prepare_base_site(latest_ref_str, iso_str)
 
