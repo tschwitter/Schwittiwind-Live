@@ -55,11 +55,20 @@ def remap_fast(field, weights):
     )
     return out.reshape(config.NY, config.NX)
 
-def compute_statistics_for_array(all_values):
+def compute_statistics_for_array(all_values, threshold=None):
+    """Berechnet Median, Min, Max, Quantile. Maskiert erst DANACH Werte unterhalb des Schwellenwerts."""
     s_min = np.nanmin(all_values, axis=0)
     s_max = np.nanmax(all_values, axis=0)
     q25, median, q75 = np.nanpercentile(all_values, [25, 50, 75], axis=0)
     iqr = q75 - q25
+
+    # Schwellenwert-Filterung (z.B. < 7 dBZ oder < 10% Sonne) NACH der Ensemble-Mathematik!
+    if threshold is not None:
+        s_min = np.where(s_min < threshold, np.nan, s_min)
+        s_max = np.where(s_max < threshold, np.nan, s_max)
+        median = np.where(median < threshold, np.nan, median)
+        q25 = np.where(q25 < threshold, np.nan, q25)
+        q75 = np.where(q75 < threshold, np.nan, q75)
 
     return {
         11: {"speed": median, "has_arrows": False},
@@ -131,54 +140,54 @@ def compute_timestep(weather_data, step_idx, weights):
             gust_data.update(compute_statistics_for_array(all_g))
         step_results["gust"] = gust_data
 
-    # 2. Radar (dBZ)
+    # 2. Radar (dBZ) – Exakt ohne NaN-Verfälschung
     if "dbz" in config.VARIABLES:
         has_ens = config.VARIABLES_CONFIG["dbz"].get("has_ensemble", False)
         dbz_h = surface["dbz_h"]
         dbz_s = get_step_slice(dbz_h, step_idx)
         g_dbz = remap_fast(dbz_s, weights)
-        g_dbz = np.where(g_dbz < 7.0, np.nan, g_dbz)
-        dbz_data = {0: {"speed": g_dbz, "has_arrows": False}}
+        # Für die Anzeige von Member 0: < 7 dBZ ist transparent
+        dbz_data = {0: {"speed": np.where(g_dbz < 7.0, np.nan, g_dbz), "has_arrows": False}}
 
         if has_ens and "dbz_e" in surface:
             dbz_e = surface["dbz_e"]
             members = dbz_e.coords['eps'].values
             all_dbz = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
-            all_dbz[0, :, :] = g_dbz
+            all_dbz[0, :, :] = g_dbz  # Echte Zahlenwerte behalten!
+            
             for m_i, eps_val in enumerate(members, start=1):
                 d_s = get_step_slice(dbz_e.sel(eps=eps_val), step_idx)
                 gd = remap_fast(d_s, weights)
-                gd = np.where(gd < 7.0, np.nan, gd)
-                all_dbz[m_i, :, :] = gd
-                dbz_data[m_i] = {"speed": gd, "has_arrows": False}
-            dbz_data.update(compute_statistics_for_array(all_dbz))
+                all_dbz[m_i, :, :] = gd  # Echte Zahlenwerte behalten!
+                dbz_data[m_i] = {"speed": np.where(gd < 7.0, np.nan, gd), "has_arrows": False}
+            
+            # Statistiken berechnen und erst DANACH < 7.0 ausblenden
+            dbz_data.update(compute_statistics_for_array(all_dbz, threshold=7.0))
         step_results["dbz"] = dbz_data
 
-    # 3. Sonnenschein (%) – Saubere stündliche Prozentrechnung (0 bis 100%)
+    # 3. Sonnenschein (%) – Exakt ohne NaN-Verfälschung
     if "sun" in config.VARIABLES:
         has_ens = config.VARIABLES_CONFIG["sun"].get("has_ensemble", False)
         sun_h = surface["sun_h"]
         sun_s = get_step_slice(sun_h, step_idx)
         g_sun_sec = remap_fast(sun_s, weights)
-        # Sekunden / 3600s = 0..1 -> * 100 = 0..100%
         sun_pct = np.clip((g_sun_sec / 3600.0) * 100.0, 0.0, 100.0)
-        # Werte unter 10% sind transparent
-        sun_pct = np.where(sun_pct < 10.0, np.nan, sun_pct)
-        sun_data = {0: {"speed": sun_pct, "has_arrows": False}}
+        sun_data = {0: {"speed": np.where(sun_pct < 10.0, np.nan, sun_pct), "has_arrows": False}}
 
         if has_ens and "sun_e" in surface:
             sun_e = surface["sun_e"]
             members = sun_e.coords['eps'].values
             all_sun = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
             all_sun[0, :, :] = sun_pct
+            
             for m_i, eps_val in enumerate(members, start=1):
                 se_s = get_step_slice(sun_e.sel(eps=eps_val), step_idx)
                 gs_sec = remap_fast(se_s, weights)
                 spct = np.clip((gs_sec / 3600.0) * 100.0, 0.0, 100.0)
-                spct = np.where(spct < 10.0, np.nan, spct)
                 all_sun[m_i, :, :] = spct
-                sun_data[m_i] = {"speed": spct, "has_arrows": False}
-            sun_data.update(compute_statistics_for_array(all_sun))
+                sun_data[m_i] = {"speed": np.where(spct < 10.0, np.nan, spct), "has_arrows": False}
+            
+            sun_data.update(compute_statistics_for_array(all_sun, threshold=10.0))
         step_results["sun"] = sun_data
 
     # 4. Höhen-Winde
@@ -206,7 +215,7 @@ def compute_timestep(weather_data, step_idx, weights):
                 ue_s = get_step_slice(u_ens.sel(eps=eps_val), step_idx)
                 ve_s = get_step_slice(v_ens.sel(eps=eps_val), step_idx)
                 gue = remap_fast(ue_s, weights)
-                gve = remap_fast(ve_s, weights)
+                gve = remap_fast(vs_e, weights)
                 spe = np.sqrt(gue**2 + gve**2) * 3.6
                 dre = (np.arctan2(gue, gve) * 180 / np.pi) % 360
                 all_sp[m_i, :, :] = spe
