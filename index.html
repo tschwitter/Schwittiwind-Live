@@ -15,7 +15,7 @@
         #map { width: 100%; height: 100%; z-index: 1; }
         .wind-arrow-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
 
-        /* --- OBERE LEISTE (HAUPTAUSWAHL + 2. EBENE + EINSTELLUNGEN) --- */
+        /* --- OBERE LEISTE --- */
         .top-bar-container {
             position: fixed;
             top: 15px; left: 50%;
@@ -52,7 +52,6 @@
             box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         }
 
-        /* 2. Ebene & Zahnrad Buttons */
         .layer2-btn, .settings-btn {
             background-color: rgba(33, 43, 54, 0.9);
             border: 1px solid rgba(255,255,255,0.2);
@@ -71,7 +70,6 @@
         .layer2-btn.active { background-color: #2e7d32; color: white; border-color: #81c784; }
         .settings-btn { padding: 8px 10px; font-size: 14px; }
 
-        /* --- POPUPS / MENÜS --- */
         .dropdown-menu, .settings-popup {
             display: none;
             position: fixed;
@@ -106,12 +104,7 @@
         .dropdown-item.clear { background: rgba(217, 83, 79, 0.3); color: #ff8a80; }
         .dropdown-item.clear:hover { background: #d9534f; color: white; }
 
-        /* Einstellungs-Panel */
-        .settings-popup {
-            right: 20px;
-            top: 65px;
-            width: 250px;
-        }
+        .settings-popup { right: 20px; top: 65px; width: 250px; }
         .settings-title {
             font-size: 13px; font-weight: bold; border-bottom: 1px solid rgba(255,255,255,0.2);
             padding-bottom: 6px; margin-bottom: 10px; text-align: center;
@@ -150,7 +143,6 @@
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
 
-        /* --- VERTICAL PANEL (RECHTS) --- */
         .member-panel {
             position: fixed;
             top: 70px; right: 20px; bottom: 150px;
@@ -188,7 +180,6 @@
         .member-btn.active { background-color: #007ab7; color: white; }
         .only-hl-info { display: none; font-size: 11px; color: #aaa; text-align: center; padding: 10px 4px; font-style: italic; }
 
-        /* --- KONTROLLZENTRUM (UNTEN MITTE) --- */
         .control-panel {
             position: fixed;
             bottom: 30px; left: 50%;
@@ -234,7 +225,7 @@
         }
         .bottom-labels-row { display: flex; justify-content: space-between; font-size: 12px; font-weight: bold; color: white; padding: 0 4px; }
 
-        /* --- DYNAMISCHE LEGENDE (UNTEN LINKS) --- */
+        /* --- DYNAMISCHE LEGENDE --- */
         .legend-box { 
             position: fixed; 
             bottom: 30px; left: 20px; 
@@ -283,17 +274,14 @@
 
     <div id="map"></div>
 
-    <!-- OBERE LEISTE -->
     <div class="top-bar-container">
         <div class="var-switch-container" id="varSwitchContainer"></div>
         <button class="layer2-btn" id="layer2Btn" onclick="toggleDropdown()">+ 2. Ebene</button>
         <button class="settings-btn" id="settingsBtn" onclick="toggleSettings()" title="Ebenen-Einstellungen">⚙</button>
     </div>
 
-    <!-- DROPDOWN-AUSWAHL FÜR 2. EBENE -->
     <div class="dropdown-menu" id="layer2Dropdown"></div>
 
-    <!-- EINSTELLUNGEN-POPUP -->
     <div class="settings-popup" id="settingsPopup">
         <div class="settings-title">⚙ Ebenen-Optionen</div>
         
@@ -332,7 +320,6 @@
 
     <div id="loadingIndicator">Lade Wetterdaten...</div>
 
-    <!-- RECHTES PANEL (LÄUFE) -->
     <div class="member-panel">
         <div class="member-panel-title">Läufe</div>
         <div class="member-section-title">Hauptlauf</div>
@@ -346,7 +333,6 @@
         <div id="onlyHlNotice" class="only-hl-info">Nur Hauptlauf</div>
     </div>
 
-    <!-- UNTERES KONTROLLZENTRUM -->
     <div class="control-panel">
         <div class="day-buttons-row" id="dayButtonsContainer"></div>
         <div class="main-controls-row">
@@ -364,7 +350,6 @@
         </div>
     </div>
 
-    <!-- DYNAMISCHE DOPPEL-LEGENDE -->
     <div class="legend-box" id="legendBox"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -393,6 +378,13 @@
         var uniqueDays = [];
         var dayTimesteps = {};
         var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+
+        function getDayNameForStep(stepIdx) {
+            if (!times || !times[stepIdx]) return "";
+            var parts = times[stepIdx].local_str.split(" ")[0].split(".");
+            var dateObj = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+            return weekdays[dateObj.getDay()];
+        }
 
         function toggleDropdown() {
             var el = document.getElementById("layer2Dropdown");
@@ -521,8 +513,49 @@
             if (notice) notice.style.display = hasEns ? "none" : "block";
         }
 
-        function navLeft() { updateForecast(currentMemberIdx, Math.max(0, currentStepIdx - 1)); }
-        function navRight() { updateForecast(currentMemberIdx, Math.min(times.length - 1, currentStepIdx + 1)); }
+        // ================= 24H SLIDER & TAG-PAGINIERUNG =================
+        function navLeft() {
+            var curDay = getDayNameForStep(currentStepIdx);
+            var steps = dayTimesteps[curDay] || [];
+            var pos = steps.indexOf(currentStepIdx);
+
+            if (pos > 0) {
+                // Ein Schritt nach links im aktuellen Tag
+                updateForecast(currentMemberIdx, steps[pos - 1]);
+            } else {
+                // Am linken Anfang: Wechsle zum vorherigen Tag ans Ende!
+                var dIdx = uniqueDays.indexOf(curDay);
+                if (dIdx > 0) {
+                    var prevDay = uniqueDays[dIdx - 1];
+                    var prevSteps = dayTimesteps[prevDay];
+                    if (prevSteps && prevSteps.length > 0) {
+                        updateForecast(currentMemberIdx, prevSteps[prevSteps.length - 1]);
+                    }
+                }
+            }
+        }
+
+        function navRight() {
+            var curDay = getDayNameForStep(currentStepIdx);
+            var steps = dayTimesteps[curDay] || [];
+            var pos = steps.indexOf(currentStepIdx);
+
+            if (pos < steps.length - 1) {
+                // Ein Schritt nach rechts im aktuellen Tag
+                updateForecast(currentMemberIdx, steps[pos + 1]);
+            } else {
+                // Am rechten Ende: Wechsle zum nächsten Tag an den linken Anfang (Index 0)!
+                var dIdx = uniqueDays.indexOf(curDay);
+                if (dIdx < uniqueDays.length - 1) {
+                    var nextDay = uniqueDays[dIdx + 1];
+                    var nextSteps = dayTimesteps[nextDay];
+                    if (nextSteps && nextSteps.length > 0) {
+                        updateForecast(currentMemberIdx, nextSteps[0]);
+                    }
+                }
+            }
+        }
+
         function navUp() {
             var vCfg = config.variables_config[layer1Var];
             if (vCfg && !vCfg.has_ensemble) return;
@@ -607,13 +640,19 @@
             });
         }
 
+        // ================= DYNAMISCHE LEGENDE FÜR LÖSUNG 1 =================
         function renderSingleLegendCol(varName, isIQR) {
             var vCfg = config.variables_config[varName] || {};
-            var paletteType = isIQR ? "iqr" : (vCfg.palette || "wind");
+            var paletteType = isIQR ? ("iqr_" + (vCfg.palette || "wind")) : (vCfg.palette || "wind");
             var p = config.palettes[paletteType] || config.palettes["wind"];
             var colors = p.colors;
 
-            var title = (paletteType === "sun") ? "Sun %" : ((paletteType === "dbz") ? "dBZ" : "km/h");
+            var title = "";
+            if (isIQR) {
+                title = (vCfg.palette === "sun") ? "% (IQR)" : ((vCfg.palette === "dbz") ? "dBZ (IQR)" : "km/h (IQR)");
+            } else {
+                title = (vCfg.palette === "sun") ? "Sun %" : ((vCfg.palette === "dbz") ? "dBZ" : "km/h");
+            }
 
             var barHtml = "";
             for (var i = colors.length - 1; i >= 0; i--) {
@@ -629,8 +668,12 @@
                 labelsHtml = `<div>64</div><div>61</div><div>60</div><div>59</div><div>58</div><div>57</div><div>56</div><div>55</div><div>54</div><div>53</div><div>52</div><div>51</div><div>49</div><div>47</div><div>45</div><div>41</div><div>31</div><div>24</div><div>19</div><div>7</div>`;
             } else if (paletteType === "sun") {
                 labelsHtml = `<div>100</div><div>80</div><div>60</div><div>40</div><div>20</div><div>0</div>`;
-            } else if (paletteType === "iqr") {
-                labelsHtml = `<div>+</div><div>30</div><div>20</div><div>15</div><div>12</div><div>10</div><div>8</div><div>6</div><div>4</div><div>2</div><div>0</div>`;
+            } else if (paletteType === "iqr_dbz") {
+                labelsHtml = `<div>+</div><div>55</div><div>45</div><div>38</div><div>30</div><div>25</div><div>20</div><div>15</div><div>10</div><div>5</div><div>0</div>`;
+            } else if (paletteType === "iqr_sun") {
+                labelsHtml = `<div>100</div><div>90</div><div>80</div><div>70</div><div>60</div><div>50</div><div>40</div><div>30</div><div>20</div><div>10</div><div>0</div>`;
+            } else if (paletteType === "iqr_wind") {
+                labelsHtml = `<div>+</div><div>30</div><div>24</div><div>18</div><div>14</div><div>10</div><div>8</div><div>6</div><div>4</div><div>2</div><div>0</div>`;
             } else {
                 labelsHtml = `<div>+</div><div>45</div><div>36</div><div>27</div><div>23</div><div>18</div><div>14</div><div>11</div><div>7</div><div>4</div><div>0</div>`;
             }
@@ -719,7 +762,7 @@
             const cacheKey = varName + "_" + memberIdx + "_" + stepIdx;
             const vCfg = config.variables_config[varName] || {};
             const isIQR = (vCfg.has_ensemble && memberIdx === 16);
-            const paletteType = isIQR ? "iqr" : (vCfg.palette || "wind");
+            const paletteType = isIQR ? ("iqr_" + (vCfg.palette || "wind")) : (vCfg.palette || "wind");
 
             if (!cacheContours[cacheKey]) {
                 const runBuster = encodeURIComponent(config.ref_time_utc);
@@ -739,15 +782,11 @@
                 const timesRes = await fetch('data/times.json?t=' + cacheBuster);
                 times = await timesRes.json();
 
-                var slider = document.getElementById("timeSlider");
-                slider.max = times.length - 1;
-
                 initVarSwitchButtons();
                 initLayer2Dropdown();
                 initDayButtons();
                 initMemberPanel();
 
-                // INITIALEN ENSEMBLE-STATUS BEIM LADEN SOFORT KORREKT SETZEN
                 var initialCfg = config.variables_config[layer1Var];
                 var initialHasEns = initialCfg ? initialCfg.has_ensemble : true;
                 if (!initialHasEns) currentMemberIdx = 0;
@@ -761,7 +800,6 @@
                     preferCanvas: true
                 });
 
-                // Panes für saubere Ebenen-Staffelung
                 map.createPane('contourPane1');
                 map.getPane('contourPane1').style.opacity = layer1Opacity;
                 map.getPane('contourPane1').style.zIndex = '400';
@@ -770,7 +808,6 @@
                 map.getPane('contourPane2').style.opacity = layer2Opacity;
                 map.getPane('contourPane2').style.zIndex = '450';
 
-                // Swisstopo Landeskarte mit MeteoSchweiz Quellenangabe
                 L.tileLayer(swisstopo_url, {
                     attribution: '&copy; <a href="https://www.swisstopo.admin.ch/" target="_blank">swisstopo</a> | Wetterdaten: &copy; <a href="https://www.meteoschweiz.admin.ch/" target="_blank">MeteoSchweiz</a>',
                     maxZoom: 15, maxNativeZoom: 10
@@ -779,13 +816,20 @@
                 map.on('moveend', drawVisibleArrows);
                 map.on('zoomend', drawVisibleArrows);
 
-                // Klick außerhalb schließt Popups
                 map.on('click', function() {
                     document.getElementById("layer2Dropdown").style.display = "none";
                     document.getElementById("settingsPopup").style.display = "none";
                 });
 
-                slider.addEventListener("input", function() { updateForecast(currentMemberIdx, this.value); });
+                // SLIDER LISTENER: Bewegt sich nur innerhalb der Stunden des aktuellen Tages
+                var slider = document.getElementById("timeSlider");
+                slider.addEventListener("input", function() {
+                    var curDay = getDayNameForStep(currentStepIdx);
+                    var steps = dayTimesteps[curDay] || [];
+                    if (steps[this.value] !== undefined) {
+                        updateForecast(currentMemberIdx, steps[this.value]);
+                    }
+                });
 
                 document.addEventListener('keydown', function(event) {
                     if (event.key === "ArrowLeft") navLeft();
@@ -808,7 +852,15 @@
         async function updateForecast(newMemberIdx, newStepIdx) {
             currentMemberIdx = parseInt(newMemberIdx);
             currentStepIdx = parseInt(newStepIdx);
-            document.getElementById("timeSlider").value = currentStepIdx;
+
+            // AKTUELLEN TAG & SLIDER-POSITION INNERHALB DES TAGES BESTIMMEN
+            var currentDayName = getDayNameForStep(currentStepIdx);
+            var daySteps = dayTimesteps[currentDayName] || [];
+            var slider = document.getElementById("timeSlider");
+            
+            // Slider zeigt nur die Stunden dieses Tages an (z. B. 0 bis 23)
+            slider.max = Math.max(0, daySteps.length - 1);
+            slider.value = Math.max(0, daySteps.indexOf(currentStepIdx));
 
             document.getElementById("loadingIndicator").style.display = "block";
             try {
@@ -836,10 +888,10 @@
             var refTimeHour = refParts[1].split(":")[0];
             document.getElementById("modelRunLabel").innerText = "🕒" + refDateParts[0] + "." + refDateParts[1] + " " + refTimeHour + "Z CH1";
 
-            var dayName = weekdays[(new Date(parseInt(dateParts[2]), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]))).getDay()];
+            // Tag-Buttons synchronisieren
             uniqueDays.forEach(d => {
                 var btn = document.getElementById("day-btn-" + d);
-                if (btn) btn.classList.toggle("active", d === dayName);
+                if (btn) btn.classList.toggle("active", d === currentDayName);
             });
 
             for (var i = 0; i < config.member_names.length; i++) {
