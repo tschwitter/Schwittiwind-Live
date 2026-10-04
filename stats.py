@@ -25,20 +25,13 @@ def init_regrid_weights(source_lons, source_lats):
     b2 = 1.0 - b0 - b1
 
     vertices = tri.simplices[s]
-
     print("✓ Geometrische Gewichte erfolgreich im RAM vorbereitet!", flush=True)
 
     return {
-        "v0": vertices[:, 0],
-        "v1": vertices[:, 1],
-        "v2": vertices[:, 2],
-        "b0": b0.astype(np.float32),
-        "b1": b1.astype(np.float32),
-        "b2": b2.astype(np.float32),
-        "valid": valid,
-        "valid_indices": np.where(valid)[0],
-        "grid_lon": grid_lon,
-        "grid_lat": grid_lat
+        "v0": vertices[:, 0], "v1": vertices[:, 1], "v2": vertices[:, 2],
+        "b0": b0.astype(np.float32), "b1": b1.astype(np.float32), "b2": b2.astype(np.float32),
+        "valid": valid, "valid_indices": np.where(valid)[0],
+        "grid_lon": grid_lon, "grid_lat": grid_lat
     }
 
 def remap_fast(field, weights):
@@ -48,7 +41,6 @@ def remap_fast(field, weights):
         vals = vals.ravel()
 
     out = np.full(config.NY * config.NX, np.nan, dtype=np.float32)
-
     val_v0 = vals[weights["v0"]]
     val_v1 = vals[weights["v1"]]
     val_v2 = vals[weights["v2"]]
@@ -63,10 +55,10 @@ def remap_fast(field, weights):
     )
     return out.reshape(config.NY, config.NX)
 
-def compute_statistics_for_array(all_speeds):
-    s_min = np.nanmin(all_speeds, axis=0)
-    s_max = np.nanmax(all_speeds, axis=0)
-    q25, median, q75 = np.nanpercentile(all_speeds, [25, 50, 75], axis=0)
+def compute_statistics_for_array(all_values):
+    s_min = np.nanmin(all_values, axis=0)
+    s_max = np.nanmax(all_values, axis=0)
+    q25, median, q75 = np.nanpercentile(all_values, [25, 50, 75], axis=0)
     iqr = q75 - q25
 
     return {
@@ -88,121 +80,138 @@ def compute_timestep(weather_data, step_idx, weights):
     altitude_hl = weather_data["altitude_hl"]
     altitude_ens = weather_data["altitude_ens"]
 
-    u_h, v_h, g_h = surface["u_h"], surface["v_h"], surface["g_h"]
-    u_e, v_e, g_e = surface["u_e"], surface["v_e"], surface["g_e"]
-    dbz_h, sun_h = surface["dbz_h"], surface["sun_h"]
-    dbz_e, sun_e = surface["dbz_e"], surface["sun_e"]
-
-    ensemble_members = u_e.coords['eps'].values
-    num_members = 1 + len(ensemble_members)
-
     step_results = {}
 
-    # 1. BODEN-FELDER (Wind, Böen, dBZ, Sonne)
-    all_speeds_wind = np.zeros((num_members, config.NY, config.NX), dtype=np.float32)
-    all_speeds_gust = np.zeros((num_members, config.NY, config.NX), dtype=np.float32)
-    all_values_dbz  = np.zeros((num_members, config.NY, config.NX), dtype=np.float32)
-    all_values_sun  = np.zeros((num_members, config.NY, config.NX), dtype=np.float32)
+    # 1. 10m Wind & Böen
+    if "wind" in config.VARIABLES:
+        has_ens = config.VARIABLES_CONFIG["wind"].get("has_ensemble", False)
+        u_h, v_h = surface["u_h"], surface["v_h"]
+        u_s = get_step_slice(u_h, step_idx)
+        v_s = get_step_slice(v_h, step_idx)
+        gu = remap_fast(u_s, weights)
+        gv = remap_fast(v_s, weights)
+        sp = np.sqrt(gu**2 + gv**2) * 3.6
+        dr = (np.arctan2(gu, gv) * 180 / np.pi) % 360
+        wind_data = {0: {"speed": sp, "dir": dr, "has_arrows": True}}
 
-    wind_data = {}
-    gust_data = {}
-    dbz_data  = {}
-    sun_data  = {}
+        if has_ens and "u_e" in surface:
+            u_e, v_e = surface["u_e"], surface["v_e"]
+            members = u_e.coords['eps'].values
+            all_sp = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
+            all_sp[0, :, :] = sp
+            for m_i, eps_val in enumerate(members, start=1):
+                us_e = get_step_slice(u_e.sel(eps=eps_val), step_idx)
+                vs_e = get_step_slice(v_e.sel(eps=eps_val), step_idx)
+                gue = remap_fast(us_e, weights)
+                gve = remap_fast(vs_e, weights)
+                spe = np.sqrt(gue**2 + gve**2) * 3.6
+                dre = (np.arctan2(gue, gve) * 180 / np.pi) % 360
+                all_sp[m_i, :, :] = spe
+                wind_data[m_i] = {"speed": spe, "dir": dre, "has_arrows": True}
+            wind_data.update(compute_statistics_for_array(all_sp))
+        step_results["wind"] = wind_data
 
-    for m_idx in range(num_members):
-        if m_idx == 0:
-            u_s   = get_step_slice(u_h, step_idx)
-            v_s   = get_step_slice(v_h, step_idx)
-            g_s   = get_step_slice(g_h, step_idx)
-            dbz_s = get_step_slice(dbz_h, step_idx)
-            sun_s = get_step_slice(sun_h, step_idx)
-        else:
-            eps_val = ensemble_members[m_idx - 1]
-            u_s   = get_step_slice(u_e.sel(eps=eps_val), step_idx)
-            v_s   = get_step_slice(v_e.sel(eps=eps_val), step_idx)
-            g_s   = get_step_slice(g_e.sel(eps=eps_val), step_idx)
-            dbz_s = get_step_slice(dbz_e.sel(eps=eps_val), step_idx)
-            sun_s = get_step_slice(sun_e.sel(eps=eps_val), step_idx)
+    if "gust" in config.VARIABLES:
+        has_ens = config.VARIABLES_CONFIG["gust"].get("has_ensemble", False)
+        g_h = surface["g_h"]
+        gs_h = get_step_slice(g_h, step_idx)
+        sp_g = remap_fast(gs_h, weights) * 3.6
+        gust_data = {0: {"speed": sp_g, "has_arrows": False}}
 
-        grid_u   = remap_fast(u_s, weights)
-        grid_v   = remap_fast(v_s, weights)
-        grid_g   = remap_fast(g_s, weights)
-        grid_dbz = remap_fast(dbz_s, weights)
-        grid_sun = remap_fast(sun_s, weights)
+        if has_ens and "g_e" in surface:
+            g_e = surface["g_e"]
+            members = g_e.coords['eps'].values
+            all_g = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
+            all_g[0, :, :] = sp_g
+            for m_i, eps_val in enumerate(members, start=1):
+                ge_s = get_step_slice(g_e.sel(eps=eps_val), step_idx)
+                spe_g = remap_fast(ge_s, weights) * 3.6
+                all_g[m_i, :, :] = spe_g
+                gust_data[m_i] = {"speed": spe_g, "has_arrows": False}
+            gust_data.update(compute_statistics_for_array(all_g))
+        step_results["gust"] = gust_data
 
-        # Wind & Böen
-        speed_wind = np.sqrt(grid_u**2 + grid_v**2) * 3.6
-        dir_wind = (np.arctan2(grid_u, grid_v) * 180 / np.pi) % 360
-        all_speeds_wind[m_idx, :, :] = speed_wind
-        wind_data[m_idx] = {"speed": speed_wind, "dir": dir_wind, "has_arrows": True}
+    # 2. Radar (dBZ)
+    if "dbz" in config.VARIABLES:
+        has_ens = config.VARIABLES_CONFIG["dbz"].get("has_ensemble", False)
+        dbz_h = surface["dbz_h"]
+        dbz_s = get_step_slice(dbz_h, step_idx)
+        g_dbz = remap_fast(dbz_s, weights)
+        g_dbz = np.where(g_dbz < 7.0, np.nan, g_dbz)
+        dbz_data = {0: {"speed": g_dbz, "has_arrows": False}}
 
-        speed_gust = grid_g * 3.6
-        all_speeds_gust[m_idx, :, :] = speed_gust
-        gust_data[m_idx] = {"speed": speed_gust, "has_arrows": False}
+        if has_ens and "dbz_e" in surface:
+            dbz_e = surface["dbz_e"]
+            members = dbz_e.coords['eps'].values
+            all_dbz = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
+            all_dbz[0, :, :] = g_dbz
+            for m_i, eps_val in enumerate(members, start=1):
+                d_s = get_step_slice(dbz_e.sel(eps=eps_val), step_idx)
+                gd = remap_fast(d_s, weights)
+                gd = np.where(gd < 7.0, np.nan, gd)
+                all_dbz[m_i, :, :] = gd
+                dbz_data[m_i] = {"speed": gd, "has_arrows": False}
+            dbz_data.update(compute_statistics_for_array(all_dbz))
+        step_results["dbz"] = dbz_data
 
-        # Radar dBZ (Werte unter 7 sind transparent/kein Regen)
-        dbz_val = np.where(grid_dbz < 7.0, np.nan, grid_dbz)
-        all_values_dbz[m_idx, :, :] = dbz_val
-        dbz_data[m_idx] = {"speed": dbz_val, "has_arrows": False}
+    # 3. Sonnenschein (%) – Saubere stündliche Prozentrechnung (0 bis 100%)
+    if "sun" in config.VARIABLES:
+        has_ens = config.VARIABLES_CONFIG["sun"].get("has_ensemble", False)
+        sun_h = surface["sun_h"]
+        sun_s = get_step_slice(sun_h, step_idx)
+        g_sun_sec = remap_fast(sun_s, weights)
+        # Sekunden / 3600s = 0..1 -> * 100 = 0..100%
+        sun_pct = np.clip((g_sun_sec / 3600.0) * 100.0, 0.0, 100.0)
+        # Werte unter 10% sind transparent
+        sun_pct = np.where(sun_pct < 10.0, np.nan, sun_pct)
+        sun_data = {0: {"speed": sun_pct, "has_arrows": False}}
 
-        # Sonnenschein % (DURSUN in Sek/h -> / 36 für 0-100 %)
-        sun_percent = np.clip(grid_sun / 36.0, 0.0, 100.0)
-        sun_percent = np.where(sun_percent < 5.0, np.nan, sun_percent)
-        all_values_sun[m_idx, :, :] = sun_percent
-        sun_data[m_idx] = {"speed": sun_percent, "has_arrows": False}
+        if has_ens and "sun_e" in surface:
+            sun_e = surface["sun_e"]
+            members = sun_e.coords['eps'].values
+            all_sun = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
+            all_sun[0, :, :] = sun_pct
+            for m_i, eps_val in enumerate(members, start=1):
+                se_s = get_step_slice(sun_e.sel(eps=eps_val), step_idx)
+                gs_sec = remap_fast(se_s, weights)
+                spct = np.clip((gs_sec / 3600.0) * 100.0, 0.0, 100.0)
+                spct = np.where(spct < 10.0, np.nan, spct)
+                all_sun[m_i, :, :] = spct
+                sun_data[m_i] = {"speed": spct, "has_arrows": False}
+            sun_data.update(compute_statistics_for_array(all_sun))
+        step_results["sun"] = sun_data
 
-    wind_data.update(compute_statistics_for_array(all_speeds_wind))
-    gust_data.update(compute_statistics_for_array(all_speeds_gust))
-    dbz_data.update(compute_statistics_for_array(all_values_dbz))
-    sun_data.update(compute_statistics_for_array(all_values_sun))
-
-    step_results["wind"] = wind_data
-    step_results["gust"] = gust_data
-    step_results["dbz"]  = dbz_data
-    step_results["sun"]  = sun_data
-
-    # 2. HÖHEN-WINDE
+    # 4. Höhen-Winde
     for var_name, var_cfg in config.VARIABLES_CONFIG.items():
-        if var_cfg.get("type") != "altitude":
+        if var_cfg.get("type") != "altitude" or var_name not in config.VARIABLES:
             continue
-
         alt = var_cfg["altitude"]
         has_ens = var_cfg.get("has_ensemble", False)
         u_hl, v_hl = altitude_hl[alt]
 
-        if has_ens:
+        u_s = get_step_slice(u_hl, step_idx)
+        v_s = get_step_slice(v_hl, step_idx)
+        gu = remap_fast(u_s, weights)
+        gv = remap_fast(v_s, weights)
+        sp = np.sqrt(gu**2 + gv**2) * 3.6
+        dr = (np.arctan2(gu, gv) * 180 / np.pi) % 360
+        alt_data = {0: {"speed": sp, "dir": dr, "has_arrows": True}}
+
+        if has_ens and alt in altitude_ens:
             u_ens, v_ens = altitude_ens[alt]
-            all_speeds_alt = np.zeros((num_members, config.NY, config.NX), dtype=np.float32)
-            alt_data = {}
-
-            for m_idx in range(num_members):
-                if m_idx == 0:
-                    u_s = get_step_slice(u_hl, step_idx)
-                    v_s = get_step_slice(v_hl, step_idx)
-                else:
-                    eps_val = ensemble_members[m_idx - 1]
-                    u_s = get_step_slice(u_ens.sel(eps=eps_val), step_idx)
-                    v_s = get_step_slice(v_ens.sel(eps=eps_val), step_idx)
-
-                grid_u = remap_fast(u_s, weights)
-                grid_v = remap_fast(v_s, weights)
-                speed = np.sqrt(grid_u**2 + grid_v**2) * 3.6
-                direction = (np.arctan2(grid_u, grid_v) * 180 / np.pi) % 360
-                all_speeds_alt[m_idx, :, :] = speed
-                alt_data[m_idx] = {"speed": speed, "dir": direction, "has_arrows": True}
-
-            alt_data.update(compute_statistics_for_array(all_speeds_alt))
-            step_results[var_name] = alt_data
-        else:
-            u_s = get_step_slice(u_hl, step_idx)
-            v_s = get_step_slice(v_hl, step_idx)
-            grid_u = remap_fast(u_s, weights)
-            grid_v = remap_fast(v_s, weights)
-            speed = np.sqrt(grid_u**2 + grid_v**2) * 3.6
-            direction = (np.arctan2(grid_u, grid_v) * 180 / np.pi) % 360
-
-            step_results[var_name] = {
-                0: {"speed": speed, "dir": direction, "has_arrows": True}
-            }
+            members = u_ens.coords['eps'].values
+            all_sp = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
+            all_sp[0, :, :] = sp
+            for m_i, eps_val in enumerate(members, start=1):
+                ue_s = get_step_slice(u_ens.sel(eps=eps_val), step_idx)
+                ve_s = get_step_slice(v_ens.sel(eps=eps_val), step_idx)
+                gue = remap_fast(ue_s, weights)
+                gve = remap_fast(ve_s, weights)
+                spe = np.sqrt(gue**2 + gve**2) * 3.6
+                dre = (np.arctan2(gue, gve) * 180 / np.pi) % 360
+                all_sp[m_i, :, :] = spe
+                alt_data[m_i] = {"speed": spe, "dir": dre, "has_arrows": True}
+            alt_data.update(compute_statistics_for_array(all_sp))
+        step_results[var_name] = alt_data
 
     return step_results
