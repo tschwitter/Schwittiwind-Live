@@ -29,7 +29,7 @@ VARIABLES_CONFIG = {
 # ================= SCHNELLAUSWAHL FÜR TESTS =================
 # Setze oder entferne das '#' vor Variablen, um sie blitzschnell ein- oder auszuschalten!
 ACTIVE_VARIABLES = [
-    # "wind",
+     "wind",
     # "gust",
     "dbz",
     "sun",
