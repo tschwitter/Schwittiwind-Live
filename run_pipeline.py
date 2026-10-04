@@ -92,7 +92,7 @@ def prepare_base_site(ref_time_str, iso_str):
         json.dump(times_by_step, f)
 
     member_names = (
-        ["Hauptlauf (Control)"] + 
+        ["Hauptlauf"] + 
         [f"Ens Member {m}" for m in range(1, 11)] + 
         ["Median", "Min", "Max", "25% Quantil", "75% Quantil", "Interquantilabstand"]
     )
