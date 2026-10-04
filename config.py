@@ -16,7 +16,7 @@ LON_MIN, LON_MAX = 5.7, 10.8
 VARIABLES_CONFIG = {
     "wind":     {"label": "10m Wind",     "type": "surface",  "has_ensemble": True,  "has_arrows": True,  "palette": "wind"},
     "gust":     {"label": "Böen",         "type": "surface",  "has_ensemble": True,  "has_arrows": False, "palette": "wind"},
-    "dbz":      {"label": "Radar (dBZ)",  "type": "surface",  "has_ensemble": False, "has_arrows": False, "palette": "dbz"},
+    "dbz":      {"label": "Radar (dBZ)",  "type": "surface",  "has_ensemble": True, "has_arrows": False, "palette": "dbz"},
     "sun":      {"label": "Sonne %",      "type": "surface",  "has_ensemble": False, "has_arrows": False, "palette": "sun"},
     "wind1000": {"label": "1000m Wind",   "type": "altitude", "altitude": 1000.0, "has_ensemble": False, "has_arrows": True, "palette": "wind"},
     "wind1500": {"label": "1500m Wind",   "type": "altitude", "altitude": 1500.0, "has_ensemble": True,  "has_arrows": True, "palette": "wind"},
