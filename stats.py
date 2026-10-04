@@ -90,33 +90,47 @@ def compute_timestep(weather_data, step_idx, weights):
 
     u_h, v_h, g_h = surface["u_h"], surface["v_h"], surface["g_h"]
     u_e, v_e, g_e = surface["u_e"], surface["v_e"], surface["g_e"]
+    dbz_h, sun_h = surface["dbz_h"], surface["sun_h"]
+    dbz_e, sun_e = surface["dbz_e"], surface["sun_e"]
 
     ensemble_members = u_e.coords['eps'].values
     num_members = 1 + len(ensemble_members)
 
     step_results = {}
 
-    # 1. BODEN-WIND & BÖEN
+    # 1. BODEN-FELDER (Wind, Böen, dBZ, Sonne)
     all_speeds_wind = np.zeros((num_members, config.NY, config.NX), dtype=np.float32)
     all_speeds_gust = np.zeros((num_members, config.NY, config.NX), dtype=np.float32)
+    all_values_dbz  = np.zeros((num_members, config.NY, config.NX), dtype=np.float32)
+    all_values_sun  = np.zeros((num_members, config.NY, config.NX), dtype=np.float32)
+
     wind_data = {}
     gust_data = {}
+    dbz_data  = {}
+    sun_data  = {}
 
     for m_idx in range(num_members):
         if m_idx == 0:
-            u_s = get_step_slice(u_h, step_idx)
-            v_s = get_step_slice(v_h, step_idx)
-            g_s = get_step_slice(g_h, step_idx)
+            u_s   = get_step_slice(u_h, step_idx)
+            v_s   = get_step_slice(v_h, step_idx)
+            g_s   = get_step_slice(g_h, step_idx)
+            dbz_s = get_step_slice(dbz_h, step_idx)
+            sun_s = get_step_slice(sun_h, step_idx)
         else:
             eps_val = ensemble_members[m_idx - 1]
-            u_s = get_step_slice(u_e.sel(eps=eps_val), step_idx)
-            v_s = get_step_slice(v_e.sel(eps=eps_val), step_idx)
-            g_s = get_step_slice(g_e.sel(eps=eps_val), step_idx)
+            u_s   = get_step_slice(u_e.sel(eps=eps_val), step_idx)
+            v_s   = get_step_slice(v_e.sel(eps=eps_val), step_idx)
+            g_s   = get_step_slice(g_e.sel(eps=eps_val), step_idx)
+            dbz_s = get_step_slice(dbz_e.sel(eps=eps_val), step_idx)
+            sun_s = get_step_slice(sun_e.sel(eps=eps_val), step_idx)
 
-        grid_u = remap_fast(u_s, weights)
-        grid_v = remap_fast(v_s, weights)
-        grid_g = remap_fast(g_s, weights)
+        grid_u   = remap_fast(u_s, weights)
+        grid_v   = remap_fast(v_s, weights)
+        grid_g   = remap_fast(g_s, weights)
+        grid_dbz = remap_fast(dbz_s, weights)
+        grid_sun = remap_fast(sun_s, weights)
 
+        # Wind & Böen
         speed_wind = np.sqrt(grid_u**2 + grid_v**2) * 3.6
         dir_wind = (np.arctan2(grid_u, grid_v) * 180 / np.pi) % 360
         all_speeds_wind[m_idx, :, :] = speed_wind
@@ -126,12 +140,28 @@ def compute_timestep(weather_data, step_idx, weights):
         all_speeds_gust[m_idx, :, :] = speed_gust
         gust_data[m_idx] = {"speed": speed_gust, "has_arrows": False}
 
+        # Radar dBZ (Werte unter 7 sind transparent/kein Regen)
+        dbz_val = np.where(grid_dbz < 7.0, np.nan, grid_dbz)
+        all_values_dbz[m_idx, :, :] = dbz_val
+        dbz_data[m_idx] = {"speed": dbz_val, "has_arrows": False}
+
+        # Sonnenschein % (DURSUN in Sek/h -> / 36 für 0-100 %)
+        sun_percent = np.clip(grid_sun / 36.0, 0.0, 100.0)
+        sun_percent = np.where(sun_percent < 5.0, np.nan, sun_percent)
+        all_values_sun[m_idx, :, :] = sun_percent
+        sun_data[m_idx] = {"speed": sun_percent, "has_arrows": False}
+
     wind_data.update(compute_statistics_for_array(all_speeds_wind))
     gust_data.update(compute_statistics_for_array(all_speeds_gust))
+    dbz_data.update(compute_statistics_for_array(all_values_dbz))
+    sun_data.update(compute_statistics_for_array(all_values_sun))
+
     step_results["wind"] = wind_data
     step_results["gust"] = gust_data
+    step_results["dbz"]  = dbz_data
+    step_results["sun"]  = sun_data
 
-    # 2. HÖHEN-WINDE (Voll modular!)
+    # 2. HÖHEN-WINDE
     for var_name, var_cfg in config.VARIABLES_CONFIG.items():
         if var_cfg.get("type") != "altitude":
             continue
@@ -141,7 +171,6 @@ def compute_timestep(weather_data, step_idx, weights):
         u_hl, v_hl = altitude_hl[alt]
 
         if has_ens:
-            # Vollständiges Ensemble berechnen (1500m)
             u_ens, v_ens = altitude_ens[alt]
             all_speeds_alt = np.zeros((num_members, config.NY, config.NX), dtype=np.float32)
             alt_data = {}
@@ -164,9 +193,7 @@ def compute_timestep(weather_data, step_idx, weights):
 
             alt_data.update(compute_statistics_for_array(all_speeds_alt))
             step_results[var_name] = alt_data
-
         else:
-            # PERFORMANCE-BOOST: Nur Hauptlauf (Member 0) berechnen (1000m)!
             u_s = get_step_slice(u_hl, step_idx)
             v_s = get_step_slice(v_hl, step_idx)
             grid_u = remap_fast(u_s, weights)
