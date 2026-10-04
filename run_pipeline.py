@@ -106,10 +106,12 @@ def prepare_base_site(ref_time_str, iso_str):
         "variables": config.VARIABLES,
         "variables_config": {k: v for k, v in config.VARIABLES_CONFIG.items() if k in config.VARIABLES},
         "palettes": {
-            "wind": {"levels": config.LEVELS, "colors": config.COLORS},
-            "iqr":  {"levels": config.IQR_LEVELS, "colors": config.IQR_COLORS},
-            "sun":  {"levels": config.SUN_LEVELS, "colors": config.SUN_COLORS},
-            "dbz":  {"levels": config.DBZ_LEVELS, "colors": config.DBZ_COLORS}
+            "wind":     {"levels": config.LEVELS,          "colors": config.COLORS},
+            "sun":      {"levels": config.SUN_LEVELS,      "colors": config.SUN_COLORS},
+            "dbz":      {"levels": config.DBZ_LEVELS,      "colors": config.DBZ_COLORS},
+            "iqr_wind": {"levels": config.IQR_WIND_LEVELS, "colors": config.IQR_WIND_COLORS},
+            "iqr_dbz":  {"levels": config.IQR_DBZ_LEVELS,  "colors": config.IQR_DBZ_COLORS},
+            "iqr_sun":  {"levels": config.IQR_SUN_LEVELS,  "colors": config.IQR_SUN_COLORS}
         }
     }
     with open("dist/data/config.json", "w") as f:
