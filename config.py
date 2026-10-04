@@ -26,7 +26,7 @@ VARIABLES_CONFIG = {
     "wind3500": {"label": "3500m Wind",   "type": "altitude", "altitude": 3500.0, "has_ensemble": False, "has_arrows": True, "palette": "wind"},
 }
 
-# Schnellauswahl für Tests (einfach '#' setzen oder entfernen)
+# Schnellauswahl für Tests
 ACTIVE_VARIABLES = [
     "wind",
     "gust",
@@ -66,8 +66,7 @@ DBZ_COLORS = [
     '#bc00ce', '#e200da', '#f432cb', '#fa7fd6', '#ffd4f6'
 ]
 
-# ================= LÖSUNG 1: SPEZIFISCHE IQR-SKALEN =================
-# Standard IQR Farbfolge
+# ================= SPEZIFISCHE IQR-SKALEN =================
 IQR_BASE_COLORS = [
     '#ffffff00', '#e0f3db', '#a8ddb5', '#7bccc4', '#4eb3d3',
     '#2b8cbe', '#fec44f', '#fe9929', '#ec7014', '#d7301f'
@@ -77,8 +76,8 @@ IQR_BASE_COLORS = [
 IQR_WIND_LEVELS = [0, 2, 4, 6, 8, 10, 14, 18, 24, 30, 120]
 IQR_WIND_COLORS = IQR_BASE_COLORS
 
-# 2. IQR Radar (0 bis 55 dBZ)
-IQR_DBZ_LEVELS = [0, 5, 10, 15, 20, 25, 30, 38, 45, 55, 120]
+# 2. IQR Radar: Erweitert auf bis zu 65+ dBZ (kein Übersteuern mehr bei Gewittern!)
+IQR_DBZ_LEVELS = [0, 6, 12, 18, 25, 32, 40, 48, 56, 65, 120]
 IQR_DBZ_COLORS = IQR_BASE_COLORS
 
 # 3. IQR Sonnenschein (0 bis 100 %)
