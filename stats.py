@@ -56,13 +56,11 @@ def remap_fast(field, weights):
     return out.reshape(config.NY, config.NX)
 
 def compute_statistics_for_array(all_values, threshold=None):
-    """Berechnet Median, Min, Max, Quantile. Maskiert erst DANACH Werte unterhalb des Schwellenwerts."""
     s_min = np.nanmin(all_values, axis=0)
     s_max = np.nanmax(all_values, axis=0)
     q25, median, q75 = np.nanpercentile(all_values, [25, 50, 75], axis=0)
     iqr = q75 - q25
 
-    # Schwellenwert-Filterung (z.B. < 7 dBZ oder < 10% Sonne) NACH der Ensemble-Mathematik!
     if threshold is not None:
         s_min = np.where(s_min < threshold, np.nan, s_min)
         s_max = np.where(s_max < threshold, np.nan, s_max)
@@ -140,32 +138,30 @@ def compute_timestep(weather_data, step_idx, weights):
             gust_data.update(compute_statistics_for_array(all_g))
         step_results["gust"] = gust_data
 
-    # 2. Radar (dBZ) – Exakt ohne NaN-Verfälschung
+    # 2. Radar (dBZ)
     if "dbz" in config.VARIABLES:
         has_ens = config.VARIABLES_CONFIG["dbz"].get("has_ensemble", False)
         dbz_h = surface["dbz_h"]
         dbz_s = get_step_slice(dbz_h, step_idx)
         g_dbz = remap_fast(dbz_s, weights)
-        # Für die Anzeige von Member 0: < 7 dBZ ist transparent
         dbz_data = {0: {"speed": np.where(g_dbz < 7.0, np.nan, g_dbz), "has_arrows": False}}
 
         if has_ens and "dbz_e" in surface:
             dbz_e = surface["dbz_e"]
             members = dbz_e.coords['eps'].values
             all_dbz = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
-            all_dbz[0, :, :] = g_dbz  # Echte Zahlenwerte behalten!
+            all_dbz[0, :, :] = g_dbz
             
             for m_i, eps_val in enumerate(members, start=1):
                 d_s = get_step_slice(dbz_e.sel(eps=eps_val), step_idx)
                 gd = remap_fast(d_s, weights)
-                all_dbz[m_i, :, :] = gd  # Echte Zahlenwerte behalten!
+                all_dbz[m_i, :, :] = gd
                 dbz_data[m_i] = {"speed": np.where(gd < 7.0, np.nan, gd), "has_arrows": False}
             
-            # Statistiken berechnen und erst DANACH < 7.0 ausblenden
             dbz_data.update(compute_statistics_for_array(all_dbz, threshold=7.0))
         step_results["dbz"] = dbz_data
 
-    # 3. Sonnenschein (%) – Exakt ohne NaN-Verfälschung
+    # 3. Sonnenschein (%)
     if "sun" in config.VARIABLES:
         has_ens = config.VARIABLES_CONFIG["sun"].get("has_ensemble", False)
         sun_h = surface["sun_h"]
@@ -190,7 +186,32 @@ def compute_timestep(weather_data, step_idx, weights):
             sun_data.update(compute_statistics_for_array(all_sun, threshold=10.0))
         step_results["sun"] = sun_data
 
-    # 4. Höhen-Winde
+    # 4. NEU: Wolken-Variablen (clct, clch, clcm, clcl)
+    CLOUD_KEYS = ["clct", "clch", "clcm", "clcl"]
+    for c_key in CLOUD_KEYS:
+        if c_key in config.VARIABLES and f"{c_key}_h" in surface:
+            has_ens = config.VARIABLES_CONFIG[c_key].get("has_ensemble", False)
+            c_h = surface[f"{c_key}_h"]
+            c_s = get_step_slice(c_h, step_idx)
+            g_c = remap_fast(c_s, weights)
+            c_pct = np.clip(g_c, 0.0, 100.0)
+            c_data = {0: {"speed": np.where(c_pct < 10.0, np.nan, c_pct), "has_arrows": False}}
+
+            if has_ens and f"{c_key}_e" in surface:
+                c_e = surface[f"{c_key}_e"]
+                members = c_e.coords['eps'].values
+                all_c = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
+                all_c[0, :, :] = c_pct
+                for m_i, eps_val in enumerate(members, start=1):
+                    cs_e = get_step_slice(c_e.sel(eps=eps_val), step_idx)
+                    gc_e = remap_fast(cs_e, weights)
+                    cp_e = np.clip(gc_e, 0.0, 100.0)
+                    all_c[m_i, :, :] = cp_e
+                    c_data[m_i] = {"speed": np.where(cp_e < 10.0, np.nan, cp_e), "has_arrows": False}
+                c_data.update(compute_statistics_for_array(all_c, threshold=10.0))
+            step_results[c_key] = c_data
+
+    # 5. Höhen-Winde
     for var_name, var_cfg in config.VARIABLES_CONFIG.items():
         if var_cfg.get("type") != "altitude" or var_name not in config.VARIABLES:
             continue
