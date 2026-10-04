@@ -46,7 +46,6 @@ def safe_squeeze(ds):
     return ds.squeeze(drop_dims) if drop_dims else ds
 
 def get_hhl_and_weights(valid_cells=None, target_alts=None):
-    """Lädt HHL und berechnet vertikale Gewichte und Felsmasken für alle Höhen EINMALIG vor."""
     print("-> Lade statische vertikale Gittergeometrie (HHL)...", flush=True)
     url_ch1_vert = ogd_api.get_collection_asset_url(
         collection_id="ch.meteoschweiz.ogd-forecasting-icon-ch1",
@@ -81,7 +80,6 @@ def get_hhl_and_weights(valid_cells=None, target_alts=None):
     h_full = 0.5 * (vals[:-1, :] + vals[1:, :])
     hsurf = vals[-1, :]
 
-    # Vorberechnung pro Zielhöhe spart hunderte redundante Schleifen
     alt_prep = {}
     for alt in (target_alts or []):
         is_below = (h_full < alt)
@@ -106,7 +104,6 @@ def get_hhl_and_weights(valid_cells=None, target_alts=None):
     return alt_prep
 
 def interpolate_fast_precomputed(da_hour, prep):
-    """Ultraschnelle Interpolation mit vorberechneten Gewichten (nur noch Array-Indexing)."""
     idx_above = prep["idx_above"]
     idx_below = prep["idx_below"]
     weight = prep["weight"]
@@ -251,19 +248,23 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
     del ds_u_h_raw
     gc.collect()
 
-    print("2. Lade 10m-Felder parallel (2 Streams)...", flush=True)
-    tasks_10m = [
+    print("2. Lade 2D-Oberflächenfelder (Wind, Böen, dBZ, Sonne)...", flush=True)
+    tasks_2d = [
         ("V_10M", False),
         ("VMAX_10M", False),
+        ("DBZ_CMAX", False),
+        ("DURSUN", False),
         ("U_10M", True),
         ("V_10M", True),
-        ("VMAX_10M", True)
+        ("VMAX_10M", True),
+        ("DBZ_CMAX", True),
+        ("DURSUN", True)
     ]
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        v_h, g_h, u_e, v_e, g_e = list(pool.map(
+        v_h, g_h, dbz_h, sun_h, u_e, v_e, g_e, dbz_e, sun_e = list(pool.map(
             lambda t: fetch_single_2d(t[0], t[1], ref_time_str, lead_times, valid_cells),
-            tasks_10m
+            tasks_2d
         ))
 
     print("3. Bereite vertikales Gitter vor...", flush=True)
@@ -273,7 +274,6 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
 
     alt_prep = get_hhl_and_weights(valid_cells, all_target_alts)
 
-    # PARALLELER HAUPTLAUF: U und V gleichzeitig abrufen (spart 1.5 - 2 Min!)
     print("4. Lade 3D-Hauptlauf (U und V simultan)...", flush=True)
     with ThreadPoolExecutor(max_workers=2) as pool:
         future_u_hl = pool.submit(fetch_3d_and_slice, "U", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
@@ -281,7 +281,6 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
         u_hl_by_alt = future_u_hl.result()
         v_hl_by_alt = future_v_hl.result()
 
-    # Ensemble-Wind sequentiell mit 2 Workern (stabil bei ~4 GB RAM)
     print("5. Lade 3D-Ensemble...", flush=True)
     u_ens_by_alt = fetch_3d_and_slice("U", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
     v_ens_by_alt = fetch_3d_and_slice("V", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
@@ -291,7 +290,10 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
 
     print("✓ Alle Datensätze hochoptimiert bereitgestellt!", flush=True)
     return {
-        "surface": {"u_h": u_h, "v_h": v_h, "g_h": g_h, "u_e": u_e, "v_e": v_e, "g_e": g_e},
+        "surface": {
+            "u_h": u_h, "v_h": v_h, "g_h": g_h, "dbz_h": dbz_h, "sun_h": sun_h,
+            "u_e": u_e, "v_e": v_e, "g_e": g_e, "dbz_e": dbz_e, "sun_e": sun_e
+        },
         "altitude_hl": {alt: (u_hl_by_alt[alt], v_hl_by_alt[alt]) for alt in hl_altitudes},
         "altitude_ens": {alt: (u_ens_by_alt[alt], v_ens_by_alt[alt]) for alt in ens_altitudes}
     }
