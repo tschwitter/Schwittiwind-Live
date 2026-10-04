@@ -15,65 +15,118 @@
         #map { width: 100%; height: 100%; z-index: 1; }
         .wind-arrow-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
 
-        /* --- OBERE LEISTE --- */
-        .top-bar-container {
+        /* --- OBERES KONTROLL-PANEL (HIERARCHISCHE LEISTEN) --- */
+        .top-control-panel {
             position: fixed;
-            top: 15px; left: 50%;
+            top: 10px; left: 50%;
             transform: translateX(-50%);
             z-index: 9999;
             display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: 6px;
+            gap: 5px;
             max-width: 96vw;
+            pointer-events: none;
         }
 
-        .var-switch-container {
-            background-color: rgba(33, 43, 54, 0.9);
-            border: 1px solid rgba(255,255,255,0.15);
+        .top-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            background-color: rgba(33, 43, 54, 0.92);
+            border: 1px solid rgba(255,255,255,0.18);
             border-radius: 20px;
-            padding: 4px;
-            display: flex; gap: 4px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            padding: 3px 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.45);
+            pointer-events: auto;
+            max-width: 95vw;
             overflow-x: auto;
+            box-sizing: border-box;
         }
+
+        /* Unterleisten mit leichter farblicher Akzentuierung */
+        .sub-nav-row {
+            background-color: rgba(25, 34, 44, 0.95);
+            border-color: rgba(0, 122, 183, 0.4);
+            padding: 2px 8px;
+            gap: 3px;
+            animation: fadeIn 0.15s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-3px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
         .var-btn {
             background: transparent;
-            border: none; border-radius: 16px;
-            color: #aaa;
+            border: none; border-radius: 14px;
+            color: #bbb;
             font-family: Arial, sans-serif;
-            font-size: 13px; font-weight: bold;
-            padding: 6px 14px;
+            font-size: 12px; font-weight: bold;
+            padding: 5px 12px;
             cursor: pointer; transition: all 0.2s;
             white-space: nowrap;
         }
+        .var-btn:hover { color: white; }
         .var-btn.active {
             background-color: #007ab7;
             color: white;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.35);
         }
 
-        .layer2-btn, .settings-btn {
-            background-color: rgba(33, 43, 54, 0.9);
-            border: 1px solid rgba(255,255,255,0.2);
-            border-radius: 18px;
-            color: #ccc;
+        /* Menü-Aufklappknöpfe (Wetter / Höhenwind) */
+        .nav-toggle-btn {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 14px;
+            color: #ddd;
             font-family: Arial, sans-serif;
             font-size: 12px; font-weight: bold;
-            padding: 8px 12px;
+            padding: 5px 11px;
             cursor: pointer;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            transition: all 0.2s;
+            white-space: nowrap;
+            display: flex; align-items: center; gap: 4px;
+        }
+        .nav-toggle-btn:hover { background: rgba(255,255,255,0.18); color: white; }
+        .nav-toggle-btn.open {
+            background: rgba(0, 122, 183, 0.35);
+            border-color: #007ab7;
+            color: #70c4ff;
+        }
+        .nav-toggle-btn.has-active {
+            border-color: #81c784;
+            color: #a5d6a7;
+        }
+
+        /* 2. Ebene & Zahnrad */
+        .bottom-nav-row {
+            padding: 2px 8px;
+            gap: 6px;
+        }
+        .layer2-btn, .settings-btn {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 14px;
+            color: #ccc;
+            font-family: Arial, sans-serif;
+            font-size: 11px; font-weight: bold;
+            padding: 4px 10px;
+            cursor: pointer;
             display: flex; align-items: center; gap: 4px;
             white-space: nowrap;
             transition: all 0.2s;
         }
-        .layer2-btn:hover, .settings-btn:hover { background-color: rgba(45, 58, 72, 0.95); color: white; }
+        .layer2-btn:hover, .settings-btn:hover { background-color: rgba(255,255,255,0.12); color: white; }
         .layer2-btn.active { background-color: #2e7d32; color: white; border-color: #81c784; }
-        .settings-btn { padding: 8px 10px; font-size: 14px; }
+        .settings-btn { padding: 4px 8px; font-size: 13px; }
 
+        /* --- MENÜS & POPUPS --- */
         .dropdown-menu, .settings-popup {
             display: none;
             position: fixed;
-            top: 60px;
             background-color: rgba(28, 37, 46, 0.96);
             border: 1px solid rgba(255,255,255,0.2);
             border-radius: 10px;
@@ -82,9 +135,10 @@
             box-shadow: 0 8px 24px rgba(0,0,0,0.6);
             color: white;
             font-family: Arial, sans-serif;
+            pointer-events: auto;
         }
         .dropdown-menu {
-            left: 50%;
+            top: 95px; left: 50%;
             transform: translateX(-50%);
             display: none;
             flex-direction: column;
@@ -104,7 +158,7 @@
         .dropdown-item.clear { background: rgba(217, 83, 79, 0.3); color: #ff8a80; }
         .dropdown-item.clear:hover { background: #d9534f; color: white; }
 
-        .settings-popup { right: 20px; top: 65px; width: 250px; }
+        .settings-popup { right: 20px; top: 95px; width: 250px; }
         .settings-title {
             font-size: 13px; font-weight: bold; border-bottom: 1px solid rgba(255,255,255,0.2);
             padding-bottom: 6px; margin-bottom: 10px; text-align: center;
@@ -131,18 +185,19 @@
         #loadingIndicator {
             display: none;
             position: fixed;
-            top: 75px; left: 50%;
+            top: 130px; left: 50%;
             transform: translateX(-50%);
             z-index: 100000;
             background-color: rgba(33, 43, 54, 0.95);
             border: 1px solid rgba(255,255,255,0.15);
             border-radius: 20px;
-            padding: 6px 14px;
-            font-family: Arial, sans-serif; font-size: 12px; font-weight: bold;
+            padding: 5px 14px;
+            font-family: Arial, sans-serif; font-size: 11px; font-weight: bold;
             color: #d9534f;
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
 
+        /* --- VERTICAL PANEL (RECHTS) --- */
         .member-panel {
             position: fixed;
             top: 70px; right: 20px; bottom: 150px;
@@ -180,6 +235,7 @@
         .member-btn.active { background-color: #007ab7; color: white; }
         .only-hl-info { display: none; font-size: 11px; color: #aaa; text-align: center; padding: 10px 4px; font-style: italic; }
 
+        /* --- KONTROLLZENTRUM (UNTEN MITTE) --- */
         .control-panel {
             position: fixed;
             bottom: 30px; left: 50%;
@@ -254,19 +310,21 @@
         }
 
         @media (max-width: 768px) {
-            .top-bar-container { top: 8px; gap: 4px; }
-            .var-btn { font-size: 10px; padding: 4px 7px; }
-            .layer2-btn, .settings-btn { font-size: 10px; padding: 5px 8px; }
-            .control-panel { bottom: 10px; left: 10px; right: 10px; width: auto; transform: none; padding: 8px 10px; }
-            .member-panel { top: 55px; right: 8px; width: 50px; padding: 6px 2px; }
+            .top-control-panel { top: 6px; gap: 3px; }
+            .top-row { padding: 2px 4px; gap: 2px; border-radius: 14px; }
+            .var-btn, .nav-toggle-btn { font-size: 10px; padding: 4px 6px; border-radius: 10px; }
+            .layer2-btn, .settings-btn { font-size: 9.5px; padding: 3px 6px; }
+            .control-panel { bottom: 8px; left: 8px; right: 8px; width: auto; transform: none; padding: 8px 10px; }
+            .member-panel { top: 50px; right: 6px; width: 50px; padding: 6px 2px; }
             .member-panel-title, .member-section-title { display: none; }
             .member-btn { font-size: 10px; padding: 5px 1px; }
-            .legend-box { bottom: 135px; left: 8px; padding: 6px; }
+            .legend-box { bottom: 135px; left: 8px; padding: 5px; }
             .legend-column { width: 52px; }
             .legend-scale { height: 160px; }
             .legend-bar { width: 14px; height: 160px; }
             .legend-labels { left: 18px; height: 168px; font-size: 7.5px; }
-            .settings-popup { right: 10px; top: 50px; width: 230px; }
+            .settings-popup { right: 8px; top: 80px; width: 220px; }
+            .dropdown-menu { top: 80px; }
         }
     </style>
 </head>
@@ -274,14 +332,33 @@
 
     <div id="map"></div>
 
-    <div class="top-bar-container">
-        <div class="var-switch-container" id="varSwitchContainer"></div>
-        <button class="layer2-btn" id="layer2Btn" onclick="toggleDropdown()">+ 2. Ebene</button>
-        <button class="settings-btn" id="settingsBtn" onclick="toggleSettings()" title="Ebenen-Einstellungen">⚙</button>
+    <!-- HIERARCHISCHES KONTROLL-PANEL OBEN -->
+    <div class="top-control-panel">
+        <!-- ZEILE 1: HAUPTLEISTE (Wetter, Wind, Böen, Höhenwind) -->
+        <div class="top-row">
+            <button class="nav-toggle-btn" id="btnToggleWetter" onclick="toggleWetterMenu()">Wetter ▾</button>
+            <button class="var-btn active" id="varBtn-wind" onclick="switchLayer1('wind')">10m Wind</button>
+            <button class="var-btn" id="varBtn-gust" onclick="switchLayer1('gust')">Böen</button>
+            <button class="nav-toggle-btn" id="btnToggleHoehen" onclick="toggleHoehenMenu()">Höhenwind ▾</button>
+        </div>
+
+        <!-- ZEILE 2: WETTER-SUBLEISTE (Aufklappbar) -->
+        <div class="top-row sub-nav-row" id="wetterSubRow" style="display: none;"></div>
+
+        <!-- ZEILE 3: HÖHENWIND-SUBLEISTE (Aufklappbar) -->
+        <div class="top-row sub-nav-row" id="hoehenSubRow" style="display: none;"></div>
+
+        <!-- ZEILE 4: 2. EBENE & EINSTELLUNGEN -->
+        <div class="top-row bottom-nav-row">
+            <button class="layer2-btn" id="layer2Btn" onclick="toggleDropdown()">+ 2. Ebene</button>
+            <button class="settings-btn" id="settingsBtn" onclick="toggleSettings()" title="Ebenen-Einstellungen">⚙</button>
+        </div>
     </div>
 
+    <!-- DROPDOWN-AUSWAHL FÜR 2. EBENE -->
     <div class="dropdown-menu" id="layer2Dropdown"></div>
 
+    <!-- EINSTELLUNGEN-POPUP -->
     <div class="settings-popup" id="settingsPopup">
         <div class="settings-title">⚙ Ebenen-Optionen</div>
         
@@ -320,6 +397,7 @@
 
     <div id="loadingIndicator">Lade Wetterdaten...</div>
 
+    <!-- RECHTES PANEL (LÄUFE) -->
     <div class="member-panel">
         <div class="member-panel-title">Läufe</div>
         <div class="member-section-title">Hauptlauf</div>
@@ -333,6 +411,7 @@
         <div id="onlyHlNotice" class="only-hl-info">Nur Hauptlauf</div>
     </div>
 
+    <!-- UNTERES KONTROLLZENTRUM -->
     <div class="control-panel">
         <div class="day-buttons-row" id="dayButtonsContainer"></div>
         <div class="main-controls-row">
@@ -350,6 +429,7 @@
         </div>
     </div>
 
+    <!-- DYNAMISCHE LEGENDE -->
     <div class="legend-box" id="legendBox"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -357,13 +437,16 @@
     <script>
         var map, config, times;
         
-        var layer1Var = null;
+        var layer1Var = "wind";
         var layer2Var = null;
         
         var layer1Mode = 'fill';
         var layer2Mode = 'fill';
         var layer1Opacity = 0.55;
         var layer2Opacity = 0.65;
+
+        var isWetterOpen = false;
+        var isHoehenOpen = false;
 
         var currentMemberIdx = 0;
         var currentStepIdx = 0;
@@ -384,6 +467,21 @@
             var parts = times[stepIdx].local_str.split(" ")[0].split(".");
             var dateObj = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
             return weekdays[dateObj.getDay()];
+        }
+
+        // ================= MENÜ-STEUERUNG =================
+        function toggleWetterMenu() {
+            isWetterOpen = !isWetterOpen;
+            document.getElementById("wetterSubRow").style.display = isWetterOpen ? "flex" : "none";
+            document.getElementById("btnToggleWetter").classList.toggle("open", isWetterOpen);
+            document.getElementById("btnToggleWetter").innerText = isWetterOpen ? "Wetter ▴" : "Wetter ▾";
+        }
+
+        function toggleHoehenMenu() {
+            isHoehenOpen = !isHoehenOpen;
+            document.getElementById("hoehenSubRow").style.display = isHoehenOpen ? "flex" : "none";
+            document.getElementById("btnToggleHoehen").classList.toggle("open", isHoehenOpen);
+            document.getElementById("btnToggleHoehen").innerText = isHoehenOpen ? "Höhenwind ▴" : "Höhenwind ▾";
         }
 
         function toggleDropdown() {
@@ -424,21 +522,66 @@
             }
         }
 
-        function initVarSwitchButtons() {
-            var container = document.getElementById("varSwitchContainer");
-            container.innerHTML = "";
+        function initNavigationBars() {
+            var wetterContainer = document.getElementById("wetterSubRow");
+            var hoehenContainer = document.getElementById("hoehenSubRow");
+            wetterContainer.innerHTML = "";
+            hoehenContainer.innerHTML = "";
+
             var vars = config.variables || Object.keys(config.variables_config);
             if (!layer1Var || !vars.includes(layer1Var)) layer1Var = vars[0];
 
             vars.forEach(vKey => {
                 var vCfg = config.variables_config[vKey];
+                if (!vCfg) return;
+
+                // Wind & Böen sind fest in Zeile 1
+                if (vKey === "wind" || vKey === "gust") return;
+
                 var btn = document.createElement("button");
-                btn.className = "var-btn" + (vKey === layer1Var ? " active" : "");
+                btn.className = "var-btn";
                 btn.id = "varBtn-" + vKey;
-                btn.innerText = vCfg ? vCfg.label : vKey;
+                btn.innerText = vCfg.label || vKey;
                 btn.onclick = function() { switchLayer1(vKey); };
-                container.appendChild(btn);
+
+                if (vCfg.type === "altitude") {
+                    hoehenContainer.appendChild(btn);
+                } else {
+                    wetterContainer.appendChild(btn);
+                }
             });
+
+            updateActiveButtonStates();
+        }
+
+        function updateActiveButtonStates() {
+            var vars = config.variables || Object.keys(config.variables_config);
+            var isWetterActive = false;
+            var isHoehenActive = false;
+
+            vars.forEach(vKey => {
+                var btn = document.getElementById("varBtn-" + vKey);
+                var isActive = (vKey === layer1Var);
+                if (btn) btn.classList.toggle("active", isActive);
+
+                if (isActive) {
+                    var vCfg = config.variables_config[vKey];
+                    if (vCfg) {
+                        if (vCfg.type === "altitude") isHoehenActive = true;
+                        else if (vKey !== "wind" && vKey !== "gust") isWetterActive = true;
+                    }
+                }
+            });
+
+            // Farbliche Indikatoren für die Aufklappknöpfe
+            var btnWetter = document.getElementById("btnToggleWetter");
+            var btnHoehen = document.getElementById("btnToggleHoehen");
+            if (btnWetter) btnWetter.classList.toggle("has-active", isWetterActive);
+            if (btnHoehen) btnHoehen.classList.toggle("has-active", isHoehenActive);
+
+            // Automatisch die passende Unterleiste öffnen, falls eine dortige Variable gewählt wurde
+            if (isWetterActive && !isWetterOpen) toggleWetterMenu();
+            if (isHoehenActive && !isHoehenOpen) toggleHoehenMenu();
         }
 
         function initLayer2Dropdown() {
@@ -490,11 +633,7 @@
             if (layer1Var === newVar) return;
             layer1Var = newVar;
 
-            var vars = config.variables || Object.keys(config.variables_config);
-            vars.forEach(vKey => {
-                var btn = document.getElementById("varBtn-" + vKey);
-                if (btn) btn.classList.toggle("active", vKey === layer1Var);
-            });
+            updateActiveButtonStates();
 
             var vCfg = config.variables_config[layer1Var];
             var hasEns = vCfg ? vCfg.has_ensemble : true;
@@ -520,10 +659,8 @@
             var pos = steps.indexOf(currentStepIdx);
 
             if (pos > 0) {
-                // Ein Schritt nach links im aktuellen Tag
                 updateForecast(currentMemberIdx, steps[pos - 1]);
             } else {
-                // Am linken Anfang: Wechsle zum vorherigen Tag ans Ende!
                 var dIdx = uniqueDays.indexOf(curDay);
                 if (dIdx > 0) {
                     var prevDay = uniqueDays[dIdx - 1];
@@ -541,10 +678,8 @@
             var pos = steps.indexOf(currentStepIdx);
 
             if (pos < steps.length - 1) {
-                // Ein Schritt nach rechts im aktuellen Tag
                 updateForecast(currentMemberIdx, steps[pos + 1]);
             } else {
-                // Am rechten Ende: Wechsle zum nächsten Tag an den linken Anfang (Index 0)!
                 var dIdx = uniqueDays.indexOf(curDay);
                 if (dIdx < uniqueDays.length - 1) {
                     var nextDay = uniqueDays[dIdx + 1];
@@ -669,7 +804,8 @@
             } else if (paletteType === "sun") {
                 labelsHtml = `<div>100</div><div>80</div><div>60</div><div>40</div><div>20</div><div>0</div>`;
             } else if (paletteType === "iqr_dbz") {
-                labelsHtml = `<div>+</div><div>55</div><div>45</div><div>38</div><div>30</div><div>25</div><div>20</div><div>15</div><div>10</div><div>5</div><div>0</div>`;
+                // Skala bis 65+ dBZ (10 Intervalle passend zu IQR_BASE_COLORS)
+                labelsHtml = `<div>+</div><div>65</div><div>56</div><div>48</div><div>40</div><div>32</div><div>25</div><div>18</div><div>12</div><div>6</div><div>0</div>`;
             } else if (paletteType === "iqr_sun") {
                 labelsHtml = `<div>100</div><div>90</div><div>80</div><div>70</div><div>60</div><div>50</div><div>40</div><div>30</div><div>20</div><div>10</div><div>0</div>`;
             } else if (paletteType === "iqr_wind") {
@@ -782,7 +918,7 @@
                 const timesRes = await fetch('data/times.json?t=' + cacheBuster);
                 times = await timesRes.json();
 
-                initVarSwitchButtons();
+                initNavigationBars();
                 initLayer2Dropdown();
                 initDayButtons();
                 initMemberPanel();
@@ -791,226 +927,4 @@
                 var initialHasEns = initialCfg ? initialCfg.has_ensemble : true;
                 if (!initialHasEns) currentMemberIdx = 0;
                 updateMemberPanelVisibility(initialHasEns);
-                document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (initialCfg ? initialCfg.label : layer1Var);
-
-                var swisstopo_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg";
-                map = L.map('map', {
-                    center: [46.8182, 8.2275],
-                    zoom: 9, minZoom: 7, maxZoom: 15,
-                    preferCanvas: true
-                });
-
-                map.createPane('contourPane1');
-                map.getPane('contourPane1').style.opacity = layer1Opacity;
-                map.getPane('contourPane1').style.zIndex = '400';
-
-                map.createPane('contourPane2');
-                map.getPane('contourPane2').style.opacity = layer2Opacity;
-                map.getPane('contourPane2').style.zIndex = '450';
-
-                L.tileLayer(swisstopo_url, {
-                    attribution: '&copy; <a href="https://www.swisstopo.admin.ch/" target="_blank">swisstopo</a> | Wetterdaten: &copy; <a href="https://www.meteoschweiz.admin.ch/" target="_blank">MeteoSchweiz</a>',
-                    maxZoom: 15, maxNativeZoom: 10
-                }).addTo(map);
-
-                map.on('moveend', drawVisibleArrows);
-                map.on('zoomend', drawVisibleArrows);
-
-                map.on('click', function() {
-                    document.getElementById("layer2Dropdown").style.display = "none";
-                    document.getElementById("settingsPopup").style.display = "none";
-                });
-
-                // SLIDER LISTENER: Bewegt sich nur innerhalb der Stunden des aktuellen Tages
-                var slider = document.getElementById("timeSlider");
-                slider.addEventListener("input", function() {
-                    var curDay = getDayNameForStep(currentStepIdx);
-                    var steps = dayTimesteps[curDay] || [];
-                    if (steps[this.value] !== undefined) {
-                        updateForecast(currentMemberIdx, steps[this.value]);
-                    }
-                });
-
-                document.addEventListener('keydown', function(event) {
-                    if (event.key === "ArrowLeft") navLeft();
-                    else if (event.key === "ArrowRight") navRight();
-                    else if (event.key === "ArrowUp") { event.preventDefault(); navUp(); }
-                    else if (event.key === "ArrowDown") { event.preventDefault(); navDown(); }
-                });
-
-                window.onresize = function() {
-                    initMemberPanel();
-                    updateForecast(currentMemberIdx, currentStepIdx);
-                };
-
-                await updateForecast(currentMemberIdx, 0);
-            } catch (err) {
-                console.error("Fehler beim Laden:", err);
-            }
-        }
-
-        async function updateForecast(newMemberIdx, newStepIdx) {
-            currentMemberIdx = parseInt(newMemberIdx);
-            currentStepIdx = parseInt(newStepIdx);
-
-            // AKTUELLEN TAG & SLIDER-POSITION INNERHALB DES TAGES BESTIMMEN
-            var currentDayName = getDayNameForStep(currentStepIdx);
-            var daySteps = dayTimesteps[currentDayName] || [];
-            var slider = document.getElementById("timeSlider");
-            
-            // Slider zeigt nur die Stunden dieses Tages an (z. B. 0 bis 23)
-            slider.max = Math.max(0, daySteps.length - 1);
-            slider.value = Math.max(0, daySteps.indexOf(currentStepIdx));
-
-            document.getElementById("loadingIndicator").style.display = "block";
-            try {
-                await ensureDataLoaded(layer1Var, currentMemberIdx, currentStepIdx);
-
-                if (layer2Var) {
-                    var vCfg2 = config.variables_config[layer2Var] || {};
-                    var m2 = (vCfg2.has_ensemble) ? currentMemberIdx : 0;
-                    await ensureDataLoaded(layer2Var, m2, currentStepIdx);
-                }
-            } catch (err) {
-                console.error("Fehler beim Laden:", err);
-                document.getElementById("loadingIndicator").style.display = "none";
-                return;
-            }
-            document.getElementById("loadingIndicator").style.display = "none";
-
-            var tInfo = times[currentStepIdx];
-            var parts = tInfo.local_str.split(" ");
-            var dateParts = parts[0].split(".");
-            document.getElementById("currentStepLabel").innerText = dateParts[0] + "." + dateParts[1] + " " + parts[1].substring(0, 5) + " LT";
-            
-            var refParts = config.ref_time_utc.split(" ");
-            var refDateParts = refParts[0].split(".");
-            var refTimeHour = refParts[1].split(":")[0];
-            document.getElementById("modelRunLabel").innerText = "🕒" + refDateParts[0] + "." + refDateParts[1] + " " + refTimeHour + "Z CH1";
-
-            // Tag-Buttons synchronisieren
-            uniqueDays.forEach(d => {
-                var btn = document.getElementById("day-btn-" + d);
-                if (btn) btn.classList.toggle("active", d === currentDayName);
-            });
-
-            for (var i = 0; i < config.member_names.length; i++) {
-                var btn = document.getElementById("member-btn-" + i);
-                if (btn) btn.classList.toggle("active", i === currentMemberIdx);
-            }
-
-            updateLegend();
-            renderContours();
-            drawVisibleArrows();
-        }
-
-        function renderContours() {
-            if (contourLayer1) map.removeLayer(contourLayer1);
-            const key1 = layer1Var + "_" + currentMemberIdx + "_" + currentStepIdx;
-            
-            contourLayer1 = L.geoJson(cacheContours[key1], {
-                pane: 'contourPane1',
-                style: function(feature) {
-                    var fill = feature.properties.fill;
-                    var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
-                    
-                    if (layer1Mode === 'line') {
-                        return { fill: false, color: isTrans ? 'transparent' : fill, weight: 1.8, opacity: 1.0 };
-                    } else {
-                        return { fillColor: fill, color: isTrans ? 'transparent' : fill, weight: 0.5, fillOpacity: isTrans ? 0 : 1.0 };
-                    }
-                }
-            }).addTo(map);
-
-            if (contourLayer2) { map.removeLayer(contourLayer2); contourLayer2 = null; }
-            if (layer2Var) {
-                var vCfg2 = config.variables_config[layer2Var] || {};
-                var m2 = (vCfg2.has_ensemble) ? currentMemberIdx : 0;
-                const key2 = layer2Var + "_" + m2 + "_" + currentStepIdx;
-
-                contourLayer2 = L.geoJson(cacheContours[key2], {
-                    pane: 'contourPane2',
-                    style: function(feature) {
-                        var fill = feature.properties.fill;
-                        var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
-
-                        if (layer2Mode === 'line') {
-                            return { fill: false, color: isTrans ? 'transparent' : fill, weight: 2.2, opacity: 1.0 };
-                        } else {
-                            return { fillColor: fill, color: isTrans ? 'transparent' : fill, weight: 0.5, fillOpacity: isTrans ? 0 : 1.0 };
-                        }
-                    }
-                }).addTo(map);
-            }
-        }
-
-        function drawVisibleArrows() {
-            if (!map || !config) return;
-            if (!activeMarkers) { activeMarkers = L.layerGroup().addTo(map); } else { activeMarkers.clearLayers(); }
-
-            var arrowVar = null;
-            var arrowMember = 0;
-
-            var vCfg1 = config.variables_config[layer1Var];
-            if (vCfg1 && vCfg1.has_arrows && currentMemberIdx < 11) {
-                arrowVar = layer1Var;
-                arrowMember = currentMemberIdx;
-            } else if (layer2Var) {
-                var vCfg2 = config.variables_config[layer2Var];
-                if (vCfg2 && vCfg2.has_arrows) {
-                    arrowVar = layer2Var;
-                    arrowMember = vCfg2.has_ensemble ? currentMemberIdx : 0;
-                }
-            }
-
-            if (!arrowVar) return;
-
-            const cacheKey = arrowVar + "_" + arrowMember + "_" + currentStepIdx;
-            const gridData = cacheGrid[cacheKey];
-            if (!gridData || !gridData.s || !gridData.d || gridData.d.length === 0) return;
-
-            var bounds = map.getBounds();
-            var zoom = map.getZoom();
-            var step = 32;
-            if (zoom > 8 && zoom <= 10) step = 16;
-            else if (zoom > 10 && zoom <= 11) step = 8;
-            else if (zoom == 12) step = 4;
-            else if (zoom == 13) step = 2;
-            else if (zoom >= 14) step = 1;
-
-            var speeds = gridData.s;
-            var dirs = gridData.d;
-            var labelType = config.variables_config[arrowVar].label || "Wind";
-
-            for (var i = 0; i < speeds.length; i++) {
-                var sVal = speeds[i];
-                if (sVal < 30) continue;
-
-                var r = Math.floor(i / config.nx);
-                var c = i % config.nx;
-                if (r % step !== 0 || c % step !== 0) continue;
-
-                var lat = config.ymin + r * (config.ymax - config.ymin) / (config.ny - 1);
-                var lon = config.xmin + c * (config.xmax - config.xmin) / (config.nx - 1);
-                var latlng = L.latLng(lat, lon);
-
-                if (bounds.contains(latlng)) {
-                    var speed = sVal / 10.0;
-                    var dir = dirs[i];
-                    var arrow_w = Math.min(35, Math.max(8, 6 + Math.pow(speed, 1.15) * 0.55));
-                    var arrow_h = Math.min(100, Math.max(16, 12 + Math.pow(speed, 1.4) * 1.0));
-
-                    var svg = '<div style="transform: rotate(' + dir + 'deg); width: 110px; height: 110px; display: flex; align-items: center; justify-content: center;">' +
-                              '<svg viewBox="0 0 24 24" width="' + arrow_w.toFixed(1) + 'px" height="' + arrow_h.toFixed(1) + 'px">' +
-                              '<path d="M11 22 H13 V10 H17 L12 2 L7 10 H11 Z" fill="black" stroke="white" stroke-width="0.8"/>' +
-                              '</svg></div>';
-
-                    var icon = L.divIcon({ html: svg, iconSize: [110, 110], iconAnchor: [55, 55], className: 'wind-arrow-icon' });
-                    L.marker(latlng, { icon: icon }).bindPopup('<b>' + labelType + ' (ICON-CH1):</b><br>Stärke: ' + speed.toFixed(1) + ' km/h<br>Richtung: ' + dir.toFixed(0) + '°').addTo(activeMarkers);
-                }
-            }
-        }
-        window.onload = init;
-    </script>
-</body>
-</html>
+                document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (initialCfg ? initial
