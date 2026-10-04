@@ -150,17 +150,17 @@
             background-color: rgba(33, 43, 54, 0.85); 
             border: 1px solid rgba(255,255,255,0.15); 
             border-radius: 8px; 
-            padding: 12px 10px 8px 10px; 
+            padding: 10px 8px 8px 8px; 
             font-family: Arial, sans-serif; color: white; 
             box-shadow: 4px 4px 12px rgba(0,0,0,0.5); 
-            width: 80px; box-sizing: border-box; font-size: 11px; 
+            width: 82px; box-sizing: border-box; font-size: 11px; 
         }
         .legend-title { font-weight: bold; font-size: 13px; text-align: center; margin-bottom: 6px; }
-        .legend-scale { position: relative; height: 210px; display: flex; }
-        .legend-bar { width: 20px; height: 210px; display: flex; flex-direction: column; border-radius: 3px; overflow: hidden; border: 1px solid #000; }
+        .legend-scale { position: relative; height: 260px; display: flex; }
+        .legend-bar { width: 22px; height: 260px; display: flex; flex-direction: column; border-radius: 2px; overflow: hidden; border: 1px solid #000; }
         .legend-labels { 
-            position: absolute; left: 28px; top: -6px; 
-            height: 222px; font-size: 10px; font-weight: bold; 
+            position: absolute; left: 30px; top: -6px; 
+            height: 272px; font-size: 9px; font-weight: bold; 
             display: flex; flex-direction: column; justify-content: space-between; 
         }
 
@@ -171,10 +171,10 @@
             .member-panel { top: 50px; right: 10px; width: 55px; padding: 6px 2px; }
             .member-panel-title, .member-section-title { display: none; }
             .member-btn { font-size: 11px; padding: 6px 2px; }
-            .legend-box { bottom: 145px; left: 10px; width: 65px; padding: 6px 4px; }
-            .legend-scale { height: 150px; }
-            .legend-bar { width: 14px; height: 150px; }
-            .legend-labels { left: 20px; height: 160px; font-size: 8px; }
+            .legend-box { bottom: 145px; left: 10px; width: 68px; padding: 6px 4px; }
+            .legend-scale { height: 180px; }
+            .legend-bar { width: 16px; height: 180px; }
+            .legend-labels { left: 24px; height: 190px; font-size: 8px; }
         }
     </style>
 </head>
@@ -226,7 +226,7 @@
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
     <script>
         var map, config, times;
-        var currentVar = "wind";
+        var currentVar = null;
         var currentMemberIdx = 0;
         var currentStepIdx = 0;
         var contourLayer = null;
@@ -243,6 +243,10 @@
             var container = document.getElementById("varSwitchContainer");
             container.innerHTML = "";
             var vars = config.variables || Object.keys(config.variables_config);
+            if (!currentVar || !vars.includes(currentVar)) {
+                currentVar = vars[0];
+            }
+
             vars.forEach(vKey => {
                 var vCfg = config.variables_config[vKey];
                 var btn = document.createElement("button");
@@ -365,7 +369,7 @@
             });
         }
 
-        // ================= DYNAMISCHE LEGENDE FÜR ALLE VARIABLEN =================
+        // ================= DYNAMISCHE LEGENDE =================
         function updateLegend(paletteType) {
             var titleEl  = document.getElementById("legendTitle");
             var barEl    = document.getElementById("legendBar");
@@ -383,7 +387,7 @@
                 titleEl.innerText = "km/h";
             }
 
-            // Balken von oben nach unten (höchste Werte zuerst)
+            // Exakt 1 Block pro Farbband
             var barHtml = "";
             for (var i = colors.length - 1; i >= 0; i--) {
                 var c = colors[i];
@@ -392,10 +396,10 @@
             }
             barEl.innerHTML = barHtml;
 
-            // Labels
+            // Labels exakt passend zur Skala
             var labelsHtml = "";
             if (paletteType === "dbz") {
-                labelsHtml = `<div>64</div><div>60</div><div>58</div><div>56</div><div>54</div><div>51</div><div>45</div><div>41</div><div>31</div><div>24</div><div>19</div><div>7</div>`;
+                labelsHtml = `<div>64</div><div>61</div><div>60</div><div>59</div><div>58</div><div>57</div><div>56</div><div>55</div><div>54</div><div>53</div><div>52</div><div>51</div><div>49</div><div>47</div><div>45</div><div>41</div><div>31</div><div>24</div><div>19</div><div>7</div>`;
             } else if (paletteType === "sun") {
                 labelsHtml = `<div>100</div><div>80</div><div>60</div><div>40</div><div>20</div><div>0</div>`;
             } else if (paletteType === "iqr") {
