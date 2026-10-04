@@ -111,10 +111,12 @@ def prepare_base_site(ref_time_str, iso_str):
         "member_names": member_names,
         "variables": config.VARIABLES,
         "variables_config": config.VARIABLES_CONFIG,
-        "levels": config.LEVELS,
-        "colors": config.COLORS,
-        "iqr_levels": config.IQR_LEVELS,
-        "iqr_colors": config.IQR_COLORS
+        "palettes": {
+            "wind": {"levels": config.LEVELS, "colors": config.COLORS},
+            "iqr":  {"levels": config.IQR_LEVELS, "colors": config.IQR_COLORS},
+            "sun":  {"levels": config.SUN_LEVELS, "colors": config.SUN_COLORS},
+            "dbz":  {"levels": config.DBZ_LEVELS, "colors": config.DBZ_COLORS}
+        }
     }
     with open("dist/data/config.json", "w") as f:
         json.dump(config_data, f)
