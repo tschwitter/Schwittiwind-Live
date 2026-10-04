@@ -15,18 +15,25 @@
         #map { width: 100%; height: 100%; z-index: 1; }
         .wind-arrow-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
 
-        .var-switch-container {
+        /* --- OBERE LEISTE (HAUPTAUSWAHL + 2. EBENE + EINSTELLUNGEN) --- */
+        .top-bar-container {
             position: fixed;
-            top: 20px; left: 50%;
+            top: 15px; left: 50%;
             transform: translateX(-50%);
             z-index: 9999;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            max-width: 96vw;
+        }
+
+        .var-switch-container {
             background-color: rgba(33, 43, 54, 0.9);
             border: 1px solid rgba(255,255,255,0.15);
             border-radius: 20px;
             padding: 4px;
             display: flex; gap: 4px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-            max-width: 95vw;
             overflow-x: auto;
         }
         .var-btn {
@@ -45,10 +52,93 @@
             box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         }
 
+        /* 2. Ebene & Zahnrad Buttons */
+        .layer2-btn, .settings-btn {
+            background-color: rgba(33, 43, 54, 0.9);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 18px;
+            color: #ccc;
+            font-family: Arial, sans-serif;
+            font-size: 12px; font-weight: bold;
+            padding: 8px 12px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            display: flex; align-items: center; gap: 4px;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+        .layer2-btn:hover, .settings-btn:hover { background-color: rgba(45, 58, 72, 0.95); color: white; }
+        .layer2-btn.active { background-color: #2e7d32; color: white; border-color: #81c784; }
+        .settings-btn { padding: 8px 10px; font-size: 14px; }
+
+        /* --- POPUPS / MENÜS --- */
+        .dropdown-menu, .settings-popup {
+            display: none;
+            position: fixed;
+            top: 60px;
+            background-color: rgba(28, 37, 46, 0.96);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 10px;
+            padding: 10px;
+            z-index: 100000;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        .dropdown-menu {
+            left: 50%;
+            transform: translateX(-50%);
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            max-height: 70vh;
+            overflow-y: auto;
+            min-width: 170px;
+        }
+        .dropdown-item {
+            background: rgba(255,255,255,0.06);
+            border: none; border-radius: 6px;
+            color: white; padding: 7px 12px;
+            text-align: left; font-size: 12px; font-weight: bold;
+            cursor: pointer; transition: background 0.15s;
+        }
+        .dropdown-item:hover { background: #007ab7; }
+        .dropdown-item.clear { background: rgba(217, 83, 79, 0.3); color: #ff8a80; }
+        .dropdown-item.clear:hover { background: #d9534f; color: white; }
+
+        /* Einstellungs-Panel */
+        .settings-popup {
+            right: 20px;
+            top: 65px;
+            width: 250px;
+        }
+        .settings-title {
+            font-size: 13px; font-weight: bold; border-bottom: 1px solid rgba(255,255,255,0.2);
+            padding-bottom: 6px; margin-bottom: 10px; text-align: center;
+        }
+        .settings-section {
+            background: rgba(255,255,255,0.05);
+            border-radius: 6px; padding: 8px; margin-bottom: 8px;
+        }
+        .settings-section-title { font-size: 11px; font-weight: bold; color: #81c784; margin-bottom: 6px; }
+        .settings-row {
+            display: flex; align-items: center; justify-content: space-between;
+            font-size: 11px; margin-bottom: 6px;
+        }
+        .mode-toggle-group {
+            display: flex; gap: 2px; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 2px;
+        }
+        .mode-btn {
+            background: transparent; border: none; border-radius: 10px; color: #aaa;
+            font-size: 10px; font-weight: bold; padding: 3px 8px; cursor: pointer;
+        }
+        .mode-btn.active { background: #007ab7; color: white; }
+        .opacity-slider { width: 110px; cursor: pointer; }
+
         #loadingIndicator {
             display: none;
             position: fixed;
-            top: 65px; left: 50%;
+            top: 75px; left: 50%;
             transform: translateX(-50%);
             z-index: 100000;
             background-color: rgba(33, 43, 54, 0.95);
@@ -60,9 +150,10 @@
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
 
+        /* --- VERTICAL PANEL (RECHTS) --- */
         .member-panel {
             position: fixed;
-            top: 20px; right: 20px; bottom: 150px;
+            top: 70px; right: 20px; bottom: 150px;
             width: 150px;
             background-color: rgba(33, 43, 54, 0.85);
             border: 1px solid rgba(255,255,255,0.15);
@@ -97,6 +188,7 @@
         .member-btn.active { background-color: #007ab7; color: white; }
         .only-hl-info { display: none; font-size: 11px; color: #aaa; text-align: center; padding: 10px 4px; font-style: italic; }
 
+        /* --- KONTROLLZENTRUM (UNTEN MITTE) --- */
         .control-panel {
             position: fixed;
             bottom: 30px; left: 50%;
@@ -142,7 +234,7 @@
         }
         .bottom-labels-row { display: flex; justify-content: space-between; font-size: 12px; font-weight: bold; color: white; padding: 0 4px; }
 
-        /* ================= DYNAMISCHE LEGENDE ================= */
+        /* --- DYNAMISCHE LEGENDE (UNTEN LINKS) --- */
         .legend-box { 
             position: fixed; 
             bottom: 30px; left: 20px; 
@@ -150,45 +242,104 @@
             background-color: rgba(33, 43, 54, 0.9); 
             border: 1px solid rgba(255,255,255,0.15); 
             border-radius: 8px; 
-            padding: 10px 8px 10px 8px; 
+            padding: 8px; 
             font-family: Arial, sans-serif; color: white; 
             box-shadow: 4px 4px 12px rgba(0,0,0,0.5); 
-            width: 86px; box-sizing: border-box; font-size: 11px; 
+            display: flex; gap: 8px; box-sizing: border-box; font-size: 10px; 
         }
-        .legend-title { font-weight: bold; font-size: 13px; text-align: center; margin-bottom: 6px; }
-        .legend-scale { position: relative; height: 280px; display: flex; }
+        .legend-column { display: flex; flex-direction: column; align-items: center; width: 68px; }
+        .legend-title { font-weight: bold; font-size: 11px; text-align: center; margin-bottom: 4px; }
+        .legend-scale { position: relative; height: 240px; display: flex; width: 100%; }
         .legend-bar { 
-            width: 22px; height: 280px; 
+            width: 18px; height: 240px; 
             display: flex; flex-direction: column; 
             border-radius: 2px; overflow: hidden; 
             border: 1px solid #000; 
         }
         .legend-labels { 
-            position: absolute; left: 30px; top: -6px; 
-            height: 292px; font-size: 9px; font-weight: bold; 
+            position: absolute; left: 24px; top: -5px; 
+            height: 250px; font-size: 9px; font-weight: bold; 
             display: flex; flex-direction: column; justify-content: space-between; 
         }
 
         @media (max-width: 768px) {
-            .var-switch-container { top: 10px; padding: 3px; gap: 2px; }
-            .var-btn { font-size: 11px; padding: 4px 8px; }
-            .control-panel { bottom: 10px; left: 10px; right: 10px; width: auto; transform: none; padding: 10px; }
-            .member-panel { top: 50px; right: 10px; width: 55px; padding: 6px 2px; }
+            .top-bar-container { top: 8px; gap: 4px; }
+            .var-btn { font-size: 10px; padding: 4px 7px; }
+            .layer2-btn, .settings-btn { font-size: 10px; padding: 5px 8px; }
+            .control-panel { bottom: 10px; left: 10px; right: 10px; width: auto; transform: none; padding: 8px 10px; }
+            .member-panel { top: 55px; right: 8px; width: 50px; padding: 6px 2px; }
             .member-panel-title, .member-section-title { display: none; }
-            .member-btn { font-size: 11px; padding: 6px 2px; }
-            .legend-box { bottom: 145px; left: 10px; width: 72px; padding: 6px 4px; }
-            .legend-scale { height: 210px; }
-            .legend-bar { width: 16px; height: 210px; }
-            .legend-labels { left: 24px; height: 220px; font-size: 8px; }
+            .member-btn { font-size: 10px; padding: 5px 1px; }
+            .legend-box { bottom: 135px; left: 8px; padding: 6px; }
+            .legend-column { width: 52px; }
+            .legend-scale { height: 160px; }
+            .legend-bar { width: 14px; height: 160px; }
+            .legend-labels { left: 18px; height: 168px; font-size: 7.5px; }
+            .settings-popup { right: 10px; top: 50px; width: 230px; }
         }
     </style>
 </head>
 <body>
 
     <div id="map"></div>
-    <div class="var-switch-container" id="varSwitchContainer"></div>
+
+    <!-- OBERE LEISTE -->
+    <div class="top-bar-container">
+        <!-- 1. Ebene Auswahltasten -->
+        <div class="var-switch-container" id="varSwitchContainer"></div>
+        
+        <!-- 2. Ebene Dropdown-Knopf -->
+        <button class="layer2-btn" id="layer2Btn" onclick="toggleDropdown()">+ 2. Ebene</button>
+        
+        <!-- Einstellungen Knopf -->
+        <button class="settings-btn" id="settingsBtn" onclick="toggleSettings()" title="Ebenen-Einstellungen">⚙</button>
+    </div>
+
+    <!-- DROPDOWN-AUSWAHL FÜR 2. EBENE -->
+    <div class="dropdown-menu" id="layer2Dropdown"></div>
+
+    <!-- EINSTELLUNGEN-POPUP (TRANSPARENZ & LINIEN/FARBEN) -->
+    <div class="settings-popup" id="settingsPopup">
+        <div class="settings-title">⚙ Ebenen-Optionen</div>
+        
+        <!-- 1. Ebene Steuerung -->
+        <div class="settings-section">
+            <div class="settings-section-title" id="cfgTitleL1">1. Ebene: Basis</div>
+            <div class="settings-row">
+                <span>Darstellung:</span>
+                <div class="mode-toggle-group">
+                    <button class="mode-btn active" id="btnModeFillL1" onclick="setLayerMode(1, 'fill')">Farbe</button>
+                    <button class="mode-btn" id="btnModeLineL1" onclick="setLayerMode(1, 'line')">Linien</button>
+                </div>
+            </div>
+            <div class="settings-row">
+                <span>Transparenz:</span>
+                <input type="range" class="opacity-slider" id="opacitySliderL1" min="10" max="100" value="55" oninput="setLayerOpacity(1, this.value)">
+                <span id="opacityLabelL1" style="width: 25px; text-align: right;">55%</span>
+            </div>
+        </div>
+
+        <!-- 2. Ebene Steuerung -->
+        <div class="settings-section" id="cfgSectionL2" style="opacity: 0.5;">
+            <div class="settings-section-title" id="cfgTitleL2" style="color: #64b5f6;">2. Ebene: Keine</div>
+            <div class="settings-row">
+                <span>Darstellung:</span>
+                <div class="mode-toggle-group">
+                    <button class="mode-btn active" id="btnModeFillL2" onclick="setLayerMode(2, 'fill')">Farbe</button>
+                    <button class="mode-btn" id="btnModeLineL2" onclick="setLayerMode(2, 'line')">Linien</button>
+                </div>
+            </div>
+            <div class="settings-row">
+                <span>Transparenz:</span>
+                <input type="range" class="opacity-slider" id="opacitySliderL2" min="10" max="100" value="65" oninput="setLayerOpacity(2, this.value)">
+                <span id="opacityLabelL2" style="width: 25px; text-align: right;">65%</span>
+            </div>
+        </div>
+    </div>
+
     <div id="loadingIndicator">Lade Wetterdaten...</div>
 
+    <!-- RECHTES PANEL (LÄUFE) -->
     <div class="member-panel">
         <div class="member-panel-title">Läufe</div>
         <div class="member-section-title">Hauptlauf</div>
@@ -202,6 +353,7 @@
         <div id="onlyHlNotice" class="only-hl-info">Nur Hauptlauf</div>
     </div>
 
+    <!-- UNTERES KONTROLLZENTRUM -->
     <div class="control-panel">
         <div class="day-buttons-row" id="dayButtonsContainer"></div>
         <div class="main-controls-row">
@@ -219,22 +371,28 @@
         </div>
     </div>
 
-    <div class="legend-box">
-        <div class="legend-title" id="legendTitle">km/h</div>
-        <div class="legend-scale">
-            <div class="legend-bar" id="legendBar"></div>
-            <div class="legend-labels" id="legendLabels"></div>
-        </div>
-    </div>
+    <!-- DYNAMISCHE DOPPEL-LEGENDE -->
+    <div class="legend-box" id="legendBox"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
     <script>
         var map, config, times;
-        var currentVar = null;
+        
+        // EBENEN-STATUS
+        var layer1Var = null;
+        var layer2Var = null; // null = keine 2. Ebene aktiv
+        
+        var layer1Mode = 'fill'; // 'fill' oder 'line'
+        var layer2Mode = 'fill';
+        var layer1Opacity = 0.55;
+        var layer2Opacity = 0.65;
+
         var currentMemberIdx = 0;
         var currentStepIdx = 0;
-        var contourLayer = null;
+        
+        var contourLayer1 = null;
+        var contourLayer2 = null;
         var activeMarkers = null;
         
         var cacheGrid = {};
@@ -244,38 +402,122 @@
         var dayTimesteps = {};
         var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
+        // ================= MENÜ- & DROPDOWN-LOGIK =================
+        function toggleDropdown() {
+            var el = document.getElementById("layer2Dropdown");
+            el.style.display = (el.style.display === "flex") ? "none" : "flex";
+            document.getElementById("settingsPopup").style.display = "none";
+        }
+
+        function toggleSettings() {
+            var el = document.getElementById("settingsPopup");
+            el.style.display = (el.style.display === "block") ? "none" : "block";
+            document.getElementById("layer2Dropdown").style.display = "none";
+        }
+
+        function setLayerMode(layerNum, mode) {
+            if (layerNum === 1) {
+                layer1Mode = mode;
+                document.getElementById("btnModeFillL1").classList.toggle("active", mode === 'fill');
+                document.getElementById("btnModeLineL1").classList.toggle("active", mode === 'line');
+            } else {
+                layer2Mode = mode;
+                document.getElementById("btnModeFillL2").classList.toggle("active", mode === 'fill');
+                document.getElementById("btnModeLineL2").classList.toggle("active", mode === 'line');
+            }
+            renderContours();
+        }
+
+        function setLayerOpacity(layerNum, val) {
+            var op = val / 100.0;
+            if (layerNum === 1) {
+                layer1Opacity = op;
+                document.getElementById("opacityLabelL1").innerText = val + "%";
+                if (map) map.getPane('contourPane1').style.opacity = op;
+            } else {
+                layer2Opacity = op;
+                document.getElementById("opacityLabelL2").innerText = val + "%";
+                if (map) map.getPane('contourPane2').style.opacity = op;
+            }
+        }
+
         function initVarSwitchButtons() {
             var container = document.getElementById("varSwitchContainer");
             container.innerHTML = "";
             var vars = config.variables || Object.keys(config.variables_config);
-            if (!currentVar || !vars.includes(currentVar)) {
-                currentVar = vars[0];
-            }
+            if (!layer1Var || !vars.includes(layer1Var)) layer1Var = vars[0];
 
             vars.forEach(vKey => {
                 var vCfg = config.variables_config[vKey];
                 var btn = document.createElement("button");
-                btn.className = "var-btn" + (vKey === currentVar ? " active" : "");
+                btn.className = "var-btn" + (vKey === layer1Var ? " active" : "");
                 btn.id = "varBtn-" + vKey;
                 btn.innerText = vCfg ? vCfg.label : vKey;
-                btn.onclick = function() { switchVariable(vKey); };
+                btn.onclick = function() { switchLayer1(vKey); };
                 container.appendChild(btn);
             });
         }
 
-        function switchVariable(newVar) {
-            if (currentVar === newVar) return;
-            currentVar = newVar;
+        function initLayer2Dropdown() {
+            var menu = document.getElementById("layer2Dropdown");
+            menu.innerHTML = "";
+
+            var clearBtn = document.createElement("button");
+            clearBtn.className = "dropdown-item clear";
+            clearBtn.innerText = "✖ 2. Ebene deaktivieren";
+            clearBtn.onclick = function() { setSecondaryVar(null); };
+            menu.appendChild(clearBtn);
+
+            var vars = config.variables || Object.keys(config.variables_config);
+            vars.forEach(vKey => {
+                var vCfg = config.variables_config[vKey];
+                var btn = document.createElement("button");
+                btn.className = "dropdown-item";
+                btn.innerText = vCfg ? vCfg.label : vKey;
+                btn.onclick = function() { setSecondaryVar(vKey); };
+                menu.appendChild(btn);
+            });
+        }
+
+        function setSecondaryVar(newVar) {
+            layer2Var = newVar;
+            document.getElementById("layer2Dropdown").style.display = "none";
+            
+            var btn = document.getElementById("layer2Btn");
+            var cfgSec = document.getElementById("cfgSectionL2");
+            var titleSec = document.getElementById("cfgTitleL2");
+
+            if (layer2Var) {
+                var lbl = config.variables_config[layer2Var] ? config.variables_config[layer2Var].label : layer2Var;
+                btn.innerText = "2. Ebene: " + lbl + " ✕";
+                btn.classList.add("active");
+                cfgSec.style.opacity = "1";
+                titleSec.innerText = "2. Ebene: " + lbl;
+            } else {
+                btn.innerText = "+ 2. Ebene";
+                btn.classList.remove("active");
+                cfgSec.style.opacity = "0.5";
+                titleSec.innerText = "2. Ebene: Keine";
+            }
+
+            updateForecast(currentMemberIdx, currentStepIdx);
+        }
+
+        function switchLayer1(newVar) {
+            if (layer1Var === newVar) return;
+            layer1Var = newVar;
 
             var vars = config.variables || Object.keys(config.variables_config);
             vars.forEach(vKey => {
                 var btn = document.getElementById("varBtn-" + vKey);
-                if (btn) btn.classList.toggle("active", vKey === currentVar);
+                if (btn) btn.classList.toggle("active", vKey === layer1Var);
             });
 
-            var vCfg = config.variables_config[currentVar];
+            var vCfg = config.variables_config[layer1Var];
             var hasEns = vCfg ? vCfg.has_ensemble : true;
             if (!hasEns) currentMemberIdx = 0;
+
+            document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (vCfg ? vCfg.label : layer1Var);
 
             updateMemberPanelVisibility(hasEns);
             updateForecast(currentMemberIdx, currentStepIdx);
@@ -291,12 +533,12 @@
         function navLeft() { updateForecast(currentMemberIdx, Math.max(0, currentStepIdx - 1)); }
         function navRight() { updateForecast(currentMemberIdx, Math.min(times.length - 1, currentStepIdx + 1)); }
         function navUp() {
-            var vCfg = config.variables_config[currentVar];
+            var vCfg = config.variables_config[layer1Var];
             if (vCfg && !vCfg.has_ensemble) return;
             updateForecast(Math.max(0, currentMemberIdx - 1), currentStepIdx);
         }
         function navDown() {
-            var vCfg = config.variables_config[currentVar];
+            var vCfg = config.variables_config[layer1Var];
             if (vCfg && !vCfg.has_ensemble) return;
             updateForecast(Math.min(config.member_names.length - 1, currentMemberIdx + 1), currentStepIdx);
         }
@@ -374,36 +616,24 @@
             });
         }
 
-        // ================= DYNAMISCHE LEGENDE =================
-        function updateLegend(paletteType) {
-            var titleEl  = document.getElementById("legendTitle");
-            var barEl    = document.getElementById("legendBar");
-            var labelsEl = document.getElementById("legendLabels");
-
+        // ================= DYNAMISCHE MULTI-LEGENDE =================
+        function renderSingleLegendCol(varName, isIQR) {
+            var vCfg = config.variables_config[varName] || {};
+            var paletteType = isIQR ? "iqr" : (vCfg.palette || "wind");
             var p = config.palettes[paletteType] || config.palettes["wind"];
             var colors = p.colors;
 
-            if (paletteType === "sun") {
-                titleEl.innerText = "Sun %";
-            } else if (paletteType === "dbz") {
-                titleEl.innerText = "dBZ";
-            } else {
-                titleEl.innerText = "km/h";
-            }
+            var title = (paletteType === "sun") ? "Sun %" : ((paletteType === "dbz") ? "dBZ" : "km/h");
 
-            // Exakte Farbbalken mit feinen weißen Trennlinien laut Screenshot
             var barHtml = "";
             for (var i = colors.length - 1; i >= 0; i--) {
                 var c = colors[i];
-                // KORREKTUR: Nur echte Transparenzen filtern, niemals 6-stellige Farben mit Blau=00!
                 var isTrans = (c === 'transparent' || c === '#ffffff00' || (c.length === 9 && c.endsWith('00')));
                 var bg = isTrans ? 'transparent' : c;
                 var border = (paletteType === "dbz" && !isTrans) ? "border-bottom: 1px solid rgba(255,255,255,0.4);" : "";
                 barHtml += `<div style="background-color: ${bg}; flex: 1; ${border}"></div>`;
             }
-            barEl.innerHTML = barHtml;
 
-            // Labels exakt passend zur Skala
             var labelsHtml = "";
             if (paletteType === "dbz") {
                 labelsHtml = `<div>64</div><div>61</div><div>60</div><div>59</div><div>58</div><div>57</div><div>56</div><div>55</div><div>54</div><div>53</div><div>52</div><div>51</div><div>49</div><div>47</div><div>45</div><div>41</div><div>31</div><div>24</div><div>19</div><div>7</div>`;
@@ -414,7 +644,29 @@
             } else {
                 labelsHtml = `<div>+</div><div>45</div><div>36</div><div>27</div><div>23</div><div>18</div><div>14</div><div>11</div><div>7</div><div>4</div><div>0</div>`;
             }
-            labelsEl.innerHTML = labelsHtml;
+
+            return `
+                <div class="legend-column">
+                    <div class="legend-title">${title}</div>
+                    <div class="legend-scale">
+                        <div class="legend-bar">${barHtml}</div>
+                        <div class="legend-labels">${labelsHtml}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function updateLegend() {
+            var box = document.getElementById("legendBox");
+            var isIQR1 = (currentMemberIdx === 16);
+            
+            var html = renderSingleLegendCol(layer1Var, isIQR1);
+            if (layer2Var && layer2Var !== layer1Var) {
+                var vCfg2 = config.variables_config[layer2Var] || {};
+                var isIQR2 = (vCfg2.has_ensemble && currentMemberIdx === 16);
+                html += renderSingleLegendCol(layer2Var, isIQR2);
+            }
+            box.innerHTML = html;
         }
 
         async function fetchAndDecompress(url) {
@@ -473,6 +725,22 @@
             return { type: "FeatureCollection", features: features };
         }
 
+        async function ensureDataLoaded(varName, memberIdx, stepIdx) {
+            const cacheKey = varName + "_" + memberIdx + "_" + stepIdx;
+            const vCfg = config.variables_config[varName] || {};
+            const isIQR = (vCfg.has_ensemble && memberIdx === 16);
+            const paletteType = isIQR ? "iqr" : (vCfg.palette || "wind");
+
+            if (!cacheContours[cacheKey]) {
+                const runBuster = encodeURIComponent(config.ref_time_utc);
+                if (!cacheGrid[cacheKey]) {
+                    cacheGrid[cacheKey] = await fetchAndDecompress(`data/grid_${varName}_m${memberIdx}_s${stepIdx}.json.gz?v=${runBuster}`);
+                }
+                cacheContours[cacheKey] = generateContoursClient(cacheGrid[cacheKey].s, paletteType);
+            }
+            return cacheKey;
+        }
+
         async function init() {
             try {
                 const cacheBuster = Date.now();
@@ -485,6 +753,7 @@
                 slider.max = times.length - 1;
 
                 initVarSwitchButtons();
+                initLayer2Dropdown();
                 initDayButtons();
                 initMemberPanel();
 
@@ -495,9 +764,14 @@
                     preferCanvas: true
                 });
 
-                map.createPane('contourPane');
-                map.getPane('contourPane').style.opacity = '0.55';
-                map.getPane('contourPane').style.zIndex = '400';
+                // Dedizierte Panes für saubere Ebenen-Staffelung
+                map.createPane('contourPane1');
+                map.getPane('contourPane1').style.opacity = layer1Opacity;
+                map.getPane('contourPane1').style.zIndex = '400';
+
+                map.createPane('contourPane2');
+                map.getPane('contourPane2').style.opacity = layer2Opacity;
+                map.getPane('contourPane2').style.zIndex = '450';
 
                 L.tileLayer(swisstopo_url, {
                     attribution: '&copy; <a href="https://www.swisstopo.admin.ch/">swisstopo</a>',
@@ -506,6 +780,12 @@
 
                 map.on('moveend', drawVisibleArrows);
                 map.on('zoomend', drawVisibleArrows);
+
+                // Klick außerhalb schließt Popups
+                map.on('click', function() {
+                    document.getElementById("layer2Dropdown").style.display = "none";
+                    document.getElementById("settingsPopup").style.display = "none";
+                });
 
                 slider.addEventListener("input", function() { updateForecast(currentMemberIdx, this.value); });
 
@@ -531,27 +811,24 @@
             currentMemberIdx = parseInt(newMemberIdx);
             currentStepIdx = parseInt(newStepIdx);
             document.getElementById("timeSlider").value = currentStepIdx;
-            
-            const cacheKey = currentVar + "_" + currentMemberIdx + "_" + currentStepIdx;
-            const vCfg = config.variables_config[currentVar] || {};
-            const isIQR = (currentMemberIdx === 16);
-            const paletteType = isIQR ? "iqr" : (vCfg.palette || "wind");
 
-            if (!cacheContours[cacheKey]) {
-                document.getElementById("loadingIndicator").style.display = "block";
-                try {
-                    const runBuster = encodeURIComponent(config.ref_time_utc);
-                    if (!cacheGrid[cacheKey]) {
-                        cacheGrid[cacheKey] = await fetchAndDecompress(`data/grid_${currentVar}_m${currentMemberIdx}_s${currentStepIdx}.json.gz?v=${runBuster}`);
-                    }
-                    cacheContours[cacheKey] = generateContoursClient(cacheGrid[cacheKey].s, paletteType);
-                } catch (err) {
-                    console.error("Fehler beim Laden des Zeitschritts:", err);
-                    document.getElementById("loadingIndicator").style.display = "none";
-                    return;
+            document.getElementById("loadingIndicator").style.display = "block";
+            try {
+                // 1. Ebene laden
+                await ensureDataLoaded(layer1Var, currentMemberIdx, currentStepIdx);
+
+                // 2. Ebene laden (falls aktiv)
+                if (layer2Var) {
+                    var vCfg2 = config.variables_config[layer2Var] || {};
+                    var m2 = (vCfg2.has_ensemble) ? currentMemberIdx : 0;
+                    await ensureDataLoaded(layer2Var, m2, currentStepIdx);
                 }
+            } catch (err) {
+                console.error("Fehler beim Laden:", err);
                 document.getElementById("loadingIndicator").style.display = "none";
+                return;
             }
+            document.getElementById("loadingIndicator").style.display = "none";
 
             var tInfo = times[currentStepIdx];
             var parts = tInfo.local_str.split(" ");
@@ -574,35 +851,76 @@
                 if (btn) btn.classList.toggle("active", i === currentMemberIdx);
             }
 
-            updateLegend(paletteType);
+            updateLegend();
+            renderContours();
+            drawVisibleArrows();
+        }
 
-            if (contourLayer) { map.removeLayer(contourLayer); }
-            contourLayer = L.geoJson(cacheContours[cacheKey], {
-                pane: 'contourPane',
+        function renderContours() {
+            // 1. Ebene zeichnen
+            if (contourLayer1) map.removeLayer(contourLayer1);
+            const key1 = layer1Var + "_" + currentMemberIdx + "_" + currentStepIdx;
+            
+            contourLayer1 = L.geoJson(cacheContours[key1], {
+                pane: 'contourPane1',
                 style: function(feature) {
                     var fill = feature.properties.fill;
-                    // KORREKTUR: Nur echte Transparenzen filtern!
                     var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
-                    return { 
-                        fillColor: fill, 
-                        color: isTrans ? 'transparent' : feature.properties.stroke, 
-                        weight: 0.5, 
-                        fillOpacity: isTrans ? 0 : 1.0 
-                    };
+                    
+                    if (layer1Mode === 'line') {
+                        return { fill: false, color: isTrans ? 'transparent' : fill, weight: 1.8, opacity: 1.0 };
+                    } else {
+                        return { fillColor: fill, color: isTrans ? 'transparent' : fill, weight: 0.5, fillOpacity: isTrans ? 0 : 1.0 };
+                    }
                 }
             }).addTo(map);
 
-            drawVisibleArrows();
+            // 2. Ebene zeichnen (falls aktiv)
+            if (contourLayer2) { map.removeLayer(contourLayer2); contourLayer2 = null; }
+            if (layer2Var) {
+                var vCfg2 = config.variables_config[layer2Var] || {};
+                var m2 = (vCfg2.has_ensemble) ? currentMemberIdx : 0;
+                const key2 = layer2Var + "_" + m2 + "_" + currentStepIdx;
+
+                contourLayer2 = L.geoJson(cacheContours[key2], {
+                    pane: 'contourPane2',
+                    style: function(feature) {
+                        var fill = feature.properties.fill;
+                        var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
+
+                        if (layer2Mode === 'line') {
+                            return { fill: false, color: isTrans ? 'transparent' : fill, weight: 2.2, opacity: 1.0 };
+                        } else {
+                            return { fillColor: fill, color: isTrans ? 'transparent' : fill, weight: 0.5, fillOpacity: isTrans ? 0 : 1.0 };
+                        }
+                    }
+                }).addTo(map);
+            }
         }
 
         function drawVisibleArrows() {
             if (!map || !config) return;
             if (!activeMarkers) { activeMarkers = L.layerGroup().addTo(map); } else { activeMarkers.clearLayers(); }
-            
-            var vCfg = config.variables_config[currentVar];
-            if (!vCfg || !vCfg.has_arrows || currentMemberIdx >= 11) return;
 
-            const cacheKey = currentVar + "_" + currentMemberIdx + "_" + currentStepIdx;
+            // Finde heraus, welche aktive Ebene Windpfeile unterstützt (bevorzuge Ebene 1, sonst Ebene 2)
+            var arrowVar = null;
+            var arrowMember = 0;
+
+            var vCfg1 = config.variables_config[layer1Var];
+            if (vCfg1 && vCfg1.has_arrows && currentMemberIdx < 11) {
+                arrowVar = layer1Var;
+                arrowMember = currentMemberIdx;
+            } else if (layer2Var) {
+                var vCfg2 = config.variables_config[layer2Var];
+                if (vCfg2 && vCfg2.has_arrows) {
+                    arrowVar = layer2Var;
+                    arrowMember = vCfg2.has_ensemble ? currentMemberIdx : 0;
+                }
+            }
+
+            if (!arrowVar) return;
+
+            const cacheKey = arrowVar + "_" + arrowMember + "_" + currentStepIdx;
             const gridData = cacheGrid[cacheKey];
             if (!gridData || !gridData.s || !gridData.d || gridData.d.length === 0) return;
 
@@ -617,7 +935,7 @@
 
             var speeds = gridData.s;
             var dirs = gridData.d;
-            var labelType = vCfg.label || "Wind";
+            var labelType = config.variables_config[arrowVar].label || "Wind";
 
             for (var i = 0; i < speeds.length; i++) {
                 var sVal = speeds[i];
