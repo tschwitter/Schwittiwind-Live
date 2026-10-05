@@ -1,7 +1,5 @@
 # ================= CONFIGURATION =================
-ANZAHL_STUNDEN = 33
-
-# 1km-Originalauflösung der Schweiz
+# 1km-Originalauflösung der Schweiz (Zielgitter für BEIDE Modelle!)
 NX, NY = 400, 240
 
 # Bounding Box Schweiz (+ Puffer)
@@ -12,49 +10,53 @@ YMIN, YMAX = 45.6, 47.9
 LAT_MIN, LAT_MAX = 45.5, 48.0
 LON_MIN, LON_MAX = 5.7, 10.8
 
-# Modulare Variablen-Konfiguration
+# ================= ZENTRALER VARIABLEN-KATALOG =================
 VARIABLES_CONFIG = {
-    "wind":     {"label": "10m Wind",     "type": "surface",  "has_ensemble": True,  "has_arrows": True,  "palette": "wind"},
-    "gust":     {"label": "Böen",         "type": "surface",  "has_ensemble": True,  "has_arrows": False, "palette": "wind"},
-    "dbz":      {"label": "Radar (dBZ)",  "type": "surface",  "has_ensemble": True,  "has_arrows": False, "palette": "dbz"},
-    "sun":      {"label": "Sonne %",      "type": "surface",  "has_ensemble": True,  "has_arrows": False, "palette": "sun"},
-    
-    # NEU: Die 4 Wolkenstockwerke
-    "clct":     {"label": "Wolken",       "type": "surface",  "has_ensemble": True,  "has_arrows": False, "palette": "cloud"},
-    "clch":     {"label": "Hohe Wolken",  "type": "surface",  "has_ensemble": False, "has_arrows": False, "palette": "cloud"},
-    "clcm":     {"label": "Mittl. Wolken","type": "surface",  "has_ensemble": True, "has_arrows": False, "palette": "cloud"},
-    "clcl":     {"label": "Tiefe Wolken", "type": "surface",  "has_ensemble": True, "has_arrows": False, "palette": "cloud"},
-
-    # Höhenwinde
-    "wind1000": {"label": "1000m Wind",   "type": "altitude", "altitude": 1000.0, "has_ensemble": False, "has_arrows": True, "palette": "wind"},
-    "wind1500": {"label": "1500m Wind",   "type": "altitude", "altitude": 1500.0, "has_ensemble": True,  "has_arrows": True, "palette": "wind"},
-    "wind2000": {"label": "2000m Wind",   "type": "altitude", "altitude": 2000.0, "has_ensemble": False, "has_arrows": True, "palette": "wind"},
-    "wind2500": {"label": "2500m Wind",   "type": "altitude", "altitude": 2500.0, "has_ensemble": False, "has_arrows": True, "palette": "wind"},
-    "wind3000": {"label": "3000m Wind",   "type": "altitude", "altitude": 3000.0, "has_ensemble": False, "has_arrows": True, "palette": "wind"},
-    "wind3500": {"label": "3500m Wind",   "type": "altitude", "altitude": 3500.0, "has_ensemble": False, "has_arrows": True, "palette": "wind"},
+    "wind":     {"label": "10m Wind",     "type": "surface",  "has_arrows": True,  "palette": "wind"},
+    "gust":     {"label": "Böen",         "type": "surface",  "has_arrows": False, "palette": "wind"},
+    "dbz":      {"label": "Radar (dBZ)",  "type": "surface",  "has_arrows": False, "palette": "dbz"},
+    "sun":      {"label": "Sonne %",      "type": "surface",  "has_arrows": False, "palette": "sun"},
+    "clct":     {"label": "Wolken",       "type": "surface",  "has_arrows": False, "palette": "cloud"},
+    "clch":     {"label": "Hohe Wolken",  "type": "surface",  "has_arrows": False, "palette": "cloud"},
+    "clcm":     {"label": "Mittl. Wolken","type": "surface",  "has_arrows": False, "palette": "cloud"},
+    "clcl":     {"label": "Tiefe Wolken", "type": "surface",  "has_arrows": False, "palette": "cloud"},
+    "wind1000": {"label": "1000m Wind",   "type": "altitude", "altitude": 1000.0, "has_arrows": True, "palette": "wind"},
+    "wind1500": {"label": "1500m Wind",   "type": "altitude", "altitude": 1500.0, "has_arrows": True, "palette": "wind"},
+    "wind2000": {"label": "2000m Wind",   "type": "altitude", "altitude": 2000.0, "has_arrows": True, "palette": "wind"},
+    "wind2500": {"label": "2500m Wind",   "type": "altitude", "altitude": 2500.0, "has_arrows": True, "palette": "wind"},
+    "wind3000": {"label": "3000m Wind",   "type": "altitude", "altitude": 3000.0, "has_arrows": True, "palette": "wind"},
+    "wind3500": {"label": "3500m Wind",   "type": "altitude", "altitude": 3500.0, "has_arrows": True, "palette": "wind"},
 }
 
-# Schnellauswahl für Tests (einfach '#' setzen oder entfernen)
-ACTIVE_VARIABLES = [
-    "wind",
-    "gust",
-    "dbz",
-    "sun",
-    "clct",
-    "clch",
-    "clcm",
-    "clcl",
-    "wind1000",
-    "wind1500",
-    "wind2000",
-    "wind2500",
-    "wind3000",
-    "wind3500",
-]
+# ================= MODELL-SPEZIFISCHE STEUERUNG =================
+MODELS_CONFIG = {
+    "icon-ch1": {
+        "name": "ICON-CH1 (1km)",
+        "collection": "ogd-forecasting-icon-ch1",
+        "hhl_asset": "vertical_constants_icon-ch1-eps.grib2",
+        "hours": 33,
+        "max_members": 11,
+        "active_variables": [
+            "wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl",
+            "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
+        ],
+        "ensemble_variables": ["wind", "gust", "dbz", "sun", "clct", "wind1500"],
+        "max_chunks": 4
+    },
+    "icon-ch2": {
+        "name": "ICON-CH2 (2.1km)",
+        "collection": "ogd-forecasting-icon-ch2",
+        "hhl_asset": "vertical_constants_icon-ch2-eps.grib2",
+        "hours": 48, # 48 Stunden Vorhersage für CH2
+        "max_members": 21,
+        # Startet nur mit unperturbed 10m Wind!
+        "active_variables": ["wind"],
+        "ensemble_variables": [], # Keine Ensembles -> rennt in Sekunden durch!
+        "max_chunks": 2
+    }
+}
 
-VARIABLES = [v for v in ACTIVE_VARIABLES if v in VARIABLES_CONFIG]
-
-# ================= HAUPT-FARBSKALEN =================
+# ================= FARBSKALEN =================
 LEVELS = [0, 4, 7, 11, 14, 18, 23, 27, 36, 45, 120]
 COLORS = [
     '#f1f6ff', '#baddf3', '#5cd184', '#89db4c', '#fed148',
@@ -78,23 +80,12 @@ DBZ_COLORS = [
     '#bc00ce', '#e200da', '#f432cb', '#fa7fd6', '#ffd4f6'
 ]
 
-# ================= NEU: WOLKEN-FARBSKALA (mit 10% Stufe) =================
-# Exakte Graustufen laut Screenshot (10 Intervalle von 10% bis 100%)
 CLOUD_LEVELS = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 95.0, 100.0]
 CLOUD_COLORS = [
-    '#f0f2f5',  # 10-20%: Hauchdünner Schleier
-    '#dfe3e8',  # 20-30%
-    '#cbcfd6',  # 30-40%
-    '#b4b9c2',  # 40-50%
-    '#9ba1ac',  # 50-60%
-    '#828894',  # 60-70%
-    '#686e7a',  # 70-80%
-    '#505561',  # 80-90%
-    '#3a3e48',  # 90-95%
-    '#23262c'   # 95-100%: Dichte Bewölkung / Dunkelgrau
+    '#f0f2f5', '#dfe3e8', '#cbcfd6', '#b4b9c2', '#9ba1ac',
+    '#828894', '#686e7a', '#505561', '#3a3e48', '#23262c'
 ]
 
-# ================= SPEZIFISCHE IQR-SKALEN =================
 IQR_BASE_COLORS = [
     '#ffffff00', '#e0f3db', '#a8ddb5', '#7bccc4', '#4eb3d3',
     '#2b8cbe', '#fec44f', '#fe9929', '#ec7014', '#d7301f'
