@@ -3,7 +3,7 @@ from scipy.spatial import Delaunay
 import config
 
 def init_regrid_weights(source_lons, source_lats):
-    print("-> Berechne geometrische Regridding-Gewichte einmalig vor...", flush=True)
+    print("-> Berechne geometrische Regridding-Gewichte...", flush=True)
     source_points = np.column_stack([source_lons, source_lats])
     
     target_lons = np.linspace(config.XMIN, config.XMAX, config.NX)
@@ -56,15 +56,12 @@ def remap_fast(field, weights):
     return out.reshape(config.NY, config.NX)
 
 def compute_statistics_for_array(all_values, threshold=None):
-    """Berechnet Statistiken. Wo kein Member das Signal (threshold) erreicht, wird auch IQR transparent."""
     s_min = np.nanmin(all_values, axis=0)
     s_max = np.nanmax(all_values, axis=0)
     q25, median, q75 = np.nanpercentile(all_values, [25, 50, 75], axis=0)
     iqr = q75 - q25
 
     if threshold is not None:
-        # Wo in ALLEN Membern kein Signal vorhanden ist (s_max < threshold)
-        # oder wo nur NaNs liegen, muss auch der IQR transparent sein!
         no_signal = (s_max < threshold) | np.isnan(s_max)
         iqr = np.where(no_signal, np.nan, iqr)
         s_min = np.where(s_min < threshold, np.nan, s_min)
@@ -87,7 +84,11 @@ def get_step_slice(da, step_idx):
         return da.isel(lead_time=step_idx)
     return da
 
-def compute_timestep(weather_data, step_idx, weights):
+def compute_timestep(model_name, weather_data, step_idx, weights):
+    model_cfg = config.MODELS_CONFIG[model_name]
+    active_vars = model_cfg["active_variables"]
+    ens_vars = model_cfg["ensemble_variables"]
+
     surface = weather_data["surface"]
     altitude_hl = weather_data["altitude_hl"]
     altitude_ens = weather_data["altitude_ens"]
@@ -95,8 +96,8 @@ def compute_timestep(weather_data, step_idx, weights):
     step_results = {}
 
     # 1. 10m Wind & Böen
-    if "wind" in config.VARIABLES:
-        has_ens = config.VARIABLES_CONFIG["wind"].get("has_ensemble", False)
+    if "wind" in active_vars and "u_h" in surface:
+        has_ens = "wind" in ens_vars
         u_h, v_h = surface["u_h"], surface["v_h"]
         u_s = get_step_slice(u_h, step_idx)
         v_s = get_step_slice(v_h, step_idx)
@@ -123,8 +124,8 @@ def compute_timestep(weather_data, step_idx, weights):
             wind_data.update(compute_statistics_for_array(all_sp))
         step_results["wind"] = wind_data
 
-    if "gust" in config.VARIABLES:
-        has_ens = config.VARIABLES_CONFIG["gust"].get("has_ensemble", False)
+    if "gust" in active_vars and "g_h" in surface:
+        has_ens = "gust" in ens_vars
         g_h = surface["g_h"]
         gs_h = get_step_slice(g_h, step_idx)
         sp_g = remap_fast(gs_h, weights) * 3.6
@@ -143,9 +144,9 @@ def compute_timestep(weather_data, step_idx, weights):
             gust_data.update(compute_statistics_for_array(all_g))
         step_results["gust"] = gust_data
 
-    # 2. Radar (dBZ) – Kappen negativer Werte verhindert Phantom-IQR-Explosionen
-    if "dbz" in config.VARIABLES:
-        has_ens = config.VARIABLES_CONFIG["dbz"].get("has_ensemble", False)
+    # 2. Radar (dBZ)
+    if "dbz" in active_vars and "dbz_h" in surface:
+        has_ens = "dbz" in ens_vars
         dbz_h = surface["dbz_h"]
         dbz_s = get_step_slice(dbz_h, step_idx)
         g_dbz = remap_fast(dbz_s, weights)
@@ -157,20 +158,18 @@ def compute_timestep(weather_data, step_idx, weights):
             members = dbz_e.coords['eps'].values
             all_dbz = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
             all_dbz[0, :, :] = g_dbz
-            
             for m_i, eps_val in enumerate(members, start=1):
                 d_s = get_step_slice(dbz_e.sel(eps=eps_val), step_idx)
                 gd = remap_fast(d_s, weights)
                 gd = np.where(np.isnan(gd), np.nan, np.maximum(0.0, gd))
                 all_dbz[m_i, :, :] = gd
                 dbz_data[m_i] = {"speed": np.where(gd < 7.0, np.nan, gd), "has_arrows": False}
-            
             dbz_data.update(compute_statistics_for_array(all_dbz, threshold=7.0))
         step_results["dbz"] = dbz_data
 
     # 3. Sonnenschein (%)
-    if "sun" in config.VARIABLES:
-        has_ens = config.VARIABLES_CONFIG["sun"].get("has_ensemble", False)
+    if "sun" in active_vars and "sun_h" in surface:
+        has_ens = "sun" in ens_vars
         sun_h = surface["sun_h"]
         sun_s = get_step_slice(sun_h, step_idx)
         g_sun_sec = remap_fast(sun_s, weights)
@@ -183,7 +182,6 @@ def compute_timestep(weather_data, step_idx, weights):
             members = sun_e.coords['eps'].values
             all_sun = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
             all_sun[0, :, :] = sun_pct
-            
             for m_i, eps_val in enumerate(members, start=1):
                 se_s = get_step_slice(sun_e.sel(eps=eps_val), step_idx)
                 gs_sec = remap_fast(se_s, weights)
@@ -191,15 +189,14 @@ def compute_timestep(weather_data, step_idx, weights):
                 spct = np.clip((gs_sec / 3600.0) * 100.0, 0.0, 100.0)
                 all_sun[m_i, :, :] = spct
                 sun_data[m_i] = {"speed": np.where(spct < 10.0, np.nan, spct), "has_arrows": False}
-            
             sun_data.update(compute_statistics_for_array(all_sun, threshold=10.0))
         step_results["sun"] = sun_data
 
-    # 4. Wolken (clct, clch, clcm, clcl)
+    # 4. Wolken
     CLOUD_KEYS = ["clct", "clch", "clcm", "clcl"]
     for c_key in CLOUD_KEYS:
-        if c_key in config.VARIABLES and f"{c_key}_h" in surface:
-            has_ens = config.VARIABLES_CONFIG[c_key].get("has_ensemble", False)
+        if c_key in active_vars and f"{c_key}_h" in surface:
+            has_ens = c_key in ens_vars
             c_h = surface[f"{c_key}_h"]
             c_s = get_step_slice(c_h, step_idx)
             g_c = remap_fast(c_s, weights)
@@ -222,10 +219,10 @@ def compute_timestep(weather_data, step_idx, weights):
 
     # 5. Höhen-Winde
     for var_name, var_cfg in config.VARIABLES_CONFIG.items():
-        if var_cfg.get("type") != "altitude" or var_name not in config.VARIABLES:
+        if var_cfg.get("type") != "altitude" or var_name not in active_vars:
             continue
         alt = var_cfg["altitude"]
-        has_ens = var_cfg.get("has_ensemble", False)
+        has_ens = var_name in ens_vars
         u_hl, v_hl = altitude_hl[alt]
 
         u_s = get_step_slice(u_hl, step_idx)
