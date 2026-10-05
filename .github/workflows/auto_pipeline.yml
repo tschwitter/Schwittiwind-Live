@@ -23,12 +23,11 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
-  # STUFE 1: Schnellprüfung & dynamische Matrix-Generierung
+  # STUFE 1: Vorbereitung für beide Modelle
   check-and-prepare:
     runs-on: ubuntu-latest
     outputs:
       should_run: ${{ steps.prep.outputs.should_run }}
-      ref_time_str: ${{ steps.prep.outputs.ref_time_str }}
       matrix_config: ${{ steps.prep.outputs.matrix_config }}
     steps:
       - name: Code auschecken
@@ -45,7 +44,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Schnellprüfung & Vorbereitung
+      - name: Schnellprüfung & Vorbereitung (CH1 & CH2)
         id: prep
         run: |
           if [ "${{ github.event.inputs.force }}" = "true" ]; then
@@ -61,7 +60,7 @@ jobs:
           name: site-base
           path: dist/
 
-  # STUFE 2: DYNAMISCHE MATRIX
+  # STUFE 2: DYNAMISCHE MATRIX (Berechnet Chunks für CH1 und CH2)
   compute-matrix:
     needs: check-and-prepare
     if: needs.check-and-prepare.outputs.should_run == 'true'
@@ -84,14 +83,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Berechne Chunk ${{ matrix.chunk }} (Schritte ${{ matrix.start }} bis ${{ matrix.end }})
+      - name: Berechne ${{ matrix.model }} Chunk ${{ matrix.chunk }} (${{ matrix.start }} bis ${{ matrix.end }})
         run: |
-          python -u run_pipeline.py --start-step ${{ matrix.start }} --end-step ${{ matrix.end }} --ref-time "${{ needs.check-and-prepare.outputs.ref_time_str }}"
+          python -u run_pipeline.py --model ${{ matrix.model }} --start-step ${{ matrix.start }} --end-step ${{ matrix.end }} --ref-time "${{ matrix.ref_time }}"
 
       - name: Chunk-Daten speichern
         uses: actions/upload-artifact@v4
         with:
-          name: chunk-${{ matrix.chunk }}
+          name: chunk-${{ matrix.model }}-${{ matrix.chunk }}
           path: dist/data/
           if-no-files-found: ignore
 
