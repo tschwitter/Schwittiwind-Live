@@ -120,6 +120,7 @@
         .layer2-btn.active { background-color: #2e7d32; color: white; border-color: #81c784; }
         .settings-btn { padding: 4px 8px; font-size: 13px; }
 
+        /* --- MENÜS & POPUPS --- */
         .dropdown-menu, .settings-popup {
             display: none;
             position: fixed;
@@ -193,6 +194,7 @@
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
 
+        /* --- VERTICAL PANEL (RECHTS) --- */
         .member-panel {
             position: fixed;
             top: 70px; right: 20px; bottom: 150px;
@@ -230,6 +232,7 @@
         .member-btn.active { background-color: #007ab7; color: white; }
         .only-hl-info { display: none; font-size: 11px; color: #aaa; text-align: center; padding: 10px 4px; font-style: italic; }
 
+        /* --- KONTROLLZENTRUM (UNTEN MITTE) --- */
         .control-panel {
             position: fixed;
             bottom: 30px; left: 50%;
@@ -496,11 +499,13 @@
             if (layerNum === 1) {
                 layer1Opacity = op;
                 document.getElementById("opacityLabelL1").innerText = val + "%";
-                if (map) map.getPane('contourPane1').style.opacity = op;
+                document.getElementById("opacitySliderL1").value = val;
+                if (map && map.getPane('contourPane1')) map.getPane('contourPane1').style.opacity = op;
             } else {
                 layer2Opacity = op;
                 document.getElementById("opacityLabelL2").innerText = val + "%";
-                if (map) map.getPane('contourPane2').style.opacity = op;
+                document.getElementById("opacitySliderL2").value = val;
+                if (map && map.getPane('contourPane2')) map.getPane('contourPane2').style.opacity = op;
             }
         }
 
@@ -602,11 +607,16 @@
             var titleSec = document.getElementById("cfgTitleL2");
 
             if (layer2Var) {
-                var lbl = config.variables_config[layer2Var] ? config.variables_config[layer2Var].label : layer2Var;
+                var vCfg = config.variables_config[layer2Var] || {};
+                var lbl = vCfg.label || layer2Var;
                 btn.innerText = "2. Ebene: " + lbl + " ✕";
                 btn.classList.add("active");
                 cfgSec.style.opacity = "1";
                 titleSec.innerText = "2. Ebene: " + lbl;
+
+                // AUTOMATISCHE DECKKRAFT FÜR EBENE 2: 95% bei Wolken, sonst 65%
+                var targetOp = (vCfg.palette === "cloud") ? 95 : 65;
+                setLayerOpacity(2, targetOp);
             } else {
                 btn.innerText = "+ 2. Ebene";
                 btn.classList.remove("active");
@@ -628,6 +638,10 @@
             if (!hasEns) currentMemberIdx = 0;
 
             document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (vCfg ? vCfg.label : layer1Var);
+
+            // AUTOMATISCHE DECKKRAFT FÜR EBENE 1: 95% bei Wolken, sonst 55%
+            var targetOp = (vCfg && vCfg.palette === "cloud") ? 95 : 55;
+            setLayerOpacity(1, targetOp);
 
             updateMemberPanelVisibility(hasEns);
             updateForecast(currentMemberIdx, currentStepIdx);
@@ -762,7 +776,6 @@
             });
         }
 
-        // ================= DYNAMISCHE LEGENDE =================
         function renderSingleLegendCol(varName, isIQR) {
             var vCfg = config.variables_config[varName] || {};
             var paletteType = isIQR ? ("iqr_" + (vCfg.palette || "wind")) : (vCfg.palette || "wind");
@@ -921,6 +934,12 @@
                 if (!initialHasEns) currentMemberIdx = 0;
                 updateMemberPanelVisibility(initialHasEns);
                 document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (initialCfg ? initialCfg.label : layer1Var);
+
+                // Initial passende Deckkraft für Ebene 1 setzen
+                var initialOp1 = (initialCfg && initialCfg.palette === "cloud") ? 95 : 55;
+                layer1Opacity = initialOp1 / 100.0;
+                document.getElementById("opacitySliderL1").value = initialOp1;
+                document.getElementById("opacityLabelL1").innerText = initialOp1 + "%";
 
                 var swisstopo_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg";
                 map = L.map('map', {
