@@ -15,7 +15,7 @@ VARIABLES_CONFIG = {
     "wind":     {"label": "10m Wind",     "type": "surface",  "has_arrows": True,  "palette": "wind"},
     "gust":     {"label": "Böen",         "type": "surface",  "has_arrows": False, "palette": "wind"},
     "dbz":      {"label": "Radar (dBZ)",  "type": "surface",  "has_arrows": False, "palette": "dbz"},
-    "sun":      {"label": "Sonne %",      "type": "surface",  "has_ensemble": True,  "has_arrows": False, "palette": "sun"},
+    "sun":      {"label": "Sonne %",      "type": "surface",  "has_arrows": False, "palette": "sun"},
     "clct":     {"label": "Wolken",       "type": "surface",  "has_arrows": False, "palette": "cloud"},
     "clch":     {"label": "Hohe Wolken",  "type": "surface",  "has_arrows": False, "palette": "cloud"},
     "clcm":     {"label": "Mittl. Wolken","type": "surface",  "has_arrows": False, "palette": "cloud"},
@@ -38,13 +38,12 @@ MODELS_CONFIG = {
         "hhl_asset": "vertical_constants_icon-ch1-eps.grib2",
         "hours": 33,
         "max_members": 11,
-        # Aktuell zum Testen nur 10m Wind aktiv:
+        # Aktuell zum Testen 10m Wind aktiv (mit Ensemble):
         "active_variables": [
             "wind",
             # "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl",
             # "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
         ],
-        # Wind mit Ensemble (Hauptlauf + M1-M10 + Statistiken):
         "ensemble_variables": ["wind"],
         "max_chunks": 4
     },
@@ -52,14 +51,11 @@ MODELS_CONFIG = {
         "name": "ICON-CH2 (2.1km)",
         "collection": "ogd-forecasting-icon-ch2",
         "hhl_asset": "vertical_constants_icon-ch2-eps.grib2",
-        "hours": 48,
+        "hours": 120,               # Volle 120 Stunden (5 Tage)
         "max_members": 21,
-        # CH2 startet schlank mit unperturbed 10m Wind:
-        "active_variables": [
-            "wind"
-        ],
-        "ensemble_variables": [], # Keine Ensembles -> rennt in Sekunden durch!
-        "max_chunks": 2
+        "active_variables": ["wind"], # CH2 startet mit unperturbed 10m Wind
+        "ensemble_variables": [],   # Keine Ensembles -> rennt in Sekunden durch!
+        "max_chunks": 4             # 4 Worker teilen sich jeweils ca. 30 Stunden
     }
 }
 
