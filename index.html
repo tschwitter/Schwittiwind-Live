@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ICON-CH1 Wetter & Ensembles</title>
+    <title>ICON Wetter & Ensembles (CH1 & CH2)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         html, body { 
@@ -18,13 +18,13 @@
         /* --- OBERES KONTROLL-PANEL --- */
         .top-control-panel {
             position: fixed;
-            top: 10px; left: 50%;
+            top: 8px; left: 50%;
             transform: translateX(-50%);
             z-index: 9999;
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 5px;
+            gap: 4px;
             max-width: 96vw;
             pointer-events: none;
         }
@@ -43,6 +43,28 @@
             max-width: 95vw;
             overflow-x: auto;
             box-sizing: border-box;
+        }
+
+        /* MODELL-UMSCHALTER */
+        .model-switch-row {
+            background-color: rgba(18, 26, 34, 0.96);
+            border-color: rgba(0, 122, 183, 0.5);
+            padding: 2px 4px;
+        }
+        .model-btn {
+            background: transparent;
+            border: none; border-radius: 12px;
+            color: #8faec5;
+            font-family: Arial, sans-serif;
+            font-size: 11px; font-weight: bold;
+            padding: 4px 10px;
+            cursor: pointer; transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .model-btn.active {
+            background-color: #007ab7;
+            color: white;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         }
 
         .sub-nav-row {
@@ -135,7 +157,7 @@
             pointer-events: auto;
         }
         .dropdown-menu {
-            top: 95px; left: 50%;
+            top: 120px; left: 50%;
             transform: translateX(-50%);
             display: none;
             flex-direction: column;
@@ -155,7 +177,7 @@
         .dropdown-item.clear { background: rgba(217, 83, 79, 0.3); color: #ff8a80; }
         .dropdown-item.clear:hover { background: #d9534f; color: white; }
 
-        .settings-popup { right: 20px; top: 95px; width: 250px; }
+        .settings-popup { right: 20px; top: 120px; width: 250px; }
         .settings-title {
             font-size: 13px; font-weight: bold; border-bottom: 1px solid rgba(255,255,255,0.2);
             padding-bottom: 6px; margin-bottom: 10px; text-align: center;
@@ -182,7 +204,7 @@
         #loadingIndicator {
             display: none;
             position: fixed;
-            top: 130px; left: 50%;
+            top: 155px; left: 50%;
             transform: translateX(-50%);
             z-index: 100000;
             background-color: rgba(33, 43, 54, 0.95);
@@ -197,7 +219,7 @@
         /* --- VERTICAL PANEL (RECHTS) --- */
         .member-panel {
             position: fixed;
-            top: 70px; right: 20px; bottom: 150px;
+            top: 80px; right: 20px; bottom: 150px;
             width: 150px;
             background-color: rgba(33, 43, 54, 0.85);
             border: 1px solid rgba(255,255,255,0.15);
@@ -309,6 +331,7 @@
         @media (max-width: 768px) {
             .top-control-panel { top: 6px; gap: 3px; }
             .top-row { padding: 2px 4px; gap: 2px; border-radius: 14px; }
+            .model-btn { font-size: 9.5px; padding: 3px 7px; }
             .var-btn, .nav-toggle-btn { font-size: 10px; padding: 4px 6px; border-radius: 10px; }
             .layer2-btn, .settings-btn { font-size: 9.5px; padding: 3px 6px; }
             .control-panel { bottom: 8px; left: 8px; right: 8px; width: auto; transform: none; padding: 8px 10px; }
@@ -320,8 +343,8 @@
             .legend-scale { height: 160px; }
             .legend-bar { width: 14px; height: 160px; }
             .legend-labels { left: 18px; height: 168px; font-size: 7.5px; }
-            .settings-popup { right: 8px; top: 80px; width: 220px; }
-            .dropdown-menu { top: 80px; }
+            .settings-popup { right: 8px; top: 105px; width: 220px; }
+            .dropdown-menu { top: 105px; }
         }
     </style>
 </head>
@@ -330,6 +353,13 @@
     <div id="map"></div>
 
     <div class="top-control-panel">
+        <!-- ZEILE 0: MODELL-UMSCHALTER (CH1 vs CH2) -->
+        <div class="top-row model-switch-row">
+            <button class="model-btn active" id="btnModel-icon-ch1" onclick="switchModel('icon-ch1')">ICON-CH1 (1km)</button>
+            <button class="model-btn" id="btnModel-icon-ch2" onclick="switchModel('icon-ch2')">ICON-CH2 (2.1km)</button>
+        </div>
+
+        <!-- ZEILE 1: HAUPTLEISTE -->
         <div class="top-row">
             <button class="nav-toggle-btn" id="btnToggleWetter" onclick="toggleWetterMenu()">Wetter ▾</button>
             <button class="var-btn" id="varBtn-wind" onclick="switchLayer1('wind')">10m Wind</button>
@@ -340,6 +370,7 @@
         <div class="top-row sub-nav-row" id="wetterSubRow" style="display: none;"></div>
         <div class="top-row sub-nav-row" id="hoehenSubRow" style="display: none;"></div>
 
+        <!-- ZEILE 4: 2. EBENE & EINSTELLUNGEN -->
         <div class="top-row bottom-nav-row">
             <button class="layer2-btn" id="layer2Btn" onclick="toggleDropdown()">+ 2. Ebene</button>
             <button class="settings-btn" id="settingsBtn" onclick="toggleSettings()" title="Ebenen-Einstellungen">⚙</button>
@@ -423,6 +454,7 @@
     <script>
         var map, config, times;
         
+        var currentModel = "icon-ch1"; // "icon-ch1" oder "icon-ch2"
         var layer1Var = null;
         var layer2Var = null;
         
@@ -453,6 +485,55 @@
             var parts = times[stepIdx].local_str.split(" ")[0].split(".");
             var dateObj = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
             return weekdays[dateObj.getDay()];
+        }
+
+        // ================= MODELL-WECHSEL (CH1 vs CH2) =================
+        async function switchModel(newModel) {
+            if (currentModel === newModel && config) return;
+            currentModel = newModel;
+
+            document.getElementById("btnModel-icon-ch1").classList.toggle("active", currentModel === "icon-ch1");
+            document.getElementById("btnModel-icon-ch2").classList.toggle("active", currentModel === "icon-ch2");
+
+            document.getElementById("loadingIndicator").style.display = "block";
+            try {
+                const cacheBuster = Date.now();
+                const configRes = await fetch(`data/${currentModel}/config.json?t=${cacheBuster}`);
+                config = await configRes.json();
+                const timesRes = await fetch(`data/${currentModel}/times.json?t=${cacheBuster}`);
+                times = await timesRes.json();
+
+                // Falls gewählte Variable im neuen Modell nicht existiert: nimm die erste verfügbare
+                var vars = config.variables || Object.keys(config.variables_config);
+                if (!vars.includes(layer1Var)) {
+                    layer1Var = vars[0];
+                }
+                if (layer2Var && !vars.includes(layer2Var)) {
+                    setSecondaryVar(null);
+                }
+
+                // Initialisiere Navigation und Panels mit den Parametern des neuen Modells
+                initNavigationBars();
+                initLayer2Dropdown();
+                initDayButtons();
+                initMemberPanel();
+
+                currentMemberIdx = 0;
+                currentStepIdx = Math.min(currentStepIdx, times.length - 1);
+
+                var vCfg = config.variables_config[layer1Var];
+                var hasEns = vCfg ? vCfg.has_ensemble : true;
+                updateMemberPanelVisibility(hasEns);
+                document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (vCfg ? vCfg.label : layer1Var);
+
+                var initialOp1 = (vCfg && vCfg.palette === "cloud") ? 95 : 55;
+                setLayerOpacity(1, initialOp1);
+
+                await updateForecast(currentMemberIdx, currentStepIdx);
+            } catch (err) {
+                console.error("Fehler beim Modellwechsel:", err);
+            }
+            document.getElementById("loadingIndicator").style.display = "none";
         }
 
         function toggleWetterMenu() {
@@ -614,7 +695,6 @@
                 cfgSec.style.opacity = "1";
                 titleSec.innerText = "2. Ebene: " + lbl;
 
-                // AUTOMATISCHE DECKKRAFT FÜR EBENE 2: 95% bei Wolken, sonst 65%
                 var targetOp = (vCfg.palette === "cloud") ? 95 : 65;
                 setLayerOpacity(2, targetOp);
             } else {
@@ -639,7 +719,6 @@
 
             document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (vCfg ? vCfg.label : layer1Var);
 
-            // AUTOMATISCHE DECKKRAFT FÜR EBENE 1: 95% bei Wolken, sonst 55%
             var targetOp = (vCfg && vCfg.palette === "cloud") ? 95 : 55;
             setLayerOpacity(1, targetOp);
 
@@ -760,16 +839,17 @@
                 if (idx === 0) {
                     btn.innerText = isMobile ? "HL" : "Hauptlauf";
                     hauptContainer.appendChild(btn);
-                } else if (idx >= 1 && idx <= 10) {
+                } else if (idx >= 1 && idx < config.member_names.length - 6) {
                     btn.innerText = isMobile ? "M" + idx : name;
                     ensembleContainer.appendChild(btn);
                 } else {
-                    if (idx === 11) btn.innerText = isMobile ? "MD" : name;
-                    else if (idx === 12) btn.innerText = "Min";
-                    else if (idx === 13) btn.innerText = "Max";
-                    else if (idx === 14) btn.innerText = isMobile ? "%25" : name;
-                    else if (idx === 15) btn.innerText = isMobile ? "%75" : name;
-                    else if (idx === 16) btn.innerText = isMobile ? "IQ" : name;
+                    var statOffset = config.member_names.length - 6;
+                    if (idx === statOffset) btn.innerText = isMobile ? "MD" : name;
+                    else if (idx === statOffset + 1) btn.innerText = "Min";
+                    else if (idx === statOffset + 2) btn.innerText = "Max";
+                    else if (idx === statOffset + 3) btn.innerText = isMobile ? "%25" : name;
+                    else if (idx === statOffset + 4) btn.innerText = isMobile ? "%75" : name;
+                    else if (idx === statOffset + 5) btn.innerText = isMobile ? "IQ" : name;
                     statistikenContainer.appendChild(btn);
                 }
                 btn.onclick = function() { updateForecast(idx, currentStepIdx); };
@@ -833,12 +913,13 @@
 
         function updateLegend() {
             var box = document.getElementById("legendBox");
-            var isIQR1 = (currentMemberIdx === 16);
+            var iqrIdx = config.member_names.length - 1;
+            var isIQR1 = (currentMemberIdx === iqrIdx);
             
             var html = renderSingleLegendCol(layer1Var, isIQR1);
             if (layer2Var && layer2Var !== layer1Var) {
                 var vCfg2 = config.variables_config[layer2Var] || {};
-                var isIQR2 = (vCfg2.has_ensemble && currentMemberIdx === 16);
+                var isIQR2 = (vCfg2.has_ensemble && currentMemberIdx === iqrIdx);
                 html += renderSingleLegendCol(layer2Var, isIQR2);
             }
             box.innerHTML = html;
@@ -901,15 +982,16 @@
         }
 
         async function ensureDataLoaded(varName, memberIdx, stepIdx) {
-            const cacheKey = varName + "_" + memberIdx + "_" + stepIdx;
+            const cacheKey = `${currentModel}_${varName}_${memberIdx}_${stepIdx}`;
             const vCfg = config.variables_config[varName] || {};
-            const isIQR = (vCfg.has_ensemble && memberIdx === 16);
+            var iqrIdx = config.member_names.length - 1;
+            const isIQR = (vCfg.has_ensemble && memberIdx === iqrIdx);
             const paletteType = isIQR ? ("iqr_" + (vCfg.palette || "wind")) : (vCfg.palette || "wind");
 
             if (!cacheContours[cacheKey]) {
                 const runBuster = encodeURIComponent(config.ref_time_utc);
                 if (!cacheGrid[cacheKey]) {
-                    cacheGrid[cacheKey] = await fetchAndDecompress(`data/grid_${varName}_m${memberIdx}_s${stepIdx}.json.gz?v=${runBuster}`);
+                    cacheGrid[cacheKey] = await fetchAndDecompress(`data/${currentModel}/grid_${varName}_m${memberIdx}_s${stepIdx}.json.gz?v=${runBuster}`);
                 }
                 cacheContours[cacheKey] = generateContoursClient(cacheGrid[cacheKey].s, paletteType);
             }
@@ -918,29 +1000,6 @@
 
         async function init() {
             try {
-                const cacheBuster = Date.now();
-                const configRes = await fetch('data/config.json?t=' + cacheBuster);
-                config = await configRes.json();
-                const timesRes = await fetch('data/times.json?t=' + cacheBuster);
-                times = await timesRes.json();
-
-                initNavigationBars();
-                initLayer2Dropdown();
-                initDayButtons();
-                initMemberPanel();
-
-                var initialCfg = config.variables_config[layer1Var];
-                var initialHasEns = initialCfg ? initialCfg.has_ensemble : true;
-                if (!initialHasEns) currentMemberIdx = 0;
-                updateMemberPanelVisibility(initialHasEns);
-                document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (initialCfg ? initialCfg.label : layer1Var);
-
-                // Initial passende Deckkraft für Ebene 1 setzen
-                var initialOp1 = (initialCfg && initialCfg.palette === "cloud") ? 95 : 55;
-                layer1Opacity = initialOp1 / 100.0;
-                document.getElementById("opacitySliderL1").value = initialOp1;
-                document.getElementById("opacityLabelL1").innerText = initialOp1 + "%";
-
                 var swisstopo_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg";
                 map = L.map('map', {
                     center: [46.8182, 8.2275],
@@ -990,7 +1049,8 @@
                     updateForecast(currentMemberIdx, currentStepIdx);
                 };
 
-                await updateForecast(currentMemberIdx, 0);
+                // Starte mit Modell ICON-CH1
+                await switchModel("icon-ch1");
             } catch (err) {
                 console.error("Fehler beim Laden:", err);
             }
@@ -1031,7 +1091,8 @@
             var refParts = config.ref_time_utc.split(" ");
             var refDateParts = refParts[0].split(".");
             var refTimeHour = refParts[1].split(":")[0];
-            document.getElementById("modelRunLabel").innerText = "🕒" + refDateParts[0] + "." + refDateParts[1] + " " + refTimeHour + "Z CH1";
+            var modShort = (currentModel === "icon-ch2") ? "CH2" : "CH1";
+            document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z ${modShort}`;
 
             uniqueDays.forEach(d => {
                 var btn = document.getElementById("day-btn-" + d);
@@ -1050,7 +1111,7 @@
 
         function renderContours() {
             if (contourLayer1) map.removeLayer(contourLayer1);
-            const key1 = layer1Var + "_" + currentMemberIdx + "_" + currentStepIdx;
+            const key1 = `${currentModel}_${layer1Var}_${currentMemberIdx}_${currentStepIdx}`;
             
             contourLayer1 = L.geoJson(cacheContours[key1], {
                 pane: 'contourPane1',
@@ -1070,7 +1131,7 @@
             if (layer2Var) {
                 var vCfg2 = config.variables_config[layer2Var] || {};
                 var m2 = (vCfg2.has_ensemble) ? currentMemberIdx : 0;
-                const key2 = layer2Var + "_" + m2 + "_" + currentStepIdx;
+                const key2 = `${currentModel}_${layer2Var}_${m2}_${currentStepIdx}`;
 
                 contourLayer2 = L.geoJson(cacheContours[key2], {
                     pane: 'contourPane2',
@@ -1096,7 +1157,8 @@
             var arrowMember = 0;
 
             var vCfg1 = config.variables_config[layer1Var];
-            if (vCfg1 && vCfg1.has_arrows && currentMemberIdx < 11) {
+            var iqrIdx = config.member_names.length - 1;
+            if (vCfg1 && vCfg1.has_arrows && currentMemberIdx < iqrIdx - 5) {
                 arrowVar = layer1Var;
                 arrowMember = currentMemberIdx;
             } else if (layer2Var) {
@@ -1109,7 +1171,7 @@
 
             if (!arrowVar) return;
 
-            const cacheKey = arrowVar + "_" + arrowMember + "_" + currentStepIdx;
+            const cacheKey = `${currentModel}_${arrowVar}_${arrowMember}_${currentStepIdx}`;
             const gridData = cacheGrid[cacheKey];
             if (!gridData || !gridData.s || !gridData.d || gridData.d.length === 0) return;
 
@@ -1150,7 +1212,8 @@
                               '</svg></div>';
 
                     var icon = L.divIcon({ html: svg, iconSize: [110, 110], iconAnchor: [55, 55], className: 'wind-arrow-icon' });
-                    L.marker(latlng, { icon: icon }).bindPopup('<b>' + labelType + ' (ICON-CH1):</b><br>Stärke: ' + speed.toFixed(1) + ' km/h<br>Richtung: ' + dir.toFixed(0) + '°').addTo(activeMarkers);
+                    var modLabel = (currentModel === "icon-ch2") ? "ICON-CH2" : "ICON-CH1";
+                    L.marker(latlng, { icon: icon }).bindPopup(`<b>${labelType} (${modLabel}):</b><br>Stärke: ${speed.toFixed(1)} km/h<br>Richtung: ${dir.toFixed(0)}°`).addTo(activeMarkers);
                 }
             }
         }
