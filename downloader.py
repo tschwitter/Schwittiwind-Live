@@ -45,19 +45,19 @@ def safe_squeeze(ds):
         drop_dims.append('eps')
     return ds.squeeze(drop_dims) if drop_dims else ds
 
-def get_hhl_and_weights(valid_cells=None, target_alts=None):
+def get_hhl_and_weights(collection, hhl_asset, valid_cells=None, target_alts=None):
     if not target_alts:
         return {}
-    print("-> Lade statische vertikale Gittergeometrie (HHL)...", flush=True)
-    url_ch1_vert = ogd_api.get_collection_asset_url(
-        collection_id="ch.meteoschweiz.ogd-forecasting-icon-ch1",
-        asset_id="vertical_constants_icon-ch1-eps.grib2"
+    print(f"-> Lade vertikale Gittergeometrie ({hhl_asset})...", flush=True)
+    url_vert = ogd_api.get_collection_asset_url(
+        collection_id=f"ch.meteoschweiz.{collection}",
+        asset_id=hhl_asset
     )
     for attempt in range(1, 4):
         try:
             with SilenceStderr():
                 ds_vert = grib_decoder.load(
-                    source=data_source.URLDataSource(urls=[url_ch1_vert]),
+                    source=data_source.URLDataSource(urls=[url_vert]),
                     request={"param": "HHL"},
                     geo_coords=lambda uuid: {}
                 )
@@ -65,7 +65,7 @@ def get_hhl_and_weights(valid_cells=None, target_alts=None):
         except Exception as e:
             if attempt == 3:
                 raise e
-            print(f"⚠️ Netzwerkunterbrechung bei HHL (Versuch {attempt}/3). Wiederhole in 3s...", flush=True)
+            print(f"⚠️ Netzwerkunterbrechung bei HHL (Versuch {attempt}/3)...", flush=True)
             time.sleep(3)
 
     hhl_da = ds_vert["HHL"].squeeze()
@@ -137,9 +137,9 @@ def interpolate_fast_precomputed(da_hour, prep):
         coords = {'cell': da_hour.coords['cell']}
         return xr.DataArray(v_int, dims=['cell'], coords=coords)
 
-def fetch_single_2d(var_name, perturbed, ref_time_str, lead_times, valid_cells):
+def fetch_single_2d(collection, var_name, perturbed, ref_time_str, lead_times, valid_cells):
     req = ogd_api.Request(
-        collection="ogd-forecasting-icon-ch1",
+        collection=collection,
         variable=var_name,
         ref_time=ref_time_str,
         perturbed=perturbed,
@@ -155,13 +155,13 @@ def fetch_single_2d(var_name, perturbed, ref_time_str, lead_times, valid_cells):
         except Exception as e:
             if attempt == 3:
                 raise e
-            print(f"⚠️ Netzwerkfehler bei {var_name} (Versuch {attempt}/3). Wiederhole in 3s...", flush=True)
+            print(f"⚠️ Netzwerkfehler bei {var_name} (Versuch {attempt}/3)...", flush=True)
             time.sleep(3)
 
-def fetch_dursun_hourly(perturbed, ref_time_str, start_step, end_step, valid_cells):
+def fetch_dursun_hourly(collection, perturbed, ref_time_str, start_step, end_step, valid_cells):
     actual_start = max(0, start_step - 1)
     fetch_lts = [timedelta(hours=h) for h in range(actual_start, end_step + 1)]
-    ds = fetch_single_2d("DURSUN", perturbed, ref_time_str, fetch_lts, valid_cells)
+    ds = fetch_single_2d(collection, "DURSUN", perturbed, ref_time_str, fetch_lts, valid_cells)
     
     if "lead_time" in ds.dims and ds.sizes["lead_time"] > 1:
         diff = ds.diff(dim="lead_time")
@@ -173,9 +173,9 @@ def fetch_dursun_hourly(perturbed, ref_time_str, start_step, end_step, valid_cel
     return ds
 
 def _fetch_and_slice_single_hour(args):
-    var_name, perturbed, ref_time_str, lt, valid_cells, alt_prep, target_alts = args
+    collection, var_name, perturbed, ref_time_str, lt, valid_cells, alt_prep, target_alts = args
     req = ogd_api.Request(
-        collection="ogd-forecasting-icon-ch1",
+        collection=collection,
         variable=var_name,
         ref_time=ref_time_str,
         perturbed=perturbed,
@@ -203,14 +203,14 @@ def _fetch_and_slice_single_hour(args):
     gc.collect()
     return alt_slices
 
-def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cells, alt_prep, target_alts):
+def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times, valid_cells, alt_prep, target_alts):
     label = f"{var_name} Höhen {[int(a) for a in target_alts]}m ({'Ensemble' if perturbed else 'Hauptlauf'})"
     total = len(lead_times)
     num_workers = 2 if perturbed else 3
-    print(f"-> Verarbeite {label} ({num_workers} Worker) für {total} Zeitschritte...", flush=True)
+    print(f"-> Verarbeite {label} ({num_workers} Worker)...", flush=True)
 
     tasks = [
-        (var_name, perturbed, ref_time_str, lt, valid_cells, alt_prep, target_alts)
+        (collection, var_name, perturbed, ref_time_str, lt, valid_cells, alt_prep, target_alts)
         for lt in lead_times
     ]
 
@@ -226,12 +226,18 @@ def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cell
             results_by_alt[alt] = slices[0].expand_dims("lead_time")
     return results_by_alt
 
-def fetch_weather_data(start_step, end_step, ref_time_str):
+def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
+    model_cfg = config.MODELS_CONFIG[model_name]
+    collection = model_cfg["collection"]
+    active_vars = model_cfg["active_variables"]
+    ens_vars = model_cfg["ensemble_variables"]
+
     lead_times = [timedelta(hours=h) for h in range(start_step, end_step + 1)]
 
-    print(f"1. Pilot-Download: Hole Referenzgitter...", flush=True)
+    # Pilot-Download für Koordinaten des jeweiligen Modells
+    print(f"1. Pilot-Download [{model_name}]: Hole Referenzgitter...", flush=True)
     req_pilot = ogd_api.Request(
-        collection="ogd-forecasting-icon-ch1",
+        collection=collection,
         variable="U_10M",
         ref_time=ref_time_str,
         perturbed=False,
@@ -261,65 +267,58 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
 
     surface_results = {}
 
-    print(f"2. Lade aktive 2D-Oberflächenfelder ({config.VARIABLES})...", flush=True)
+    print(f"2. Lade 2D-Felder für [{model_name}] ({active_vars})...", flush=True)
     
-    if "wind" in config.VARIABLES:
-        surface_results["u_h"] = fetch_single_2d("U_10M", False, ref_time_str, lead_times, valid_cells)
-        surface_results["v_h"] = fetch_single_2d("V_10M", False, ref_time_str, lead_times, valid_cells)
-        if config.VARIABLES_CONFIG["wind"].get("has_ensemble"):
-            surface_results["u_e"] = fetch_single_2d("U_10M", True, ref_time_str, lead_times, valid_cells)
-            surface_results["v_e"] = fetch_single_2d("V_10M", True, ref_time_str, lead_times, valid_cells)
+    if "wind" in active_vars:
+        surface_results["u_h"] = fetch_single_2d(collection, "U_10M", False, ref_time_str, lead_times, valid_cells)
+        surface_results["v_h"] = fetch_single_2d(collection, "V_10M", False, ref_time_str, lead_times, valid_cells)
+        if "wind" in ens_vars:
+            surface_results["u_e"] = fetch_single_2d(collection, "U_10M", True, ref_time_str, lead_times, valid_cells)
+            surface_results["v_e"] = fetch_single_2d(collection, "V_10M", True, ref_time_str, lead_times, valid_cells)
 
-    if "gust" in config.VARIABLES:
-        surface_results["g_h"] = fetch_single_2d("VMAX_10M", False, ref_time_str, lead_times, valid_cells)
-        if config.VARIABLES_CONFIG["gust"].get("has_ensemble"):
-            surface_results["g_e"] = fetch_single_2d("VMAX_10M", True, ref_time_str, lead_times, valid_cells)
+    if "gust" in active_vars:
+        surface_results["g_h"] = fetch_single_2d(collection, "VMAX_10M", False, ref_time_str, lead_times, valid_cells)
+        if "gust" in ens_vars:
+            surface_results["g_e"] = fetch_single_2d(collection, "VMAX_10M", True, ref_time_str, lead_times, valid_cells)
 
-    if "dbz" in config.VARIABLES:
-        surface_results["dbz_h"] = fetch_single_2d("DBZ_CMAX", False, ref_time_str, lead_times, valid_cells)
-        if config.VARIABLES_CONFIG["dbz"].get("has_ensemble"):
-            surface_results["dbz_e"] = fetch_single_2d("DBZ_CMAX", True, ref_time_str, lead_times, valid_cells)
+    if "dbz" in active_vars:
+        surface_results["dbz_h"] = fetch_single_2d(collection, "DBZ_CMAX", False, ref_time_str, lead_times, valid_cells)
+        if "dbz" in ens_vars:
+            surface_results["dbz_e"] = fetch_single_2d(collection, "DBZ_CMAX", True, ref_time_str, lead_times, valid_cells)
 
-    if "sun" in config.VARIABLES:
-        surface_results["sun_h"] = fetch_dursun_hourly(False, ref_time_str, start_step, end_step, valid_cells)
-        if config.VARIABLES_CONFIG["sun"].get("has_ensemble"):
-            surface_results["sun_e"] = fetch_dursun_hourly(True, ref_time_str, start_step, end_step, valid_cells)
+    if "sun" in active_vars:
+        surface_results["sun_h"] = fetch_dursun_hourly(collection, False, ref_time_str, start_step, end_step, valid_cells)
+        if "sun" in ens_vars:
+            surface_results["sun_e"] = fetch_dursun_hourly(collection, True, ref_time_str, start_step, end_step, valid_cells)
 
-    # 2D-Wolkenfelder dynamisch laden
-    CLOUD_VAR_MAP = {
-        "clct": "CLCT",
-        "clch": "CLCH",
-        "clcm": "CLCM",
-        "clcl": "CLCL"
-    }
-
+    CLOUD_VAR_MAP = {"clct": "CLCT", "clch": "CLCH", "clcm": "CLCM", "clcl": "CLCL"}
     for key, grib_name in CLOUD_VAR_MAP.items():
-        if key in config.VARIABLES:
-            surface_results[f"{key}_h"] = fetch_single_2d(grib_name, False, ref_time_str, lead_times, valid_cells)
-            if config.VARIABLES_CONFIG[key].get("has_ensemble"):
-                surface_results[f"{key}_e"] = fetch_single_2d(grib_name, True, ref_time_str, lead_times, valid_cells)
+        if key in active_vars:
+            surface_results[f"{key}_h"] = fetch_single_2d(collection, grib_name, False, ref_time_str, lead_times, valid_cells)
+            if key in ens_vars:
+                surface_results[f"{key}_e"] = fetch_single_2d(collection, grib_name, True, ref_time_str, lead_times, valid_cells)
 
     # 3D-Höhenwinde
-    hl_altitudes = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and k in config.VARIABLES]
-    ens_altitudes = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and v.get("has_ensemble") and k in config.VARIABLES]
+    hl_altitudes = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and k in active_vars]
+    ens_altitudes = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and k in ens_vars]
     all_target_alts = sorted(list(set(hl_altitudes + ens_altitudes)))
 
     altitude_hl_res = {}
     altitude_ens_res = {}
 
     if all_target_alts:
-        print(f"3. Lade vertikale Höhenwinde für {all_target_alts}m...", flush=True)
-        alt_prep = get_hhl_and_weights(valid_cells, all_target_alts)
+        print(f"3. Lade vertikale Höhenwinde [{model_name}] für {all_target_alts}m...", flush=True)
+        alt_prep = get_hhl_and_weights(collection, model_cfg["hhl_asset"], valid_cells, all_target_alts)
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            future_u_hl = pool.submit(fetch_3d_and_slice, "U", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
-            future_v_hl = pool.submit(fetch_3d_and_slice, "V", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
+            future_u_hl = pool.submit(fetch_3d_and_slice, collection, "U", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
+            future_v_hl = pool.submit(fetch_3d_and_slice, collection, "V", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
             u_hl_by_alt = future_u_hl.result()
             v_hl_by_alt = future_v_hl.result()
 
         if ens_altitudes:
-            u_ens_by_alt = fetch_3d_and_slice("U", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
-            v_ens_by_alt = fetch_3d_and_slice("V", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
+            u_ens_by_alt = fetch_3d_and_slice(collection, "U", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
+            v_ens_by_alt = fetch_3d_and_slice(collection, "V", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
         else:
             u_ens_by_alt, v_ens_by_alt = {}, {}
 
@@ -327,10 +326,8 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
         altitude_ens_res = {alt: (u_ens_by_alt[alt], v_ens_by_alt[alt]) for alt in ens_altitudes}
         del alt_prep
         gc.collect()
-    else:
-        print("-> Keine Höhenwinde aktiv. Überspringe HHL und 3D-Download komplett!", flush=True)
 
-    print("✓ Alle aktiven Datensätze bereitgestellt!", flush=True)
+    print(f"✓ Datensätze für [{model_name}] bereitgestellt!", flush=True)
     return {
         "surface": surface_results,
         "altitude_hl": altitude_hl_res,
