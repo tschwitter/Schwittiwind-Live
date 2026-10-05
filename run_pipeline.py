@@ -26,12 +26,13 @@ def check_model_new_data(model_name):
         pass
 
     try:
+        # Prüfung auf Vollständigkeit via lead_time (funktioniert robust für 33h und 120h)
         check_req = ogd_api.Request(
             collection=model_cfg["collection"],
             variable="U_10M",
             ref_time="latest",
             perturbed=False,
-            horizon=f"P0DT{model_cfg['hours']}H"
+            lead_time=[timedelta(hours=model_cfg["hours"])]
         )
         ds_check = ogd_api.get_from_ogd(check_req)
         latest_ref_raw = ds_check.coords['ref_time'].values
@@ -45,9 +46,10 @@ def check_model_new_data(model_name):
         iso_str = str(latest_ref_raw).split('.')[0] + "Z"
 
         is_new = (live_ref_time != latest_ref_str)
+        print(f"-> [{model_name}] Neueste Daten: {latest_ref_str} (Live: {live_ref_time}) | Neu: {is_new}", flush=True)
         return is_new, latest_ref_str, iso_str
     except Exception as e:
-        print(f"-> Hinweis: {model_name} noch nicht vollständig ({e}).", flush=True)
+        print(f"-> Hinweis: [{model_name}] neuester Lauf noch nicht bis +{model_cfg['hours']}h bereit ({e}).", flush=True)
         return False, None, "latest"
 
 def get_dynamic_chunks(total_steps, max_chunks=4):
@@ -122,7 +124,7 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str):
     with open(f"{model_dir}/config.json", "w") as f:
         json.dump(config_data, f)
 
-    print(f"✓ Basis-Dateien für [{model_name}] bereitgestellt!", flush=True)
+    print(f"✓ Basis-Dateien für [{model_name}] ({model_cfg['hours']}h) bereitgestellt!", flush=True)
 
 def process_single_local_step(args):
     import stats
