@@ -56,12 +56,17 @@ def remap_fast(field, weights):
     return out.reshape(config.NY, config.NX)
 
 def compute_statistics_for_array(all_values, threshold=None):
+    """Berechnet Statistiken. Wo kein Member das Signal (threshold) erreicht, wird auch IQR transparent."""
     s_min = np.nanmin(all_values, axis=0)
     s_max = np.nanmax(all_values, axis=0)
     q25, median, q75 = np.nanpercentile(all_values, [25, 50, 75], axis=0)
     iqr = q75 - q25
 
     if threshold is not None:
+        # Wo in ALLEN Membern kein Signal vorhanden ist (s_max < threshold)
+        # oder wo nur NaNs liegen, muss auch der IQR transparent sein!
+        no_signal = (s_max < threshold) | np.isnan(s_max)
+        iqr = np.where(no_signal, np.nan, iqr)
         s_min = np.where(s_min < threshold, np.nan, s_min)
         s_max = np.where(s_max < threshold, np.nan, s_max)
         median = np.where(median < threshold, np.nan, median)
@@ -138,12 +143,13 @@ def compute_timestep(weather_data, step_idx, weights):
             gust_data.update(compute_statistics_for_array(all_g))
         step_results["gust"] = gust_data
 
-    # 2. Radar (dBZ)
+    # 2. Radar (dBZ) – Kappen negativer Werte verhindert Phantom-IQR-Explosionen
     if "dbz" in config.VARIABLES:
         has_ens = config.VARIABLES_CONFIG["dbz"].get("has_ensemble", False)
         dbz_h = surface["dbz_h"]
         dbz_s = get_step_slice(dbz_h, step_idx)
         g_dbz = remap_fast(dbz_s, weights)
+        g_dbz = np.where(np.isnan(g_dbz), np.nan, np.maximum(0.0, g_dbz))
         dbz_data = {0: {"speed": np.where(g_dbz < 7.0, np.nan, g_dbz), "has_arrows": False}}
 
         if has_ens and "dbz_e" in surface:
@@ -155,6 +161,7 @@ def compute_timestep(weather_data, step_idx, weights):
             for m_i, eps_val in enumerate(members, start=1):
                 d_s = get_step_slice(dbz_e.sel(eps=eps_val), step_idx)
                 gd = remap_fast(d_s, weights)
+                gd = np.where(np.isnan(gd), np.nan, np.maximum(0.0, gd))
                 all_dbz[m_i, :, :] = gd
                 dbz_data[m_i] = {"speed": np.where(gd < 7.0, np.nan, gd), "has_arrows": False}
             
@@ -167,6 +174,7 @@ def compute_timestep(weather_data, step_idx, weights):
         sun_h = surface["sun_h"]
         sun_s = get_step_slice(sun_h, step_idx)
         g_sun_sec = remap_fast(sun_s, weights)
+        g_sun_sec = np.where(np.isnan(g_sun_sec), np.nan, np.maximum(0.0, g_sun_sec))
         sun_pct = np.clip((g_sun_sec / 3600.0) * 100.0, 0.0, 100.0)
         sun_data = {0: {"speed": np.where(sun_pct < 10.0, np.nan, sun_pct), "has_arrows": False}}
 
@@ -179,6 +187,7 @@ def compute_timestep(weather_data, step_idx, weights):
             for m_i, eps_val in enumerate(members, start=1):
                 se_s = get_step_slice(sun_e.sel(eps=eps_val), step_idx)
                 gs_sec = remap_fast(se_s, weights)
+                gs_sec = np.where(np.isnan(gs_sec), np.nan, np.maximum(0.0, gs_sec))
                 spct = np.clip((gs_sec / 3600.0) * 100.0, 0.0, 100.0)
                 all_sun[m_i, :, :] = spct
                 sun_data[m_i] = {"speed": np.where(spct < 10.0, np.nan, spct), "has_arrows": False}
@@ -186,7 +195,7 @@ def compute_timestep(weather_data, step_idx, weights):
             sun_data.update(compute_statistics_for_array(all_sun, threshold=10.0))
         step_results["sun"] = sun_data
 
-    # 4. NEU: Wolken-Variablen (clct, clch, clcm, clcl)
+    # 4. Wolken (clct, clch, clcm, clcl)
     CLOUD_KEYS = ["clct", "clch", "clcm", "clcl"]
     for c_key in CLOUD_KEYS:
         if c_key in config.VARIABLES and f"{c_key}_h" in surface:
