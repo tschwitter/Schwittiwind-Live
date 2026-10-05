@@ -15,18 +15,20 @@ VARIABLES_CONFIG = {
     "wind":     {"label": "10m Wind",     "type": "surface",  "has_arrows": True,  "palette": "wind"},
     "gust":     {"label": "Böen",         "type": "surface",  "has_arrows": False, "palette": "wind"},
     "dbz":      {"label": "Radar (dBZ)",  "type": "surface",  "has_arrows": False, "palette": "dbz"},
-    "sun":      {"label": "Sonne %",      "type": "surface",  "has_arrows": False, "palette": "sun"},
+    "sun":      {"label": "Sonne %",      "type": "surface",  "has_ensemble": True,  "has_arrows": False, "palette": "sun"},
     "clct":     {"label": "Wolken",       "type": "surface",  "has_arrows": False, "palette": "cloud"},
     "clch":     {"label": "Hohe Wolken",  "type": "surface",  "has_arrows": False, "palette": "cloud"},
     "clcm":     {"label": "Mittl. Wolken","type": "surface",  "has_arrows": False, "palette": "cloud"},
     "clcl":     {"label": "Tiefe Wolken", "type": "surface",  "has_arrows": False, "palette": "cloud"},
-    "wind1000": {"label": "1000m Wind",   "type": "altitude", "altitude": 1000.0, "has_arrows": True, "palette": "wind"},
-    "wind1500": {"label": "1500m Wind",   "type": "altitude", "altitude": 1500.0, "has_arrows": True, "palette": "wind"},
-    "wind2000": {"label": "2000m Wind",   "type": "altitude", "altitude": 2000.0, "has_arrows": True, "palette": "wind"},
-    "wind2500": {"label": "2500m Wind",   "type": "altitude", "altitude": 2500.0, "has_arrows": True, "palette": "wind"},
-    "wind3000": {"label": "3000m Wind",   "type": "altitude", "altitude": 3000.0, "has_arrows": True, "palette": "wind"},
-    "wind3500": {"label": "3500m Wind",   "type": "altitude", "altitude": 3500.0, "has_arrows": True, "palette": "wind"},
+    "wind1000": {"label": "1000m Wind",   "type": "altitude", "altitude": 1000.0, "has_arrows": True,  "palette": "wind"},
+    "wind1500": {"label": "1500m Wind",   "type": "altitude", "altitude": 1500.0, "has_arrows": True,  "palette": "wind"},
+    "wind2000": {"label": "2000m Wind",   "type": "altitude", "altitude": 2000.0, "has_arrows": True,  "palette": "wind"},
+    "wind2500": {"label": "2500m Wind",   "type": "altitude", "altitude": 2500.0, "has_arrows": True,  "palette": "wind"},
+    "wind3000": {"label": "3000m Wind",   "type": "altitude", "altitude": 3000.0, "has_arrows": True,  "palette": "wind"},
+    "wind3500": {"label": "3500m Wind",   "type": "altitude", "altitude": 3500.0, "has_arrows": True,  "palette": "wind"},
 }
+
+VARIABLES = list(VARIABLES_CONFIG.keys())
 
 # ================= MODELL-SPEZIFISCHE STEUERUNG =================
 MODELS_CONFIG = {
@@ -36,27 +38,32 @@ MODELS_CONFIG = {
         "hhl_asset": "vertical_constants_icon-ch1-eps.grib2",
         "hours": 33,
         "max_members": 11,
+        # Aktuell zum Testen nur 10m Wind aktiv:
         "active_variables": [
-            "wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl",
-            "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
+            "wind",
+            # "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl",
+            # "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
         ],
-        "ensemble_variables": ["wind", "gust", "dbz", "sun", "clct", "wind1500"],
+        # Wind mit Ensemble (Hauptlauf + M1-M10 + Statistiken):
+        "ensemble_variables": ["wind"],
         "max_chunks": 4
     },
     "icon-ch2": {
         "name": "ICON-CH2 (2.1km)",
         "collection": "ogd-forecasting-icon-ch2",
         "hhl_asset": "vertical_constants_icon-ch2-eps.grib2",
-        "hours": 48, # 48 Stunden Vorhersage für CH2
+        "hours": 48,
         "max_members": 21,
-        # Startet nur mit unperturbed 10m Wind!
-        "active_variables": ["wind"],
+        # CH2 startet schlank mit unperturbed 10m Wind:
+        "active_variables": [
+            "wind"
+        ],
         "ensemble_variables": [], # Keine Ensembles -> rennt in Sekunden durch!
         "max_chunks": 2
     }
 }
 
-# ================= FARBSKALEN =================
+# ================= HAUPT-FARBSKALEN =================
 LEVELS = [0, 4, 7, 11, 14, 18, 23, 27, 36, 45, 120]
 COLORS = [
     '#f1f6ff', '#baddf3', '#5cd184', '#89db4c', '#fed148',
@@ -86,6 +93,7 @@ CLOUD_COLORS = [
     '#828894', '#686e7a', '#505561', '#3a3e48', '#23262c'
 ]
 
+# ================= SPEZIFISCHE IQR-SKALEN =================
 IQR_BASE_COLORS = [
     '#ffffff00', '#e0f3db', '#a8ddb5', '#7bccc4', '#4eb3d3',
     '#2b8cbe', '#fec44f', '#fe9929', '#ec7014', '#d7301f'
