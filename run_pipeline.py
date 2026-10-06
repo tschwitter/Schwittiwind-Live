@@ -15,17 +15,26 @@ SHARED_DATA = {}
 
 def check_if_new_data_available():
     print("--- SCHNELLPRÜFUNG: Suche nach neuem Modelllauf ---", flush=True)
-    live_config_url = "https://tschwitter.github.io/Schwittiwind-Live/data/config.json"
+    live_config_urls = [
+        "https://tschwitter.github.io/Schwittiwind-Live/data/config.json",
+        "https://tschwitter.github.io/Schwittiwind-Live/data/icon-ch1/config.json"
+    ]
     live_ref_time = None
-    try:
-        req = urllib.request.Request(live_config_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            live_data = json.loads(response.read().decode())
-            live_ref_time = live_data.get("ref_time_utc")
-            print(f"-> Aktuell auf der Website live: {live_ref_time}", flush=True)
-    except Exception as e:
-        print(f"-> Hinweis: Konnte Live-Website nicht abfragen ({e}). Fahre fort.", flush=True)
-        return True, None, None
+    
+    for url in live_config_urls:
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=5) as response:
+                live_data = json.loads(response.read().decode())
+                live_ref_time = live_data.get("ref_time_utc")
+                if live_ref_time:
+                    print(f"-> Aktuell auf der Website live: {live_ref_time}", flush=True)
+                    break
+        except Exception:
+            continue
+
+    if not live_ref_time:
+        print("-> Hinweis: Konnte Live-Website nicht abfragen. Frage direkt MeteoSchweiz ab...", flush=True)
 
     try:
         check_req = ogd_api.Request(
@@ -47,6 +56,7 @@ def check_if_new_data_available():
         iso_str = str(latest_ref_raw).split('.')[0] + "Z"
 
         print(f"-> Vollständig veröffentlichter Lauf: {latest_ref_str}", flush=True)
+        
         if live_ref_time and (latest_ref_str == live_ref_time):
             print("=======================================================", flush=True)
             print(" Kein neuer Modelllauf vorhanden. Website ist aktuell!", flush=True)
@@ -57,6 +67,7 @@ def check_if_new_data_available():
             return True, latest_ref_str, iso_str
     except Exception as e:
         print(f"-> Hinweis: Neuester Lauf noch nicht vollständig bei MeteoSchweiz ({e}).", flush=True)
+        # NIEMALS None übergeben, immer 'latest' als sicheren Fallback nutzen
         return False, None, "latest"
 
 def get_dynamic_chunks(total_steps, max_chunks=4):
@@ -75,7 +86,7 @@ def prepare_base_site(ref_time_str, iso_str):
     os.makedirs("dist/data", exist_ok=True)
     local_tz = ZoneInfo("Europe/Zurich")
     
-    if iso_str and iso_str != "latest":
+    if iso_str and iso_str != "latest" and iso_str != "None":
         ref_dt = datetime.fromisoformat(iso_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
     else:
         ref_dt = datetime.now(ZoneInfo("UTC"))
@@ -144,10 +155,14 @@ def run_chunk(start_step, end_step, ref_time_str):
     import downloader
     import stats
 
+    # Absicherung: Niemals den String 'None' verwenden
+    if not ref_time_str or ref_time_str == "None":
+        ref_time_str = "latest"
+
     os.makedirs("dist/data", exist_ok=True)
     num_chunk_steps = end_step - start_step + 1
 
-    print(f"--- STARTE CHUNK: Schritte {start_step} bis {end_step} ({num_chunk_steps} Schritte) ---", flush=True)
+    print(f"--- STARTE CHUNK: Schritte {start_step} bis {end_step} ({num_chunk_steps} Schritte) | Lauf: {ref_time_str} ---", flush=True)
     weather_data = downloader.fetch_weather_data(start_step, end_step, ref_time_str)
 
     weights = stats.init_regrid_weights(weather_data["ref_lon"], weather_data["ref_lat"])
@@ -178,8 +193,11 @@ def main():
     if args.prepare:
         is_new, latest_ref_str, iso_str = check_if_new_data_available()
         should_run = is_new or args.force
+        
+        safe_iso = iso_str if (iso_str and iso_str != "None") else "latest"
+
         if should_run:
-            prepare_base_site(latest_ref_str, iso_str)
+            prepare_base_site(latest_ref_str, safe_iso)
 
         total_steps = config.ANZAHL_STUNDEN + 1
         chunks = get_dynamic_chunks(total_steps, max_chunks=4)
@@ -191,11 +209,12 @@ def main():
         if "GITHUB_OUTPUT" in os.environ:
             with open(os.environ["GITHUB_OUTPUT"], "a") as f:
                 f.write(f"should_run={'true' if should_run else 'false'}\n")
-                f.write(f"ref_time_str={iso_str}\n")
+                f.write(f"ref_time_str={safe_iso}\n")
                 f.write(f"matrix_config={json.dumps(matrix_payload)}\n")
         sys.exit(0)
 
-    run_chunk(args.start_step, args.end_step, args.ref_time)
+    safe_ref_time = args.ref_time if (args.ref_time and args.ref_time != "None") else "latest"
+    run_chunk(args.start_step, args.end_step, safe_ref_time)
 
 if __name__ == "__main__":
     main()
