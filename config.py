@@ -54,7 +54,7 @@ MODELS_CONFIG = {
         "hours": 120,               # Volle 120 Stunden (5 Tage)
         "max_members": 21,
         "active_variables": ["wind"], # CH2 startet mit unperturbed 10m Wind
-        "ensemble_variables": [],   # Keine Ensembles -> rennt in Sekunden durch!
+        "ensemble_variables": ["wind"],   # Keine Ensembles -> rennt in Sekunden durch!
         "max_chunks": 4             # 4 Worker teilen sich jeweils ca. 30 Stunden
     }
 }
