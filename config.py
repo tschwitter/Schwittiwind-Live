@@ -55,7 +55,7 @@ MODELS_CONFIG = {
         "max_members": 21,
         "max_runs": 4,  # Max. 4 Läufe (24 Stunden bei 6h Intervall)
         "active_variables": ["wind"],
-        "ensemble_variables": [],
+        "ensemble_variables": ["wind"],
         "max_chunks": 4
     }
 }
