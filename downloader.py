@@ -227,6 +227,10 @@ def fetch_3d_and_slice(var_name, perturbed, ref_time_str, lead_times, valid_cell
     return results_by_alt
 
 def fetch_weather_data(start_step, end_step, ref_time_str):
+    # Absicherung: Falls 'None' übergeben wird, sofort auf 'latest' setzen
+    if not ref_time_str or ref_time_str == "None":
+        ref_time_str = "latest"
+
     lead_times = [timedelta(hours=h) for h in range(start_step, end_step + 1)]
 
     print(f"1. Pilot-Download: Hole Referenzgitter...", flush=True)
@@ -285,14 +289,7 @@ def fetch_weather_data(start_step, end_step, ref_time_str):
         if config.VARIABLES_CONFIG["sun"].get("has_ensemble"):
             surface_results["sun_e"] = fetch_dursun_hourly(True, ref_time_str, start_step, end_step, valid_cells)
 
-    # 2D-Wolkenfelder dynamisch laden
-    CLOUD_VAR_MAP = {
-        "clct": "CLCT",
-        "clch": "CLCH",
-        "clcm": "CLCM",
-        "clcl": "CLCL"
-    }
-
+    CLOUD_VAR_MAP = {"clct": "CLCT", "clch": "CLCH", "clcm": "CLCM", "clcl": "CLCL"}
     for key, grib_name in CLOUD_VAR_MAP.items():
         if key in config.VARIABLES:
             surface_results[f"{key}_h"] = fetch_single_2d(grib_name, False, ref_time_str, lead_times, valid_cells)
