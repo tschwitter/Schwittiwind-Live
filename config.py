@@ -38,7 +38,7 @@ MODELS_CONFIG = {
         "hhl_asset": "vertical_constants_icon-ch1-eps.grib2",
         "hours": 33,
         "max_members": 11,
-        # Aktuell zum Testen 10m Wind aktiv (mit Ensemble):
+        "max_runs": 8,  # Max. 8 Läufe (24 Stunden bei 3h Intervall)
         "active_variables": [
             "wind",
             # "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl",
@@ -51,11 +51,12 @@ MODELS_CONFIG = {
         "name": "ICON-CH2 (2.1km)",
         "collection": "ogd-forecasting-icon-ch2",
         "hhl_asset": "vertical_constants_icon-ch2-eps.grib2",
-        "hours": 120,               # Volle 120 Stunden (5 Tage)
+        "hours": 120,
         "max_members": 21,
-        "active_variables": ["wind"], # CH2 startet mit unperturbed 10m Wind
-        "ensemble_variables": ["wind"],   # Keine Ensembles -> rennt in Sekunden durch!
-        "max_chunks": 4             # 4 Worker teilen sich jeweils ca. 30 Stunden
+        "max_runs": 4,  # Max. 4 Läufe (24 Stunden bei 6h Intervall)
+        "active_variables": ["wind"],
+        "ensemble_variables": [],
+        "max_chunks": 4
     }
 }
 
