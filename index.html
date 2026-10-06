@@ -434,7 +434,7 @@
         <div class="day-buttons-row" id="dayButtonsContainer"></div>
         <div class="main-controls-row">
             <button class="nav-btn" onclick="navLeft()">◀</button>
-            <input type="range" id="timeSlider" min="0" max="0" value="0">
+            <input type="range" id="timeSlider" min="0" max="23" value="0">
             <button class="nav-btn" onclick="navRight()">▶</button>
             <div class="member-nav-stack">
                 <button class="member-stack-btn" onclick="navUp()">▲</button>
@@ -454,7 +454,7 @@
     <script>
         var map, config, times;
         
-        var currentModel = "icon-ch1"; // "icon-ch1" oder "icon-ch2"
+        var currentModel = "icon-ch1";
         var layer1Var = null;
         var layer2Var = null;
         
@@ -480,6 +480,20 @@
         var dayTimesteps = {};
         var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
+        function parseLocalStr(str) {
+            if (!str) return new Date();
+            var parts = str.split(" ");
+            var dateParts = parts[0].split(".");
+            var timeParts = parts[1].split(":");
+            return new Date(
+                parseInt(dateParts[2]),
+                parseInt(dateParts[1]) - 1,
+                parseInt(dateParts[0]),
+                parseInt(timeParts[0]),
+                parseInt(timeParts[1] || 0)
+            );
+        }
+
         function getDayNameForStep(stepIdx) {
             if (!times || !times[stepIdx]) return "";
             var parts = times[stepIdx].local_str.split(" ")[0].split(".");
@@ -487,9 +501,13 @@
             return weekdays[dateObj.getDay()];
         }
 
-        // ================= MODELL-WECHSEL (CH1 vs CH2) =================
+        // ================= MODELL-WECHSEL OHNE ZEIT-SPRUNG =================
         async function switchModel(newModel) {
             if (currentModel === newModel && config) return;
+
+            // 1. Exakte Ziel-Uhrzeit (Lokalzeit) merken, die aktuell angezeigt wird
+            var prevValidDate = (times && times[currentStepIdx]) ? parseLocalStr(times[currentStepIdx].local_str) : null;
+
             currentModel = newModel;
 
             document.getElementById("btnModel-icon-ch1").classList.toggle("active", currentModel === "icon-ch1");
@@ -503,7 +521,6 @@
                 const timesRes = await fetch(`data/${currentModel}/times.json?t=${cacheBuster}`);
                 times = await timesRes.json();
 
-                // Falls gewählte Variable im neuen Modell nicht existiert: nimm die erste verfügbare
                 var vars = config.variables || Object.keys(config.variables_config);
                 if (!vars.includes(layer1Var)) {
                     layer1Var = vars[0];
@@ -512,14 +529,26 @@
                     setSecondaryVar(null);
                 }
 
-                // Initialisiere Navigation und Panels mit den Parametern des neuen Modells
                 initNavigationBars();
                 initLayer2Dropdown();
                 initDayButtons();
                 initMemberPanel();
 
+                // 2. Im neuen Modell genau den Zeitschritt finden, der derselben Uhrzeit entspricht!
+                var bestStepIdx = 0;
+                if (prevValidDate && times && times.length > 0) {
+                    var minDiff = Infinity;
+                    times.forEach((t, idx) => {
+                        var d = parseLocalStr(t.local_str);
+                        var diff = Math.abs(d - prevValidDate);
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            bestStepIdx = idx;
+                        }
+                    });
+                }
+                currentStepIdx = bestStepIdx;
                 currentMemberIdx = 0;
-                currentStepIdx = Math.min(currentStepIdx, times.length - 1);
 
                 var vCfg = config.variables_config[layer1Var];
                 var hasEns = vCfg ? vCfg.has_ensemble : true;
@@ -733,6 +762,7 @@
             if (notice) notice.style.display = hasEns ? "none" : "block";
         }
 
+        // ================= 24H-SLIDER & DYNAMISCHE TAGES-PAGINIERUNG =================
         function navLeft() {
             var curDay = getDayNameForStep(currentStepIdx);
             var steps = dayTimesteps[curDay] || [];
@@ -741,6 +771,7 @@
             if (pos > 0) {
                 updateForecast(currentMemberIdx, steps[pos - 1]);
             } else {
+                // Am linken Anfang: Wechsle zum vorherigen Tag ans Ende
                 var dIdx = uniqueDays.indexOf(curDay);
                 if (dIdx > 0) {
                     var prevDay = uniqueDays[dIdx - 1];
@@ -760,6 +791,7 @@
             if (pos < steps.length - 1) {
                 updateForecast(currentMemberIdx, steps[pos + 1]);
             } else {
+                // Am rechten Ende: Wechsle zum nächsten Tag an den Anfang
                 var dIdx = uniqueDays.indexOf(curDay);
                 if (dIdx < uniqueDays.length - 1) {
                     var nextDay = uniqueDays[dIdx + 1];
@@ -1028,13 +1060,26 @@
                     document.getElementById("settingsPopup").style.display = "none";
                 });
 
+                // 24H-SLIDER EVENT: Sucht die Stunde auf dem aktuellen Tag
+                // Wenn man weiter nach links/rechts zieht als Daten da sind, rastet er bei der Grenze ein!
                 var slider = document.getElementById("timeSlider");
                 slider.addEventListener("input", function() {
+                    var targetHour = parseInt(this.value);
                     var curDay = getDayNameForStep(currentStepIdx);
                     var steps = dayTimesteps[curDay] || [];
-                    if (steps[this.value] !== undefined) {
-                        updateForecast(currentMemberIdx, steps[this.value]);
-                    }
+                    if (steps.length === 0) return;
+
+                    var bestIdx = steps[0];
+                    var minDiff = 999;
+                    steps.forEach(idx => {
+                        var h = parseInt(times[idx].local_str.split(" ")[1].split(":")[0]);
+                        var diff = Math.abs(h - targetHour);
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            bestIdx = idx;
+                        }
+                    });
+                    updateForecast(currentMemberIdx, bestIdx);
                 });
 
                 document.addEventListener('keydown', function(event) {
@@ -1049,7 +1094,7 @@
                     updateForecast(currentMemberIdx, currentStepIdx);
                 };
 
-                // Starte mit Modell ICON-CH1
+                // Initial starte mit ICON-CH1
                 await switchModel("icon-ch1");
             } catch (err) {
                 console.error("Fehler beim Laden:", err);
@@ -1060,12 +1105,14 @@
             currentMemberIdx = parseInt(newMemberIdx);
             currentStepIdx = parseInt(newStepIdx);
 
+            // SLIDER AUF 0-23 STUNDEN SETZEN UND MIT DER AKTUELLEN STUNDE SYNCHRONISIEREN
             var currentDayName = getDayNameForStep(currentStepIdx);
-            var daySteps = dayTimesteps[currentDayName] || [];
+            var currentHour = parseInt(times[currentStepIdx].local_str.split(" ")[1].split(":")[0]);
             var slider = document.getElementById("timeSlider");
             
-            slider.max = Math.max(0, daySteps.length - 1);
-            slider.value = Math.max(0, daySteps.indexOf(currentStepIdx));
+            slider.min = 0;
+            slider.max = 23;
+            slider.value = currentHour;
 
             document.getElementById("loadingIndicator").style.display = "block";
             try {
