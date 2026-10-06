@@ -23,7 +23,7 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
-  # STUFE 1: Vorbereitung für beide Modelle
+  # STUFE 1: Vorbereitung für beide Modelle (inkl. Cache-Restore alter Läufe)
   check-and-prepare:
     runs-on: ubuntu-latest
     outputs:
@@ -44,6 +44,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Frühere Modelläufe aus Cache wiederherstellen
+        uses: actions/cache/restore@v4
+        with:
+          path: dist/data
+          key: hist-runs-data-${{ github.run_id }}
+          restore-keys: |
+            hist-runs-data-
+
       - name: Schnellprüfung & Vorbereitung (CH1 & CH2)
         id: prep
         run: |
@@ -60,7 +68,7 @@ jobs:
           name: site-base
           path: dist/
 
-  # STUFE 2: DYNAMISCHE MATRIX (Berechnet Chunks für CH1 und CH2)
+  # STUFE 2: DYNAMISCHE MATRIX
   compute-matrix:
     needs: check-and-prepare
     if: needs.check-and-prepare.outputs.should_run == 'true'
@@ -83,9 +91,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Berechne ${{ matrix.model }} Chunk ${{ matrix.chunk }} (${{ matrix.start }} bis ${{ matrix.end }})
+      - name: Berechne ${{ matrix.model }} Lauf ${{ matrix.run_id }} Chunk ${{ matrix.chunk }} (${{ matrix.start }} bis ${{ matrix.end }})
         run: |
-          python -u run_pipeline.py --model ${{ matrix.model }} --start-step ${{ matrix.start }} --end-step ${{ matrix.end }} --ref-time "${{ matrix.ref_time }}"
+          python -u run_pipeline.py --model ${{ matrix.model }} --run-id ${{ matrix.run_id }} --start-step ${{ matrix.start }} --end-step ${{ matrix.end }} --ref-time "${{ matrix.ref_time }}"
 
       - name: Chunk-Daten speichern
         uses: actions/upload-artifact@v4
@@ -94,7 +102,7 @@ jobs:
           path: dist/data/
           if-no-files-found: ignore
 
-  # STUFE 3: Alle aktiven Chunks zusammenführen und live schalten
+  # STUFE 3: Alle aktiven Chunks zusammenführen, cachen und live schalten
   deploy:
     needs: [check-and-prepare, compute-matrix]
     if: needs.check-and-prepare.outputs.should_run == 'true'
@@ -115,6 +123,13 @@ jobs:
           pattern: chunk-*
           path: dist/data/
           merge-multiple: true
+
+      - name: Aktualisierten Läufe-Bestand im Cache sichern
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: dist/data
+          key: hist-runs-data-${{ github.run_id }}
 
       - name: GitHub Pages konfigurieren
         uses: actions/configure-pages@v5
