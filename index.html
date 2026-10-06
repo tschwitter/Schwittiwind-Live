@@ -45,19 +45,31 @@
             box-sizing: border-box;
         }
 
-        /* MODELL-UMSCHALTER */
+        /* SYMMETRISCHE MODELL- & LÄUFE-LEISTE */
         .model-switch-row {
             background-color: rgba(18, 26, 34, 0.96);
             border-color: rgba(0, 122, 183, 0.5);
             padding: 2px 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
         }
+
+        .model-toggle-group {
+            display: flex;
+            gap: 2px;
+            background: rgba(0,0,0,0.35);
+            border-radius: 14px;
+            padding: 2px;
+        }
+
         .model-btn {
             background: transparent;
             border: none; border-radius: 12px;
             color: #8faec5;
             font-family: Arial, sans-serif;
             font-size: 11px; font-weight: bold;
-            padding: 4px 10px;
+            padding: 4px 9px;
             cursor: pointer; transition: all 0.2s;
             white-space: nowrap;
         }
@@ -66,6 +78,54 @@
             color: white;
             box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         }
+
+        /* LÄUFE-DROPDOWN-BUTTONS (LINKS & RECHTS) */
+        .run-select-wrapper { position: relative; }
+        .run-select-btn {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.18);
+            border-radius: 12px;
+            color: #ccc;
+            font-family: Arial, sans-serif;
+            font-size: 10.5px; font-weight: bold;
+            padding: 4px 8px;
+            cursor: pointer; transition: all 0.2s;
+            white-space: nowrap;
+            display: flex; align-items: center; gap: 3px;
+        }
+        .run-select-btn:hover { background: rgba(255,255,255,0.18); color: white; }
+        .run-select-btn.active-model { border-color: #81c784; color: #a5d6a7; }
+
+        .run-dropdown-list {
+            display: none;
+            position: absolute;
+            top: 28px;
+            background-color: rgba(24, 32, 40, 0.97);
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 8px;
+            padding: 4px;
+            z-index: 100001;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+            flex-direction: column;
+            gap: 2px;
+            max-height: 250px;
+            overflow-y: auto;
+            min-width: 130px;
+        }
+        .run-dropdown-list.left { left: 0; }
+        .run-dropdown-list.right { right: 0; }
+
+        .run-item {
+            background: transparent;
+            border: none; border-radius: 5px;
+            color: #ddd; padding: 5px 8px;
+            text-align: left; font-size: 11px; font-weight: bold;
+            cursor: pointer; transition: background 0.15s;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .run-item:hover { background: #007ab7; color: white; }
+        .run-item.active { background: #2e7d32; color: white; }
+        .run-tag-latest { font-size: 8px; background: rgba(255,255,255,0.2); padding: 1px 4px; border-radius: 4px; }
 
         .sub-nav-row {
             background-color: rgba(25, 34, 44, 0.95);
@@ -331,7 +391,8 @@
         @media (max-width: 768px) {
             .top-control-panel { top: 6px; gap: 3px; }
             .top-row { padding: 2px 4px; gap: 2px; border-radius: 14px; }
-            .model-btn { font-size: 9.5px; padding: 3px 7px; }
+            .model-btn { font-size: 9px; padding: 3px 6px; }
+            .run-select-btn { font-size: 9px; padding: 3px 5px; }
             .var-btn, .nav-toggle-btn { font-size: 10px; padding: 4px 6px; border-radius: 10px; }
             .layer2-btn, .settings-btn { font-size: 9.5px; padding: 3px 6px; }
             .control-panel { bottom: 8px; left: 8px; right: 8px; width: auto; transform: none; padding: 8px 10px; }
@@ -353,10 +414,25 @@
     <div id="map"></div>
 
     <div class="top-control-panel">
-        <!-- ZEILE 0: MODELL-UMSCHALTER (CH1 vs CH2) -->
+        <!-- ZEILE 0: SYMMETRISCHE MODELL- & LÄUFE-LEISTE -->
         <div class="top-row model-switch-row">
-            <button class="model-btn active" id="btnModel-icon-ch1" onclick="switchModel('icon-ch1')">ICON-CH1 (1km)</button>
-            <button class="model-btn" id="btnModel-icon-ch2" onclick="switchModel('icon-ch2')">ICON-CH2 (2.1km)</button>
+            <!-- Dropdown CH1 -->
+            <div class="run-select-wrapper">
+                <button class="run-select-btn active-model" id="runBtn-icon-ch1" onclick="toggleRunDropdown('icon-ch1')">CH1: Läuft ▾</button>
+                <div class="run-dropdown-list left" id="runDropdown-icon-ch1"></div>
+            </div>
+
+            <!-- Modell-Kippschalter -->
+            <div class="model-toggle-group">
+                <button class="model-btn active" id="btnModel-icon-ch1" onclick="switchModel('icon-ch1')">ICON-CH1 (1km)</button>
+                <button class="model-btn" id="btnModel-icon-ch2" onclick="switchModel('icon-ch2')">ICON-CH2 (2.1km)</button>
+            </div>
+
+            <!-- Dropdown CH2 -->
+            <div class="run-select-wrapper">
+                <button class="run-select-btn" id="runBtn-icon-ch2" onclick="toggleRunDropdown('icon-ch2')">CH2: Läuft ▾</button>
+                <div class="run-dropdown-list right" id="runDropdown-icon-ch2"></div>
+            </div>
         </div>
 
         <!-- ZEILE 1: HAUPTLEISTE -->
@@ -455,6 +531,9 @@
         var map, config, times;
         
         var currentModel = "icon-ch1";
+        var currentRunId = null; // Aktuell gewählte Run-ID (z. B. "20261006_18")
+        var availableRuns = { "icon-ch1": [], "icon-ch2": [] };
+
         var layer1Var = null;
         var layer2Var = null;
         
@@ -501,50 +580,122 @@
             return weekdays[dateObj.getDay()];
         }
 
-        // ================= MODELL-WECHSEL OHNE ZEIT-SPRUNG =================
+        // ================= HISTORISCHE LÄUFE (DROPDOWNS) =================
+        async function fetchAvailableRuns(modelName) {
+            try {
+                const res = await fetch(`data/${modelName}/runs.json?t=${Date.now()}`);
+                if (res.ok) {
+                    availableRuns[modelName] = await res.json();
+                }
+            } catch (e) {
+                console.warn("Konnte runs.json nicht laden für " + modelName, e);
+            }
+            renderRunDropdown(modelName);
+        }
+
+        function renderRunDropdown(modelName) {
+            var el = document.getElementById(`runDropdown-${modelName}`);
+            var btn = document.getElementById(`runBtn-${modelName}`);
+            if (!el || !btn) return;
+            el.innerHTML = "";
+
+            var runs = availableRuns[modelName] || [];
+            if (runs.length === 0) {
+                btn.innerText = (modelName === "icon-ch1" ? "CH1: -" : "CH2: -");
+                return;
+            }
+
+            var activeRunForThisModel = (currentModel === modelName) ? currentRunId : runs[0].id;
+
+            runs.forEach((r, idx) => {
+                var item = document.createElement("button");
+                item.className = "run-item" + (r.id === activeRunForThisModel ? " active" : "");
+                var labelHtml = `<span>${r.label}</span>`;
+                if (idx === 0) labelHtml += `<span class="run-tag-latest">Neu</span>`;
+                item.innerHTML = labelHtml;
+                item.onclick = function(e) {
+                    e.stopPropagation();
+                    selectRun(modelName, r.id);
+                };
+                el.appendChild(item);
+            });
+
+            // Button-Text aktualisieren
+            var activeRunObj = runs.find(r => r.id === activeRunForThisModel) || runs[0];
+            var shortMod = (modelName === "icon-ch1") ? "CH1" : "CH2";
+            btn.innerText = `${shortMod}: ${activeRunObj.label} ▾`;
+            btn.classList.toggle("active-model", currentModel === modelName);
+        }
+
+        function toggleRunDropdown(modelName) {
+            var el = document.getElementById(`runDropdown-${modelName}`);
+            var otherMod = (modelName === "icon-ch1") ? "icon-ch2" : "icon-ch1";
+            document.getElementById(`runDropdown-${otherMod}`).style.display = "none";
+            document.getElementById("layer2Dropdown").style.display = "none";
+            document.getElementById("settingsPopup").style.display = "none";
+            
+            el.style.display = (el.style.display === "flex") ? "none" : "flex";
+        }
+
+        async function selectRun(modelName, runId) {
+            document.getElementById(`runDropdown-${modelName}`).style.display = "none";
+            currentModel = modelName;
+            currentRunId = runId;
+            await loadModelAndRun(currentModel, currentRunId);
+        }
+
         async function switchModel(newModel) {
             if (currentModel === newModel && config) return;
+            currentModel = newModel;
+            var runs = availableRuns[currentModel] || [];
+            var runId = (runs.length > 0) ? runs[0].id : null;
+            await loadModelAndRun(currentModel, runId);
+        }
 
-            // 1. Exakte Ziel-Uhrzeit (Lokalzeit) merken, die aktuell angezeigt wird
+        async function loadModelAndRun(modelName, runId) {
             var prevValidDate = (times && times[currentStepIdx]) ? parseLocalStr(times[currentStepIdx].local_str) : null;
 
-            currentModel = newModel;
-
-            document.getElementById("btnModel-icon-ch1").classList.toggle("active", currentModel === "icon-ch1");
-            document.getElementById("btnModel-icon-ch2").classList.toggle("active", currentModel === "icon-ch2");
+            document.getElementById("btnModel-icon-ch1").classList.toggle("active", modelName === "icon-ch1");
+            document.getElementById("btnModel-icon-ch2").classList.toggle("active", modelName === "icon-ch2");
 
             document.getElementById("loadingIndicator").style.display = "block";
             try {
+                // Sicherstellen, dass die Runs geladen sind
+                if (!availableRuns[modelName] || availableRuns[modelName].length === 0) {
+                    await fetchAvailableRuns(modelName);
+                }
+                var runs = availableRuns[modelName] || [];
+                if (!runId && runs.length > 0) runId = runs[0].id;
+                currentRunId = runId;
+
+                renderRunDropdown("icon-ch1");
+                renderRunDropdown("icon-ch2");
+
                 const cacheBuster = Date.now();
-                const configRes = await fetch(`data/${currentModel}/config.json?t=${cacheBuster}`);
+                const runPath = runId ? `data/${modelName}/${runId}` : `data/${modelName}`;
+                
+                const configRes = await fetch(`${runPath}/config.json?t=${cacheBuster}`);
                 config = await configRes.json();
-                const timesRes = await fetch(`data/${currentModel}/times.json?t=${cacheBuster}`);
+                const timesRes = await fetch(`${runPath}/times.json?t=${cacheBuster}`);
                 times = await timesRes.json();
 
                 var vars = config.variables || Object.keys(config.variables_config);
-                if (!vars.includes(layer1Var)) {
-                    layer1Var = vars[0];
-                }
-                if (layer2Var && !vars.includes(layer2Var)) {
-                    setSecondaryVar(null);
-                }
+                if (!vars.includes(layer1Var)) layer1Var = vars[0];
+                if (layer2Var && !vars.includes(layer2Var)) setSecondaryVar(null);
 
                 initNavigationBars();
                 initLayer2Dropdown();
                 initDayButtons();
                 initMemberPanel();
 
-                // 2. Im neuen Modell genau den Zeitschritt finden, der derselben Uhrzeit entspricht!
+                // Gleiche Lokalzeit im neuen Lauf suchen
                 var bestStepIdx = 0;
                 if (prevValidDate && times && times.length > 0) {
                     var minDiff = Infinity;
                     times.forEach((t, idx) => {
                         var d = parseLocalStr(t.local_str);
                         var diff = Math.abs(d - prevValidDate);
-                        if (diff < minDiff) {
-                            minDiff = diff;
-                            bestStepIdx = idx;
-                        }
+                        if (diff < minDiff) { minDiff = diff; bestIdx = idx; }
                     });
                 }
                 currentStepIdx = bestStepIdx;
@@ -560,7 +711,7 @@
 
                 await updateForecast(currentMemberIdx, currentStepIdx);
             } catch (err) {
-                console.error("Fehler beim Modellwechsel:", err);
+                console.error("Fehler beim Laden des Laufs:", err);
             }
             document.getElementById("loadingIndicator").style.display = "none";
         }
@@ -762,7 +913,6 @@
             if (notice) notice.style.display = hasEns ? "none" : "block";
         }
 
-        // ================= 24H-SLIDER & DYNAMISCHE TAGES-PAGINIERUNG =================
         function navLeft() {
             var curDay = getDayNameForStep(currentStepIdx);
             var steps = dayTimesteps[curDay] || [];
@@ -771,7 +921,6 @@
             if (pos > 0) {
                 updateForecast(currentMemberIdx, steps[pos - 1]);
             } else {
-                // Am linken Anfang: Wechsle zum vorherigen Tag ans Ende
                 var dIdx = uniqueDays.indexOf(curDay);
                 if (dIdx > 0) {
                     var prevDay = uniqueDays[dIdx - 1];
@@ -791,7 +940,6 @@
             if (pos < steps.length - 1) {
                 updateForecast(currentMemberIdx, steps[pos + 1]);
             } else {
-                // Am rechten Ende: Wechsle zum nächsten Tag an den Anfang
                 var dIdx = uniqueDays.indexOf(curDay);
                 if (dIdx < uniqueDays.length - 1) {
                     var nextDay = uniqueDays[dIdx + 1];
@@ -1014,7 +1162,7 @@
         }
 
         async function ensureDataLoaded(varName, memberIdx, stepIdx) {
-            const cacheKey = `${currentModel}_${varName}_${memberIdx}_${stepIdx}`;
+            const cacheKey = `${currentModel}_${currentRunId}_${varName}_${memberIdx}_${stepIdx}`;
             const vCfg = config.variables_config[varName] || {};
             var iqrIdx = config.member_names.length - 1;
             const isIQR = (vCfg.has_ensemble && memberIdx === iqrIdx);
@@ -1022,8 +1170,9 @@
 
             if (!cacheContours[cacheKey]) {
                 const runBuster = encodeURIComponent(config.ref_time_utc);
+                const basePath = currentRunId ? `data/${currentModel}/${currentRunId}` : `data/${currentModel}`;
                 if (!cacheGrid[cacheKey]) {
-                    cacheGrid[cacheKey] = await fetchAndDecompress(`data/${currentModel}/grid_${varName}_m${memberIdx}_s${stepIdx}.json.gz?v=${runBuster}`);
+                    cacheGrid[cacheKey] = await fetchAndDecompress(`${basePath}/grid_${varName}_m${memberIdx}_s${stepIdx}.json.gz?v=${runBuster}`);
                 }
                 cacheContours[cacheKey] = generateContoursClient(cacheGrid[cacheKey].s, paletteType);
             }
@@ -1058,10 +1207,10 @@
                 map.on('click', function() {
                     document.getElementById("layer2Dropdown").style.display = "none";
                     document.getElementById("settingsPopup").style.display = "none";
+                    document.getElementById("runDropdown-icon-ch1").style.display = "none";
+                    document.getElementById("runDropdown-icon-ch2").style.display = "none";
                 });
 
-                // 24H-SLIDER EVENT: Sucht die Stunde auf dem aktuellen Tag
-                // Wenn man weiter nach links/rechts zieht als Daten da sind, rastet er bei der Grenze ein!
                 var slider = document.getElementById("timeSlider");
                 slider.addEventListener("input", function() {
                     var targetHour = parseInt(this.value);
@@ -1074,10 +1223,7 @@
                     steps.forEach(idx => {
                         var h = parseInt(times[idx].local_str.split(" ")[1].split(":")[0]);
                         var diff = Math.abs(h - targetHour);
-                        if (diff < minDiff) {
-                            minDiff = diff;
-                            bestIdx = idx;
-                        }
+                        if (diff < minDiff) { minDiff = diff; bestIdx = idx; }
                     });
                     updateForecast(currentMemberIdx, bestIdx);
                 });
@@ -1094,7 +1240,11 @@
                     updateForecast(currentMemberIdx, currentStepIdx);
                 };
 
-                // Initial starte mit ICON-CH1
+                // Lade zuerst alle verfügbaren Runs für beide Modelle
+                await fetchAvailableRuns("icon-ch1");
+                await fetchAvailableRuns("icon-ch2");
+
+                // Starte mit dem neuesten Lauf von ICON-CH1
                 await switchModel("icon-ch1");
             } catch (err) {
                 console.error("Fehler beim Laden:", err);
@@ -1105,7 +1255,6 @@
             currentMemberIdx = parseInt(newMemberIdx);
             currentStepIdx = parseInt(newStepIdx);
 
-            // SLIDER AUF 0-23 STUNDEN SETZEN UND MIT DER AKTUELLEN STUNDE SYNCHRONISIEREN
             var currentDayName = getDayNameForStep(currentStepIdx);
             var currentHour = parseInt(times[currentStepIdx].local_str.split(" ")[1].split(":")[0]);
             var slider = document.getElementById("timeSlider");
@@ -1158,7 +1307,7 @@
 
         function renderContours() {
             if (contourLayer1) map.removeLayer(contourLayer1);
-            const key1 = `${currentModel}_${layer1Var}_${currentMemberIdx}_${currentStepIdx}`;
+            const key1 = `${currentModel}_${currentRunId}_${layer1Var}_${currentMemberIdx}_${currentStepIdx}`;
             
             contourLayer1 = L.geoJson(cacheContours[key1], {
                 pane: 'contourPane1',
@@ -1178,7 +1327,7 @@
             if (layer2Var) {
                 var vCfg2 = config.variables_config[layer2Var] || {};
                 var m2 = (vCfg2.has_ensemble) ? currentMemberIdx : 0;
-                const key2 = `${currentModel}_${layer2Var}_${m2}_${currentStepIdx}`;
+                const key2 = `${currentModel}_${currentRunId}_${layer2Var}_${m2}_${currentStepIdx}`;
 
                 contourLayer2 = L.geoJson(cacheContours[key2], {
                     pane: 'contourPane2',
@@ -1218,7 +1367,7 @@
 
             if (!arrowVar) return;
 
-            const cacheKey = `${currentModel}_${arrowVar}_${arrowMember}_${currentStepIdx}`;
+            const cacheKey = `${currentModel}_${currentRunId}_${arrowVar}_${arrowMember}_${currentStepIdx}`;
             const gridData = cacheGrid[cacheKey];
             if (!gridData || !gridData.s || !gridData.d || gridData.d.length === 0) return;
 
