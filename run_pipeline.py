@@ -13,20 +13,30 @@ import config
 
 SHARED_DATA = {}
 
+def load_existing_runs(model_name):
+    """Lädt die bestehende runs.json lokal aus dist/ oder von der Live-Website."""
+    local_path = f"dist/data/{model_name}/runs.json"
+    if os.path.exists(local_path):
+        try:
+            with open(local_path, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+
+    live_url = f"https://tschwitter.github.io/Schwittiwind-Live/data/{model_name}/runs.json"
+    try:
+        req = urllib.request.Request(live_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=4) as response:
+            return json.loads(response.read().decode())
+    except Exception:
+        return []
+
 def check_model_new_data(model_name):
     model_cfg = config.MODELS_CONFIG[model_name]
-    live_config_url = f"https://tschwitter.github.io/Schwittiwind-Live/data/{model_name}/config.json"
-    live_ref_time = None
-    try:
-        req = urllib.request.Request(live_config_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            live_data = json.loads(response.read().decode())
-            live_ref_time = live_data.get("ref_time_utc")
-    except Exception:
-        pass
+    existing_runs = load_existing_runs(model_name)
+    latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
 
     try:
-        # Prüfung auf Vollständigkeit via lead_time (funktioniert robust für 33h und 120h)
         check_req = ogd_api.Request(
             collection=model_cfg["collection"],
             variable="U_10M",
@@ -44,13 +54,14 @@ def check_model_new_data(model_name):
         latest_dt = datetime.fromisoformat(str(latest_ref_raw).split('.')[0])
         latest_ref_str = latest_dt.strftime("%d.%m.%Y %H:00 UTC")
         iso_str = str(latest_ref_raw).split('.')[0] + "Z"
+        run_id = latest_dt.strftime("%Y%m%d_%H")
 
-        is_new = (live_ref_time != latest_ref_str)
-        print(f"-> [{model_name}] Neueste Daten: {latest_ref_str} (Live: {live_ref_time}) | Neu: {is_new}", flush=True)
-        return is_new, latest_ref_str, iso_str
+        is_new = (latest_known_id != run_id)
+        print(f"-> [{model_name}] Neueste Daten: {latest_ref_str} (ID: {run_id}) | Neu: {is_new}", flush=True)
+        return is_new, latest_ref_str, iso_str, run_id, latest_dt
     except Exception as e:
-        print(f"-> Hinweis: [{model_name}] neuester Lauf noch nicht bis +{model_cfg['hours']}h bereit ({e}).", flush=True)
-        return False, None, "latest"
+        print(f"-> Hinweis: [{model_name}] Lauf noch nicht vollständig ({e}).", flush=True)
+        return False, None, "latest", None, None
 
 def get_dynamic_chunks(total_steps, max_chunks=4):
     k = min(max_chunks, total_steps)
@@ -64,17 +75,19 @@ def get_dynamic_chunks(total_steps, max_chunks=4):
         cur += size
     return chunks
 
-def prepare_model_base_site(model_name, ref_time_str, iso_str):
+def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
     model_cfg = config.MODELS_CONFIG[model_name]
-    model_dir = f"dist/data/{model_name}"
-    os.makedirs(model_dir, exist_ok=True)
+    model_base_dir = f"dist/data/{model_name}"
+    run_dir = f"{model_base_dir}/{run_id}"
+    os.makedirs(run_dir, exist_ok=True)
     local_tz = ZoneInfo("Europe/Zurich")
 
-    if iso_str and iso_str != "latest":
+    if iso_str and iso_str != "latest" and iso_str != "None":
         ref_dt = datetime.fromisoformat(iso_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
     else:
         ref_dt = datetime.now(ZoneInfo("UTC"))
 
+    # 1. times.json für diesen Lauf
     times_by_step = []
     for h in range(model_cfg["hours"] + 1):
         valid_local = (ref_dt + timedelta(hours=h)).astimezone(local_tz)
@@ -83,9 +96,10 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str):
             "local_str": valid_local.strftime("%d.%m.%Y %H:%M Local")
         })
 
-    with open(f"{model_dir}/times.json", "w") as f:
+    with open(f"{run_dir}/times.json", "w") as f:
         json.dump(times_by_step, f)
 
+    # 2. config.json für diesen Lauf
     num_ens = model_cfg["max_members"] - 1
     member_names = (
         ["Hauptlauf"] + 
@@ -102,6 +116,7 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str):
 
     config_data = {
         "model_name": model_name,
+        "run_id": run_id,
         "model_label": model_cfg["name"],
         "xmin": config.XMIN, "xmax": config.XMAX,
         "ymin": config.YMIN, "ymax": config.YMAX,
@@ -121,16 +136,44 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str):
             "iqr_cloud": {"levels": config.IQR_CLOUD_LEVELS, "colors": config.IQR_CLOUD_COLORS}
         }
     }
-    with open(f"{model_dir}/config.json", "w") as f:
+    with open(f"{run_dir}/config.json", "w") as f:
         json.dump(config_data, f)
 
-    print(f"✓ Basis-Dateien für [{model_name}] ({model_cfg['hours']}h) bereitgestellt!", flush=True)
+    # 3. runs.json aktualisieren & alte Läufe aufräumen (Pruning)
+    existing_runs = load_existing_runs(model_name)
+    existing_runs = [r for r in existing_runs if r.get("id") != run_id]
+
+    run_label = run_dt.strftime("%d.%m. %HZ") if run_dt else run_id
+    new_entry = {
+        "id": run_id,
+        "label": run_label,
+        "ref_time_utc": ref_time_str
+    }
+    updated_runs = [new_entry] + existing_runs
+
+    # Auf max_runs beschränken (CH1: 8 Läufe / CH2: 4 Läufe)
+    max_runs = model_cfg.get("max_runs", 8)
+    valid_runs = updated_runs[:max_runs]
+    valid_ids = set(r["id"] for r in valid_runs)
+
+    with open(f"{model_base_dir}/runs.json", "w") as f:
+        json.dump(valid_runs, f)
+
+    # Ordner von alten Läufen löschen
+    if os.path.exists(model_base_dir):
+        for entry in os.listdir(model_base_dir):
+            entry_path = os.path.join(model_base_dir, entry)
+            if os.path.isdir(entry_path) and entry not in valid_ids:
+                print(f"-> Entferne veralteten Lauf ({model_name}): {entry}", flush=True)
+                shutil.rmtree(entry_path, ignore_errors=True)
+
+    print(f"✓ Basis-Dateien für [{model_name} / {run_id}] bereitgestellt! (Gesamt: {len(valid_runs)} Läufe)", flush=True)
 
 def process_single_local_step(args):
     import stats
     import exporter
 
-    model_name, local_idx, global_step_idx = args
+    model_name, run_id, local_idx, global_step_idx = args
     weather_data = SHARED_DATA["weather_data"]
     weights = SHARED_DATA["weights"]
 
@@ -138,19 +181,22 @@ def process_single_local_step(args):
 
     for var_name, d_by_member in step_results.items():
         for m_idx, d in d_by_member.items():
-            exporter.export_variable_step(model_name, var_name, m_idx, global_step_idx, d)
+            exporter.export_variable_step(model_name, run_id, var_name, m_idx, global_step_idx, d)
 
-    print(f"✓ [{model_name}] Fertig Zeitschritt +{global_step_idx}h", flush=True)
+    print(f"✓ [{model_name}/{run_id}] Fertig Zeitschritt +{global_step_idx}h", flush=True)
     return global_step_idx
 
-def run_chunk(model_name, start_step, end_step, ref_time_str):
+def run_chunk(model_name, run_id, start_step, end_step, ref_time_str):
     import downloader
     import stats
 
-    os.makedirs(f"dist/data/{model_name}", exist_ok=True)
+    if not ref_time_str or ref_time_str == "None":
+        ref_time_str = "latest"
+
+    os.makedirs(f"dist/data/{model_name}/{run_id}", exist_ok=True)
     num_chunk_steps = end_step - start_step + 1
 
-    print(f"--- STARTE [{model_name}]: Schritte {start_step} bis {end_step} ({num_chunk_steps} Schritte) ---", flush=True)
+    print(f"--- STARTE [{model_name} / {run_id}]: Schritte {start_step} bis {end_step} ({num_chunk_steps} Schritte) ---", flush=True)
     weather_data = downloader.fetch_weather_data(model_name, start_step, end_step, ref_time_str)
 
     weights = stats.init_regrid_weights(weather_data["ref_lon"], weather_data["ref_lat"])
@@ -161,19 +207,20 @@ def run_chunk(model_name, start_step, end_step, ref_time_str):
         "weights": weights
     }
 
-    tasks = [(model_name, local_idx, start_step + local_idx) for local_idx in range(num_chunk_steps)]
+    tasks = [(model_name, run_id, local_idx, start_step + local_idx) for local_idx in range(num_chunk_steps)]
 
     ctx = get_context("fork")
     with ctx.Pool(processes=2) as pool:
         pool.map(process_single_local_step, tasks)
 
-    print(f"=== [{model_name}] CHUNK {start_step} bis {end_step} BEENDET ===", flush=True)
+    print(f"=== [{model_name} / {run_id}] CHUNK {start_step} bis {end_step} BEENDET ===", flush=True)
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--prepare", action="store_true")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--model", type=str, default="icon-ch1")
+    parser.add_argument("--run-id", type=str, default="latest")
     parser.add_argument("--start-step", type=int, default=0)
     parser.add_argument("--end-step", type=int, default=33)
     parser.add_argument("--ref-time", type=str, default="latest")
@@ -187,16 +234,17 @@ def main():
         any_new = False
 
         for m_name, m_cfg in config.MODELS_CONFIG.items():
-            is_new, latest_ref_str, iso_str = check_model_new_data(m_name)
+            is_new, latest_ref_str, iso_str, run_id, run_dt = check_model_new_data(m_name)
             should_run_m = is_new or args.force
-            if should_run_m:
+            if should_run_m and run_id:
                 any_new = True
-                prepare_model_base_site(m_name, latest_ref_str, iso_str)
+                prepare_model_base_site(m_name, latest_ref_str, iso_str, run_id, run_dt)
                 total_steps = m_cfg["hours"] + 1
                 c_list = get_dynamic_chunks(total_steps, max_chunks=m_cfg.get("max_chunks", 4))
                 for c in c_list:
                     all_chunks.append({
                         "model": m_name,
+                        "run_id": run_id,
                         "chunk": c["chunk"],
                         "start": c["start"],
                         "end": c["end"],
@@ -213,7 +261,7 @@ def main():
                 f.write(f"matrix_config={json.dumps(matrix_payload)}\n")
         sys.exit(0)
 
-    run_chunk(args.model, args.start_step, args.end_step, args.ref_time)
+    run_chunk(args.model, args.run_id, args.start_step, args.end_step, args.ref_time)
 
 if __name__ == "__main__":
     main()
