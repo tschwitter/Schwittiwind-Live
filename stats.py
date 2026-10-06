@@ -56,6 +56,7 @@ def remap_fast(field, weights):
     return out.reshape(config.NY, config.NX)
 
 def compute_statistics_for_array(all_values, threshold=None):
+    """Berechnet Statistiken dynamisch für jede beliebige Ensemble-Größe (CH1: 11..16 | CH2: 21..26)."""
     s_min = np.nanmin(all_values, axis=0)
     s_max = np.nanmax(all_values, axis=0)
     q25, median, q75 = np.nanpercentile(all_values, [25, 50, 75], axis=0)
@@ -70,13 +71,15 @@ def compute_statistics_for_array(all_values, threshold=None):
         q25 = np.where(q25 < threshold, np.nan, q25)
         q75 = np.where(q75 < threshold, np.nan, q75)
 
+    # DYNAMISCHER OFFSET: Bei CH1 = 11, bei CH2 = 21
+    offset = len(all_values)
     return {
-        11: {"speed": median, "has_arrows": False},
-        12: {"speed": s_min, "has_arrows": False},
-        13: {"speed": s_max, "has_arrows": False},
-        14: {"speed": q25, "has_arrows": False},
-        15: {"speed": q75, "has_arrows": False},
-        16: {"speed": iqr, "has_arrows": False, "is_iqr": True}
+        offset:     {"speed": median, "has_arrows": False},
+        offset + 1: {"speed": s_min, "has_arrows": False},
+        offset + 2: {"speed": s_max, "has_arrows": False},
+        offset + 3: {"speed": q25, "has_arrows": False},
+        offset + 4: {"speed": q75, "has_arrows": False},
+        offset + 5: {"speed": iqr, "has_arrows": False, "is_iqr": True}
     }
 
 def get_step_slice(da, step_idx):
