@@ -38,12 +38,13 @@ def check_model_new_data(model_name):
     latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
 
     try:
+        # Stunde 1 ist immer vorhanden und liefert zuverlässig die neueste Laufzeit
         check_req = ogd_api.Request(
             collection=model_cfg["collection"],
             variable="U_10M",
             ref_time="latest",
             perturbed=False,
-            lead_time=[timedelta(hours=model_cfg["hours"])]
+            lead_time=[timedelta(hours=1)]
         )
         ds_check = ogd_api.get_from_ogd(check_req)
         latest_ref_raw = ds_check.coords['ref_time'].values
@@ -61,7 +62,7 @@ def check_model_new_data(model_name):
         print(f"-> [{model_name}] Neueste Daten: {latest_ref_str} (ID: {run_id}) | Neu: {is_new}", flush=True)
         return is_new, latest_ref_str, iso_str, run_id, latest_dt
     except Exception as e:
-        print(f"-> Hinweis: [{model_name}] Lauf noch nicht vollständig ({e}).", flush=True)
+        print(f"-> Hinweis: [{model_name}] Fehler beim Abruf von MeteoSchweiz ({e}).", flush=True)
         return False, None, "latest", None, None
 
 def get_dynamic_chunks(total_steps, max_chunks=4):
