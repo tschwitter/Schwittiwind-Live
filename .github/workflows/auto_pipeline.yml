@@ -60,7 +60,7 @@ jobs:
           name: site-base
           path: dist/
 
-  # STUFE 2: DYNAMISCHE MATRIX (Berechnet nur den neuen Lauf)
+  # STUFE 2: DYNAMISCHE MATRIX
   compute-matrix:
     needs: check-and-prepare
     if: needs.check-and-prepare.outputs.should_run == 'true'
@@ -87,11 +87,12 @@ jobs:
         run: |
           python -u run_pipeline.py --model ${{ matrix.model }} --run-id ${{ matrix.run_id }} --start-step ${{ matrix.start }} --end-step ${{ matrix.end }} --ref-time "${{ matrix.ref_time }}"
 
+      # KORREKTUR: path ist dist/data/ damit die Unterordnerstruktur erhalten bleibt!
       - name: Chunk-Daten speichern
         uses: actions/upload-artifact@v4
         with:
           name: chunk-${{ matrix.model }}-${{ matrix.chunk }}
-          path: dist/data/${{ matrix.model }}/${{ matrix.run_id }}/
+          path: dist/data/
           if-no-files-found: ignore
 
   # STUFE 3: Historische Daten aus Cache holen, neuen Lauf einfügen & live schalten
@@ -120,7 +121,7 @@ jobs:
           restore-keys: |
             hist-runs-archive-
 
-      # 2. Basis-Website (Metadaten & index.html) abrufen
+      # 2. Basis-Website abrufen
       - name: Basis-Website abrufen
         uses: actions/download-artifact@v4
         with:
