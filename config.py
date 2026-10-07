@@ -40,11 +40,9 @@ MODELS_CONFIG = {
         "max_members": 11,
         "max_runs": 8,  # Max. 8 Läufe (24 Stunden bei 3h Intervall)
         "active_variables": [
-            "wind",
-            # "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl",
-            # "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
+            "wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
         ],
-        "ensemble_variables": ["wind"],
+        "ensemble_variables": ["wind","gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"],
         "max_chunks": 4
     },
     "icon-ch2": {
@@ -54,8 +52,8 @@ MODELS_CONFIG = {
         "hours": 120,
         "max_members": 21,
         "max_runs": 4,  # Max. 4 Läufe (24 Stunden bei 6h Intervall)
-        "active_variables": ["wind"],
-        "ensemble_variables": ["wind"],
+        "active_variables": ["wind", "sun"],
+        "ensemble_variables": ["wind", "sun"],
         "max_chunks": 4
     }
 }
