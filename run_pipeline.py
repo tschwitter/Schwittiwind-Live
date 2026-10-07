@@ -8,7 +8,6 @@ import urllib.request
 from datetime import timedelta, datetime
 from zoneinfo import ZoneInfo
 from multiprocessing import get_context
-from meteodatalab import ogd_api
 import config
 
 SHARED_DATA = {}
@@ -32,6 +31,8 @@ def load_existing_runs(model_name):
         return []
 
 def check_model_new_data(model_name):
+    from meteodatalab import ogd_api
+
     model_cfg = config.MODELS_CONFIG[model_name]
     existing_runs = load_existing_runs(model_name)
     latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
