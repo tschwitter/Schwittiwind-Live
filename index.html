@@ -18,13 +18,13 @@
         /* --- OBERES KONTROLL-PANEL --- */
         .top-control-panel {
             position: fixed;
-            top: 8px; left: 50%;
+            top: 10px; left: 50%;
             transform: translateX(-50%);
             z-index: 9999;
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 4px;
+            gap: 5px;
             max-width: 96vw;
             pointer-events: none;
         }
@@ -324,7 +324,7 @@
             display: flex; align-items: center; justify-content: center; cursor: pointer;
         }
 
-        /* NEUER TOGGLE-BUTTON FÜR DIE VERTIKALEN PFEILE */
+        /* TOGGLE-BUTTON FÜR DIE VERTIKALEN PFEILE */
         .nav-mode-btn {
             width: 34px; height: 38px; margin-left: 5px;
             background: white; border: 1px solid #ccc; border-radius: 5px;
@@ -405,7 +405,10 @@
             <button class="nav-toggle-btn" id="btnToggleHoehen" onclick="toggleHoehenMenu()">Höhenwind ▾</button>
         </div>
 
+        <!-- ZEILE 2: WETTER-SUBLEISTE -->
         <div class="top-row sub-nav-row" id="wetterSubRow" style="display: none;"></div>
+
+        <!-- ZEILE 3: HÖHENWIND-SUBLEISTE -->
         <div class="top-row sub-nav-row" id="hoehenSubRow" style="display: none;"></div>
 
         <!-- ZEILE 4: MODELLE (CH1/CH2) + 2. EBENE + EINSTELLUNGEN -->
@@ -488,7 +491,6 @@
                 <button class="member-stack-btn" onclick="navUp()">▲</button>
                 <button class="member-stack-btn" onclick="navDown()">▼</button>
             </div>
-            <!-- UMSCHALTER: MEMBER vs LÄUFE -->
             <button class="nav-mode-btn" id="navModeBtn" onclick="toggleNavMode()" title="Modus für ▲/▼: Member oder Modelläufe">Mbr</button>
         </div>
         <div class="bottom-labels-row">
@@ -626,7 +628,6 @@
                 var activeObj = runs.find(r => r.id === activeRun) || runs[0];
                 var modName = (m === "icon-ch1") ? "CH1" : "CH2";
                 
-                // Mobil noch kompakter
                 var runTxt = (activeObj && !isMobile) ? ` (${activeObj.label})` : "";
                 btn.innerText = `${modName}${runTxt} ▾`;
             });
@@ -704,11 +705,13 @@
                 const runPath = runId ? `data/${modelName}/${runId}` : `data/${modelName}`;
                 
                 const configRes = await fetch(`${runPath}/config.json?t=${cacheBuster}`);
+                if (!configRes.ok) throw new Error("Konnte config.json nicht laden: " + configRes.status);
                 config = await configRes.json();
+
                 const timesRes = await fetch(`${runPath}/times.json?t=${cacheBuster}`);
+                if (!timesRes.ok) throw new Error("Konnte times.json nicht laden: " + timesRes.status);
                 times = await timesRes.json();
 
-                // Variablen beibehalten sofern im neuen Modell verfügbar
                 var vars = config.variables || Object.keys(config.variables_config);
                 if (!vars.includes(layer1Var)) layer1Var = vars[0];
                 if (layer2Var && !vars.includes(layer2Var)) setSecondaryVar(null);
@@ -725,7 +728,7 @@
                     times.forEach((t, idx) => {
                         var d = parseLocalStr(t.local_str);
                         var diff = Math.abs(d - prevValidDate);
-                        if (diff < minDiff) { minDiff = diff; bestStepIdx = idx; }
+                        if (diff < minDiff) { minDiff = diff; bestIdx = idx; }
                     });
                 }
                 currentStepIdx = bestStepIdx;
