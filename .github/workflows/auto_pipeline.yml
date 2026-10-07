@@ -23,7 +23,7 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
-  # STUFE 1: Vorbereitung für beide Modelle (inkl. Cache-Restore alter Läufe)
+  # STUFE 1: Vorbereitung (Schlank & blitzschnell)
   check-and-prepare:
     runs-on: ubuntu-latest
     outputs:
@@ -44,14 +44,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Frühere Modelläufe aus Cache wiederherstellen
-        uses: actions/cache/restore@v4
-        with:
-          path: dist/data
-          key: hist-runs-data-${{ github.run_id }}
-          restore-keys: |
-            hist-runs-data-
-
       - name: Schnellprüfung & Vorbereitung (CH1 & CH2)
         id: prep
         run: |
@@ -61,14 +53,14 @@ jobs:
             python -u run_pipeline.py --prepare
           fi
 
-      - name: Basis-Website zwischenspeichern
+      - name: Basis-Dateien zwischenspeichern (nur Metadaten < 50 KB!)
         if: steps.prep.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: site-base
           path: dist/
 
-  # STUFE 2: DYNAMISCHE MATRIX
+  # STUFE 2: DYNAMISCHE MATRIX (Berechnet nur den neuen Lauf)
   compute-matrix:
     needs: check-and-prepare
     if: needs.check-and-prepare.outputs.should_run == 'true'
@@ -91,7 +83,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Berechne ${{ matrix.model }} Lauf ${{ matrix.run_id }} Chunk ${{ matrix.chunk }} (${{ matrix.start }} bis ${{ matrix.end }})
+      - name: Berechne ${{ matrix.model }} Lauf ${{ matrix.run_id }} Chunk ${{ matrix.chunk }}
         run: |
           python -u run_pipeline.py --model ${{ matrix.model }} --run-id ${{ matrix.run_id }} --start-step ${{ matrix.start }} --end-step ${{ matrix.end }} --ref-time "${{ matrix.ref_time }}"
 
@@ -99,10 +91,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: chunk-${{ matrix.model }}-${{ matrix.chunk }}
-          path: dist/data/
+          path: dist/data/${{ matrix.model }}/${{ matrix.run_id }}/
           if-no-files-found: ignore
 
-  # STUFE 3: Alle aktiven Chunks zusammenführen, cachen und live schalten
+  # STUFE 3: Historische Daten aus Cache holen, neuen Lauf einfügen & live schalten
   deploy:
     needs: [check-and-prepare, compute-matrix]
     if: needs.check-and-prepare.outputs.should_run == 'true'
@@ -111,25 +103,50 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
+      - name: Code auschecken (für Pruning-Skript)
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 1. Historischen Datenbestand direkt als kompakten Tarball aus dem Cloud-Cache laden
+      - name: Historischen Datenbestand wiederherstellen
+        uses: actions/cache/restore@v4
+        with:
+          path: dist/data
+          key: hist-runs-archive-${{ github.run_id }}
+          restore-keys: |
+            hist-runs-archive-
+
+      # 2. Basis-Website (Metadaten & index.html) abrufen
       - name: Basis-Website abrufen
         uses: actions/download-artifact@v4
         with:
           name: site-base
           path: dist/
 
-      - name: Alle Chunks zusammenführen
+      # 3. Neue Berechnungs-Chunks des aktuellen Laufs einsortieren
+      - name: Neue Chunks zusammenführen
         uses: actions/download-artifact@v4
         with:
           pattern: chunk-*
           path: dist/data/
           merge-multiple: true
 
-      - name: Aktualisierten Läufe-Bestand im Cache sichern
+      # 4. Läufe bereinigen, die älter als 24 Stunden sind
+      - name: Veraltete Läufe bereinigen
+        run: |
+          python -u run_pipeline.py --prune
+
+      # 5. Aktualisierten Datenbestand im Cache sichern
+      - name: Aktualisierten Datenbestand cachen
         uses: actions/cache/save@v4
         if: always()
         with:
           path: dist/data
-          key: hist-runs-data-${{ github.run_id }}
+          key: hist-runs-archive-${{ github.run_id }}
 
       - name: GitHub Pages konfigurieren
         uses: actions/configure-pages@v5
