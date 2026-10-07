@@ -87,7 +87,7 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
     else:
         ref_dt = datetime.now(ZoneInfo("UTC"))
 
-    # 1. times.json für diesen Lauf
+    # 1. times.json
     times_by_step = []
     for h in range(model_cfg["hours"] + 1):
         valid_local = (ref_dt + timedelta(hours=h)).astimezone(local_tz)
@@ -99,7 +99,7 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
     with open(f"{run_dir}/times.json", "w") as f:
         json.dump(times_by_step, f)
 
-    # 2. config.json für diesen Lauf
+    # 2. config.json
     num_ens = model_cfg["max_members"] - 1
     member_names = (
         ["Hauptlauf"] + 
@@ -139,7 +139,7 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
     with open(f"{run_dir}/config.json", "w") as f:
         json.dump(config_data, f)
 
-    # 3. runs.json aktualisieren & alte Läufe aufräumen (Pruning)
+    # 3. runs.json aktualisieren
     existing_runs = load_existing_runs(model_name)
     existing_runs = [r for r in existing_runs if r.get("id") != run_id]
 
@@ -150,24 +150,34 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
         "ref_time_utc": ref_time_str
     }
     updated_runs = [new_entry] + existing_runs
-
-    # Auf max_runs beschränken (CH1: 8 Läufe / CH2: 4 Läufe)
     max_runs = model_cfg.get("max_runs", 8)
     valid_runs = updated_runs[:max_runs]
-    valid_ids = set(r["id"] for r in valid_runs)
 
     with open(f"{model_base_dir}/runs.json", "w") as f:
         json.dump(valid_runs, f)
 
-    # Ordner von alten Läufen löschen
-    if os.path.exists(model_base_dir):
-        for entry in os.listdir(model_base_dir):
-            entry_path = os.path.join(model_base_dir, entry)
-            if os.path.isdir(entry_path) and entry not in valid_ids:
-                print(f"-> Entferne veralteten Lauf ({model_name}): {entry}", flush=True)
-                shutil.rmtree(entry_path, ignore_errors=True)
+    print(f"✓ Metadaten für [{model_name} / {run_id}] bereitgestellt!", flush=True)
 
-    print(f"✓ Basis-Dateien für [{model_name} / {run_id}] bereitgestellt! (Gesamt: {len(valid_runs)} Läufe)", flush=True)
+def prune_old_runs():
+    """Löscht in dist/data alle Ordner, die älter als 24h sind (nicht in runs.json)."""
+    print("--- PRUNING: Bereinige veraltete Modelläufe (> 24h) ---", flush=True)
+    for m_name in config.MODELS_CONFIG.keys():
+        model_base_dir = f"dist/data/{m_name}"
+        runs_file = f"{model_base_dir}/runs.json"
+        if not os.path.exists(runs_file):
+            continue
+        try:
+            with open(runs_file, "r") as f:
+                valid_runs = json.load(f)
+            valid_ids = set(r["id"] for r in valid_runs)
+
+            for entry in os.listdir(model_base_dir):
+                entry_path = os.path.join(model_base_dir, entry)
+                if os.path.isdir(entry_path) and entry not in valid_ids:
+                    print(f"-> Entferne veralteten Lauf ({m_name}): {entry}", flush=True)
+                    shutil.rmtree(entry_path, ignore_errors=True)
+        except Exception as e:
+            print(f"⚠️ Warnung beim Pruning ({m_name}): {e}", flush=True)
 
 def process_single_local_step(args):
     import stats
@@ -219,12 +229,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--prepare", action="store_true")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--prune", action="store_true")
     parser.add_argument("--model", type=str, default="icon-ch1")
     parser.add_argument("--run-id", type=str, default="latest")
     parser.add_argument("--start-step", type=int, default=0)
     parser.add_argument("--end-step", type=int, default=33)
     parser.add_argument("--ref-time", type=str, default="latest")
     args = parser.parse_args()
+
+    if args.prune:
+        prune_old_runs()
+        sys.exit(0)
 
     if args.prepare:
         os.makedirs("dist/data", exist_ok=True)
@@ -265,3 +280,165 @@ def main():
 
 if __name__ == "__main__":
     main()
+2. .github/workflows/auto_pipeline.yml (Vollständig ersetzen)
+name: Wetterdaten berechnen und veröffentlichen
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Berechnung erzwingen (auch wenn kein neuer Lauf da ist)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  # STUFE 1: Vorbereitung (Schlank & blitzschnell)
+  check-and-prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.prep.outputs.should_run }}
+      matrix_config: ${{ steps.prep.outputs.matrix_config }}
+    steps:
+      - name: Code auschecken
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Werkzeuge installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Schnellprüfung & Vorbereitung (CH1 & CH2)
+        id: prep
+        run: |
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            python -u run_pipeline.py --prepare --force
+          else
+            python -u run_pipeline.py --prepare
+          fi
+
+      - name: Basis-Dateien zwischenspeichern (nur Metadaten < 50 KB!)
+        if: steps.prep.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-base
+          path: dist/
+
+  # STUFE 2: DYNAMISCHE MATRIX (Berechnet nur den neuen Lauf)
+  compute-matrix:
+    needs: check-and-prepare
+    if: needs.check-and-prepare.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.check-and-prepare.outputs.matrix_config) }}
+    steps:
+      - name: Code auschecken
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Werkzeuge installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Berechne ${{ matrix.model }} Lauf ${{ matrix.run_id }} Chunk ${{ matrix.chunk }}
+        run: |
+          python -u run_pipeline.py --model ${{ matrix.model }} --run-id ${{ matrix.run_id }} --start-step ${{ matrix.start }} --end-step ${{ matrix.end }} --ref-time "${{ matrix.ref_time }}"
+
+      - name: Chunk-Daten speichern
+        uses: actions/upload-artifact@v4
+        with:
+          name: chunk-${{ matrix.model }}-${{ matrix.chunk }}
+          path: dist/data/${{ matrix.model }}/${{ matrix.run_id }}/
+          if-no-files-found: ignore
+
+  # STUFE 3: Historische Daten aus Cache holen, neuen Lauf einfügen & live schalten
+  deploy:
+    needs: [check-and-prepare, compute-matrix]
+    if: needs.check-and-prepare.outputs.should_run == 'true'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code auschecken (für Pruning-Skript)
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 1. Historischen Datenbestand direkt als kompakten Tarball aus dem Cloud-Cache laden
+      - name: Historischen Datenbestand wiederherstellen
+        uses: actions/cache/restore@v4
+        with:
+          path: dist/data
+          key: hist-runs-archive-${{ github.run_id }}
+          restore-keys: |
+            hist-runs-archive-
+
+      # 2. Basis-Website (Metadaten & index.html) abrufen
+      - name: Basis-Website abrufen
+        uses: actions/download-artifact@v4
+        with:
+          name: site-base
+          path: dist/
+
+      # 3. Neue Berechnungs-Chunks des aktuellen Laufs einsortieren
+      - name: Neue Chunks zusammenführen
+        uses: actions/download-artifact@v4
+        with:
+          pattern: chunk-*
+          path: dist/data/
+          merge-multiple: true
+
+      # 4. Läufe bereinigen, die älter als 24 Stunden sind
+      - name: Veraltete Läufe bereinigen
+        run: |
+          python -u run_pipeline.py --prune
+
+      # 5. Aktualisierten Datenbestand im Cache sichern
+      - name: Aktualisierten Datenbestand cachen
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: dist/data
+          key: hist-runs-archive-${{ github.run_id }}
+
+      - name: GitHub Pages konfigurieren
+        uses: actions/configure-pages@v5
+
+      - name: Gesamtes Paket bereitstellen
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'dist'
+
+      - name: Live schalten auf GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
