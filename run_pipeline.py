@@ -41,16 +41,17 @@ def check_model_new_data(model_name):
     existing_runs = load_existing_runs(model_name)
     latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
 
+    # 1. Neuesten Zeitstempel aus Stunde 1 ermitteln
     try:
-        check_req = ogd_api.Request(
+        check_pilot = ogd_api.Request(
             collection=model_cfg["collection"],
             variable="U_10M",
             ref_time="latest",
             perturbed=False,
             lead_time=[timedelta(hours=1)]
         )
-        ds_check = ogd_api.get_from_ogd(check_req)
-        latest_ref_raw = ds_check.coords['ref_time'].values
+        ds_pilot = ogd_api.get_from_ogd(check_pilot)
+        latest_ref_raw = ds_pilot.coords['ref_time'].values
         if getattr(latest_ref_raw, 'ndim', 0) > 0:
             latest_ref_raw = latest_ref_raw[0]
         else:
@@ -60,13 +61,36 @@ def check_model_new_data(model_name):
         latest_ref_str = latest_dt.strftime("%d.%m.%Y %H:00 UTC")
         iso_str = str(latest_ref_raw).split('.')[0] + "Z"
         run_id = latest_dt.strftime("%Y%m%d_%H")
-
-        is_new = (latest_known_id != run_id)
-        print(f"-> [{model_name}] Neueste Daten: {latest_ref_str} (ID: {run_id}) | Neu: {is_new}", flush=True)
-        return is_new, latest_ref_str, iso_str, run_id, latest_dt
     except Exception as e:
-        print(f"-> Hinweis: [{model_name}] Fehler beim Abruf von MeteoSchweiz ({e}).", flush=True)
+        print(f"-> Hinweis: [{model_name}] Konnte neuesten Lauf nicht anfragen ({e}).", flush=True)
         return False, None, "latest", None, None
+
+    is_new = (latest_known_id != run_id)
+    if not is_new:
+        print(f"-> [{model_name}] Lauf {run_id} ist bereits aktuell.", flush=True)
+        return False, latest_ref_str, iso_str, run_id, latest_dt
+
+    # 2. VOLLSTÄNDIGKEITSPRÜFUNG: Prüfe, ob die LETZTE Stunde des Laufs wirklich hochgeladen ist!
+    if model_name == "icon-ch1":
+        required_hours = 33  # CH1 muss immer volle 33 Stunden haben
+    else:
+        # CH2: 00Z und 12Z gehen bis 120h, 06Z und 18Z gehen bis 45/48h
+        required_hours = 120 if latest_dt.hour in [0, 12] else 45
+
+    try:
+        check_final = ogd_api.Request(
+            collection=model_cfg["collection"],
+            variable="U_10M",
+            ref_time=iso_str,
+            perturbed=False,
+            lead_time=[timedelta(hours=required_hours)]
+        )
+        ds_final = ogd_api.get_from_ogd(check_final)
+        print(f"✓ [{model_name}] Neuer Lauf {run_id} ist vollständig bis +{required_hours}h bereit!", flush=True)
+        return True, latest_ref_str, iso_str, run_id, latest_dt
+    except Exception:
+        print(f"-> Warten: [{model_name}] Lauf {run_id} wird noch von MeteoSchweiz berechnet (Stunde +{required_hours}h noch nicht da).", flush=True)
+        return False, latest_ref_str, iso_str, run_id, latest_dt
 
 def get_dynamic_chunks(total_steps, max_chunks=4):
     k = min(max_chunks, total_steps)
@@ -144,7 +168,6 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
         with open(f"{run_dir}/config.json", "w") as f:
             json.dump(config_data, f)
 
-        # runs.json mit genau 8 Läufen (CH1) bzw. 4 Läufen (CH2)
         existing_runs = load_existing_runs(model_name)
         existing_runs = [r for r in existing_runs if r.get("id") != run_id]
 
@@ -164,7 +187,6 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
     print(f"✓ Metadaten für [{model_name} / {run_id}] bereitgestellt!", flush=True)
 
 def prune_old_runs():
-    """Löscht veraltete Läufe (> 24h) und alle losen Altdateien zuverlässig."""
     print("--- PRUNING: Bereinige Läufe älter als 24h ---", flush=True)
     base_data_dir = "dist/data"
     if os.path.exists(base_data_dir):
