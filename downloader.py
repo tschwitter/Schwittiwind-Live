@@ -152,15 +152,10 @@ def fetch_single_2d(collection, var_name, perturbed, ref_time_str, lead_times, v
             if valid_cells is not None:
                 ds = ds.isel(cell=valid_cells)
             return safe_squeeze(ds)
-        except IndexError:
-            # IndexError bedeutet: Keine URLs gefunden (Stunden jenseits des Modellhorizonts)
-            print(f"-> Keine Daten für {var_name} ab {lead_times[0]} bei MeteoSchweiz vorhanden.", flush=True)
-            return None
         except Exception as e:
             if attempt == 3:
-                print(f"⚠️ Netzwerkfehler bei {var_name}: {e}", flush=True)
-                return None
-            time.sleep(3)
+                raise RuntimeError(f"Konnte {var_name} ({'Ens' if perturbed else 'HL'}) von {collection} nicht laden: {e}")
+            time.sleep(3 * attempt)
     return None
 
 def fetch_dursun_hourly(collection, perturbed, ref_time_str, start_step, end_step, valid_cells):
@@ -192,7 +187,7 @@ def _fetch_and_slice_single_hour(args):
             with SilenceStderr():
                 ds_hour = ogd_api.get_from_ogd(req)
             break
-        except (IndexError, Exception):
+        except Exception:
             if attempt == 3:
                 return None
             time.sleep(2 * attempt)
@@ -225,7 +220,6 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
     with ThreadPoolExecutor(max_workers=num_workers) as pool:
         hourly_results = list(pool.map(_fetch_and_slice_single_hour, tasks))
 
-    # Nur vorhandene Zeitschritte berücksichtigen
     valid_hourly = [hr for hr in hourly_results if hr is not None]
     if not valid_hourly:
         return {}
@@ -247,9 +241,7 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
 
     lead_times = [timedelta(hours=h) for h in range(start_step, end_step + 1)]
 
-    # FIX: Pilot-Download holt das Referenzgitter IMMER aus Stunde 1 (oder 0)!
-    # Verhindert den IndexError bei späteren Chunks (z.B. Schritt 31, 61, 91),
-    # falls ein Modelllauf nicht bis 120h geht!
+    # Pilot-Download für Koordinaten
     print(f"1. Pilot-Download [{model_name}]: Hole Referenzgitter aus Stunde 1...", flush=True)
     req_pilot = ogd_api.Request(
         collection=collection,
