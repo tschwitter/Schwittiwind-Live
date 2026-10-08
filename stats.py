@@ -35,6 +35,9 @@ def init_regrid_weights(source_lons, source_lats):
     }
 
 def remap_fast(field, weights):
+    if field is None:
+        return np.full((config.NY, config.NX), np.nan, dtype=np.float32)
+
     raw_vals = field.values if hasattr(field, "values") else field
     vals = np.asarray(raw_vals).squeeze()
     if vals.ndim > 1:
@@ -56,7 +59,7 @@ def remap_fast(field, weights):
     return out.reshape(config.NY, config.NX)
 
 def compute_statistics_for_array(all_values, threshold=None):
-    """Berechnet Statistiken dynamisch für jede beliebige Ensemble-Größe (CH1: 11..16 | CH2: 21..26)."""
+    """Berechnet Statistiken dynamisch für jede Ensemble-Größe (CH1: 11..16, CH2: 21..26)."""
     s_min = np.nanmin(all_values, axis=0)
     s_max = np.nanmax(all_values, axis=0)
     q25, median, q75 = np.nanpercentile(all_values, [25, 50, 75], axis=0)
@@ -71,7 +74,6 @@ def compute_statistics_for_array(all_values, threshold=None):
         q25 = np.where(q25 < threshold, np.nan, q25)
         q75 = np.where(q75 < threshold, np.nan, q75)
 
-    # DYNAMISCHER OFFSET: Bei CH1 = 11, bei CH2 = 21
     offset = len(all_values)
     return {
         offset:     {"speed": median, "has_arrows": False},
@@ -83,8 +85,12 @@ def compute_statistics_for_array(all_values, threshold=None):
     }
 
 def get_step_slice(da, step_idx):
+    if da is None:
+        return None
     if "lead_time" in da.dims:
-        return da.isel(lead_time=step_idx)
+        if step_idx < da.sizes["lead_time"]:
+            return da.isel(lead_time=step_idx)
+        return None
     return da
 
 def compute_timestep(model_name, weather_data, step_idx, weights):
@@ -110,7 +116,7 @@ def compute_timestep(model_name, weather_data, step_idx, weights):
         dr = (np.arctan2(gu, gv) * 180 / np.pi) % 360
         wind_data = {0: {"speed": sp, "dir": dr, "has_arrows": True}}
 
-        if has_ens and "u_e" in surface:
+        if has_ens and "u_e" in surface and surface["u_e"] is not None:
             u_e, v_e = surface["u_e"], surface["v_e"]
             members = u_e.coords['eps'].values
             all_sp = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
@@ -134,7 +140,7 @@ def compute_timestep(model_name, weather_data, step_idx, weights):
         sp_g = remap_fast(gs_h, weights) * 3.6
         gust_data = {0: {"speed": sp_g, "has_arrows": False}}
 
-        if has_ens and "g_e" in surface:
+        if has_ens and "g_e" in surface and surface["g_e"] is not None:
             g_e = surface["g_e"]
             members = g_e.coords['eps'].values
             all_g = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
@@ -156,7 +162,7 @@ def compute_timestep(model_name, weather_data, step_idx, weights):
         g_dbz = np.where(np.isnan(g_dbz), np.nan, np.maximum(0.0, g_dbz))
         dbz_data = {0: {"speed": np.where(g_dbz < 7.0, np.nan, g_dbz), "has_arrows": False}}
 
-        if has_ens and "dbz_e" in surface:
+        if has_ens and "dbz_e" in surface and surface["dbz_e"] is not None:
             dbz_e = surface["dbz_e"]
             members = dbz_e.coords['eps'].values
             all_dbz = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
@@ -180,7 +186,7 @@ def compute_timestep(model_name, weather_data, step_idx, weights):
         sun_pct = np.clip((g_sun_sec / 3600.0) * 100.0, 0.0, 100.0)
         sun_data = {0: {"speed": np.where(sun_pct < 10.0, np.nan, sun_pct), "has_arrows": False}}
 
-        if has_ens and "sun_e" in surface:
+        if has_ens and "sun_e" in surface and surface["sun_e"] is not None:
             sun_e = surface["sun_e"]
             members = sun_e.coords['eps'].values
             all_sun = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
@@ -206,7 +212,7 @@ def compute_timestep(model_name, weather_data, step_idx, weights):
             c_pct = np.clip(g_c, 0.0, 100.0)
             c_data = {0: {"speed": np.where(c_pct < 10.0, np.nan, c_pct), "has_arrows": False}}
 
-            if has_ens and f"{c_key}_e" in surface:
+            if has_ens and f"{c_key}_e" in surface and surface[f"{c_key}_e"] is not None:
                 c_e = surface[f"{c_key}_e"]
                 members = c_e.coords['eps'].values
                 all_c = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
@@ -226,8 +232,11 @@ def compute_timestep(model_name, weather_data, step_idx, weights):
             continue
         alt = var_cfg["altitude"]
         has_ens = var_name in ens_vars
-        u_hl, v_hl = altitude_hl[alt]
 
+        if alt not in altitude_hl:
+            continue
+
+        u_hl, v_hl = altitude_hl[alt]
         u_s = get_step_slice(u_hl, step_idx)
         v_s = get_step_slice(v_hl, step_idx)
         gu = remap_fast(u_s, weights)
@@ -236,7 +245,7 @@ def compute_timestep(model_name, weather_data, step_idx, weights):
         dr = (np.arctan2(gu, gv) * 180 / np.pi) % 360
         alt_data = {0: {"speed": sp, "dir": dr, "has_arrows": True}}
 
-        if has_ens and alt in altitude_ens:
+        if has_ens and alt in altitude_ens and altitude_ens[alt][0] is not None:
             u_ens, v_ens = altitude_ens[alt]
             members = u_ens.coords['eps'].values
             all_sp = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
