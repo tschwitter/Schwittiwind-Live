@@ -23,6 +23,7 @@ var currentStepIdx = 0;
 var contourLayer1 = null;
 var contourLayer2 = null;
 var activeMarkers = null;
+var cityLayerGroup = null;
 
 var cacheGrid = {};
 var cacheContours = {};
@@ -30,6 +31,92 @@ var cacheContours = {};
 var uniqueDays = [];
 var dayTimesteps = {};
 var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+
+// ================= DYNAMISCHE ORTSCHAFTEN NACH ZOOM-STUFEN =================
+var CITIES = [
+    // Stufe 1: minZoom = 7 (Ganze Schweiz - immer sichtbar)
+    { name: "Zürich", lat: 47.3769, lon: 8.5417, minZoom: 7 },
+    { name: "Bern", lat: 46.9480, lon: 7.4474, minZoom: 7 },
+    { name: "Basel", lat: 47.5596, lon: 7.5886, minZoom: 7 },
+    { name: "Genève", lat: 46.2044, lon: 6.1432, minZoom: 7 },
+    { name: "Lausanne", lat: 46.5197, lon: 6.6323, minZoom: 7 },
+    { name: "Luzern", lat: 47.0502, lon: 8.3093, minZoom: 7 },
+    { name: "St. Gallen", lat: 47.4245, lon: 9.3767, minZoom: 7 },
+    { name: "Lugano", lat: 46.0037, lon: 8.9511, minZoom: 7 },
+    { name: "Chur", lat: 46.8508, lon: 9.5320, minZoom: 7 },
+    { name: "Sion", lat: 46.2331, lon: 7.3606, minZoom: 7 },
+
+    // Stufe 2: minZoom = 9 (Regionalstädte)
+    { name: "Winterthur", lat: 47.4999, lon: 8.7241, minZoom: 9 },
+    { name: "Biel/Bienne", lat: 47.1368, lon: 7.2468, minZoom: 9 },
+    { name: "Thun", lat: 46.7580, lon: 7.6280, minZoom: 9 },
+    { name: "Bellinzona", lat: 46.1928, lon: 9.0170, minZoom: 9 },
+    { name: "Fribourg", lat: 46.8065, lon: 7.1620, minZoom: 9 },
+    { name: "Neuchâtel", lat: 46.9896, lon: 6.9293, minZoom: 9 },
+    { name: "Schaffhausen", lat: 47.6959, lon: 8.6380, minZoom: 9 },
+    { name: "Aarau", lat: 47.3925, lon: 8.0442, minZoom: 9 },
+    { name: "Olten", lat: 47.3522, lon: 7.9077, minZoom: 9 },
+    { name: "Brig", lat: 46.3167, lon: 7.9878, minZoom: 9 },
+    { name: "Interlaken", lat: 46.6863, lon: 7.8632, minZoom: 9 },
+    { name: "Davos", lat: 46.8027, lon: 9.8360, minZoom: 9 },
+    { name: "St. Moritz", lat: 46.4908, lon: 9.8355, minZoom: 9 },
+    { name: "Altdorf", lat: 46.8804, lon: 8.6444, minZoom: 9 },
+    { name: "Schwyz", lat: 47.0207, lon: 8.6530, minZoom: 9 },
+    { name: "Sarnen", lat: 46.8961, lon: 8.2458, minZoom: 9 },
+    { name: "Stans", lat: 46.9575, lon: 8.3660, minZoom: 9 },
+    { name: "Appenzell", lat: 47.3312, lon: 9.4098, minZoom: 9 },
+    { name: "Delémont", lat: 47.3653, lon: 7.3444, minZoom: 9 },
+    { name: "Frauenfeld", lat: 47.5583, lon: 8.8986, minZoom: 9 },
+    { name: "Liestal", lat: 47.4844, lon: 7.7348, minZoom: 9 },
+
+    // Stufe 3: minZoom = 11 (Kleinere Orte & Täler)
+    { name: "Zug", lat: 47.1662, lon: 8.5155, minZoom: 11 },
+    { name: "Baden", lat: 47.4737, lon: 8.3087, minZoom: 11 },
+    { name: "Vevey", lat: 46.4628, lon: 6.8432, minZoom: 11 },
+    { name: "Montreux", lat: 46.4312, lon: 6.9107, minZoom: 11 },
+    { name: "Yverdon", lat: 46.7785, lon: 6.6412, minZoom: 11 },
+    { name: "Locarno", lat: 46.1711, lon: 8.7995, minZoom: 11 },
+    { name: "Martigny", lat: 46.1037, lon: 7.0734, minZoom: 11 },
+    { name: "Zermatt", lat: 45.9765, lon: 7.7491, minZoom: 11 },
+    { name: "Andermatt", lat: 46.6337, lon: 8.5947, minZoom: 11 },
+    { name: "Einsiedeln", lat: 47.1278, lon: 8.7472, minZoom: 11 },
+    { name: "Meiringen", lat: 46.7283, lon: 8.1882, minZoom: 11 },
+    { name: "Scuol", lat: 46.7972, lon: 10.2989, minZoom: 11 },
+    { name: "Disentis", lat: 46.7056, lon: 8.8556, minZoom: 11 },
+    { name: "Glarus", lat: 47.0406, lon: 9.0678, minZoom: 11 },
+    { name: "Solothurn", lat: 47.2088, lon: 7.5370, minZoom: 11 },
+    { name: "Nyon", lat: 46.3832, lon: 6.2396, minZoom: 11 },
+    { name: "Porrentruy", lat: 47.4167, lon: 7.0756, minZoom: 11 },
+    { name: "Aigle", lat: 46.3174, lon: 6.9686, minZoom: 11 }
+];
+
+function updateCityLabels() {
+    if (!map) return;
+    if (!cityLayerGroup) {
+        cityLayerGroup = L.layerGroup().addTo(map);
+    } else {
+        cityLayerGroup.clearLayers();
+    }
+
+    var curZoom = map.getZoom();
+    var bounds = map.getBounds();
+
+    CITIES.forEach(city => {
+        if (curZoom >= city.minZoom) {
+            var latlng = L.latLng(city.lat, city.lon);
+            if (bounds.contains(latlng)) {
+                var html = `<div class="city-label-container"><div class="city-dot"></div><span class="city-name">${city.name}</span></div>`;
+                var icon = L.divIcon({
+                    html: html,
+                    className: 'city-div-icon',
+                    iconSize: [0, 0],
+                    iconAnchor: [0, 0]
+                });
+                L.marker(latlng, { icon: icon, pane: 'cityPane', interactive: false }).addTo(cityLayerGroup);
+            }
+        }
+    });
+}
 
 function parseLocalStr(str) {
     if (!str) return new Date();
@@ -121,7 +208,6 @@ function updateModelButtonLabels() {
         var activeRun = (currentModel === m) ? currentRunId : (runs[0] ? runs[0].id : null);
         var activeObj = runs.find(r => r.id === activeRun) || runs[0];
         var modName = (m === "icon-ch1") ? "CH1" : "CH2";
-        
         var runTxt = (activeObj && !isMobile) ? ` (${activeObj.label})` : "";
         btn.innerText = `${modName}${runTxt} ▾`;
     });
@@ -176,7 +262,6 @@ async function switchModel(newModel) {
     await loadModelAndRun(currentModel, runId);
 }
 
-// ================= KERN-LADEN: MERKT SICH ZEIT, MEMBER & VARIABLEN =================
 async function loadModelAndRun(modelName, runId) {
     var prevValidDate = (times && times[currentStepIdx]) ? parseLocalStr(times[currentStepIdx].local_str) : null;
     var prevMember = currentMemberIdx;
@@ -215,7 +300,6 @@ async function loadModelAndRun(modelName, runId) {
         initDayButtons();
         initMemberPanel();
 
-        // 1. Exakt gleiche Lokalzeit im neuen Modelllauf beibehalten
         var bestStepIdx = 0;
         if (prevValidDate && times && times.length > 0) {
             var minDiff = Infinity;
@@ -230,7 +314,6 @@ async function loadModelAndRun(modelName, runId) {
         }
         currentStepIdx = bestStepIdx;
 
-        // 2. Member / Statistik beibehalten
         var vCfg = config.variables_config[layer1Var];
         var hasEns = vCfg ? vCfg.has_ensemble : true;
         if (!hasEns) {
@@ -252,7 +335,6 @@ async function loadModelAndRun(modelName, runId) {
     document.getElementById("loadingIndicator").style.display = "none";
 }
 
-// ================= MENÜS =================
 function toggleWetterMenu() {
     isWetterOpen = !isWetterOpen;
     document.getElementById("wetterSubRow").style.display = isWetterOpen ? "flex" : "none";
@@ -692,7 +774,7 @@ function generateContoursClient(s_flat, paletteType) {
         .size([config.nx, config.ny])
         .smooth(true)
         .thresholds(thresholds);
-        
+                
     const rawContours = contourGen(values);
     const xMin = config.xmin, xMax = config.xmax;
     const yMin = config.ymin, yMax = config.ymax;
@@ -708,11 +790,11 @@ function generateContoursClient(s_flat, paletteType) {
         const geoCoords = c.coordinates.map(polygon => 
             polygon.map(ring => 
                 ring.map(pt => [
-                            xMin + (pt[0] - 0.5) * dx,
-                            yMin + (pt[1] - 0.5) * dy
-                        ])
-                    )
-                );
+                    xMin + (pt[0] - 0.5) * dx,
+                    yMin + (pt[1] - 0.5) * dy
+                ])
+            )
+        );
         
         features.push({
             type: "Feature",
@@ -743,11 +825,14 @@ async function ensureDataLoaded(varName, memberIdx, stepIdx) {
 
 async function init() {
     try {
-        // 1. Basiskarte: SwissALTI3D Reliefschattierung (reines 3D-Gelände, keine störenden Namen)
+        // 1. Basiskarte: SwissALTI3D Reliefschattierung (3D-Relief ohne Namen)
         var swisstopo_relief_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissalti3d-reliefschattierung/default/current/3857/{z}/{x}/{y}.png";
         
-        // 2. Offizieller Schweizer Seen-Layer (Lakes / Seen mit Uferkontur und zartem Blau)
+        // 2. Schweizer Seen (ch.bafu.vec25-seen)
         var swisstopo_lakes_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-seen/default/current/3857/{z}/{x}/{y}.png";
+
+        // 3. Schweizer Hauptflüsse (ch.bafu.vec25-gewaessernetz_2000: Rhein, Aare, Rhone, Reuss etc.)
+        var swisstopo_rivers_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-gewaessernetz_2000/default/current/3857/{z}/{x}/{y}.png";
 
         map = L.map('map', {
             center: [46.8182, 8.2275],
@@ -756,8 +841,8 @@ async function init() {
         });
 
         // Dedizierte Panes für saubere Schichtung
-        map.createPane('lakePane');
-        map.getPane('lakePane').style.zIndex = '250'; // Liegt direkt auf dem Relief, unter dem Wetter!
+        map.createPane('waterPane');
+        map.getPane('waterPane').style.zIndex = '250'; // Liegt direkt auf dem Relief, unter dem Wetter!
 
         map.createPane('contourPane1');
         map.getPane('contourPane1').style.opacity = layer1Opacity;
@@ -767,21 +852,38 @@ async function init() {
         map.getPane('contourPane2').style.opacity = layer2Opacity;
         map.getPane('contourPane2').style.zIndex = '450';
 
-        // 1. Relief einfügen
+        map.createPane('cityPane');
+        map.getPane('cityPane').style.zIndex = '520'; // Immer obenauf, gestochen scharf!
+        map.getPane('cityPane').style.pointerEvents = 'none';
+
+        // Relief
         L.tileLayer(swisstopo_relief_url, {
             attribution: '&copy; <a href="https://www.swisstopo.admin.ch/" target="_blank">swisstopo</a> | Wetterdaten: &copy; <a href="https://www.meteoschweiz.admin.ch/" target="_blank">MeteoSchweiz</a>',
             maxZoom: 15, maxNativeZoom: 14
         }).addTo(map);
 
-        // 2. Schweizer Seen einfügen (gestochen scharfe Umrisse auf dem Relief)
+        // Seen
         L.tileLayer(swisstopo_lakes_url, {
-            pane: 'lakePane',
+            pane: 'waterPane',
             maxZoom: 15, maxNativeZoom: 14,
             opacity: 0.85
         }).addTo(map);
 
-        map.on('moveend', drawVisibleArrows);
-        map.on('zoomend', drawVisibleArrows);
+        // Flüsse
+        L.tileLayer(swisstopo_rivers_url, {
+            pane: 'waterPane',
+            maxZoom: 15, maxNativeZoom: 14,
+            opacity: 0.75
+        }).addTo(map);
+
+        map.on('moveend', function() {
+            drawVisibleArrows();
+            updateCityLabels();
+        });
+        map.on('zoomend', function() {
+            drawVisibleArrows();
+            updateCityLabels();
+        });
 
         map.on('click', function() {
             closeAllPopups();
@@ -819,6 +921,7 @@ async function init() {
             updateModelButtonLabels();
             initMemberPanel();
             updateForecast(currentMemberIdx, currentStepIdx);
+            updateCityLabels();
         };
 
         updateNavModeButton();
@@ -827,6 +930,7 @@ async function init() {
         await fetchAvailableRuns("icon-ch2");
 
         await switchModel("icon-ch1");
+        updateCityLabels();
     } catch (err) {
         console.error("Fehler beim Laden:", err);
     }
@@ -884,6 +988,7 @@ async function updateForecast(newMemberIdx, newStepIdx) {
     updateLegend();
     renderContours();
     drawVisibleArrows();
+    updateCityLabels();
 }
 
 function renderContours() {
