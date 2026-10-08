@@ -36,7 +36,7 @@ MODELS_CONFIG = {
         "max_members": 11,
         "max_runs": 8,  # Volle 24 Stunden (8 Läufe à 3 Stunden)
         "active_variables": ["wind"],
-        "ensemble_variables": ["wind"],
+        "ensemble_variables": [],
         "max_chunks": 4
     },
     "icon-ch2": {
@@ -47,7 +47,7 @@ MODELS_CONFIG = {
         "max_members": 21,
         "max_runs": 4,  # Volle 24 Stunden (4 Läufe à 6 Stunden)
         "active_variables": ["wind"],
-        "ensemble_variables": ["wind"],
+        "ensemble_variables": [],
         "max_chunks": 4
     }
 }
