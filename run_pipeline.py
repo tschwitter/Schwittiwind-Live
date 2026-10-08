@@ -41,7 +41,6 @@ def check_model_new_data(model_name):
     existing_runs = load_existing_runs(model_name)
     latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
 
-    # 1. Neuesten Zeitstempel aus Stunde 1 ermitteln
     try:
         check_pilot = ogd_api.Request(
             collection=model_cfg["collection"],
@@ -70,11 +69,9 @@ def check_model_new_data(model_name):
         print(f"-> [{model_name}] Lauf {run_id} ist bereits aktuell.", flush=True)
         return False, latest_ref_str, iso_str, run_id, latest_dt
 
-    # 2. VOLLSTÄNDIGKEITSPRÜFUNG: Prüfe, ob die LETZTE Stunde des Laufs wirklich hochgeladen ist!
     if model_name == "icon-ch1":
-        required_hours = 33  # CH1 muss immer volle 33 Stunden haben
+        required_hours = 33
     else:
-        # CH2: 00Z und 12Z gehen bis 120h, 06Z und 18Z gehen bis 45/48h
         required_hours = 120 if latest_dt.hour in [0, 12] else 45
 
     try:
@@ -89,7 +86,7 @@ def check_model_new_data(model_name):
         print(f"✓ [{model_name}] Neuer Lauf {run_id} ist vollständig bis +{required_hours}h bereit!", flush=True)
         return True, latest_ref_str, iso_str, run_id, latest_dt
     except Exception:
-        print(f"-> Warten: [{model_name}] Lauf {run_id} wird noch von MeteoSchweiz berechnet (Stunde +{required_hours}h noch nicht da).", flush=True)
+        print(f"-> Warten: [{model_name}] Lauf {run_id} wird noch von MeteoSchweiz berechnet (+{required_hours}h fehlt).", flush=True)
         return False, latest_ref_str, iso_str, run_id, latest_dt
 
 def get_dynamic_chunks(total_steps, max_chunks=4):
@@ -284,7 +281,11 @@ def main():
 
     if args.prepare:
         os.makedirs("dist-meta/data", exist_ok=True)
-        shutil.copy("index.html", "dist-meta/index.html")
+        
+        # Kopiert automatisch alle 3 Frontend-Dateien für das Deployment
+        for static_file in ["index.html", "style.css", "app.js"]:
+            if os.path.exists(static_file):
+                shutil.copy(static_file, f"dist-meta/{static_file}")
 
         all_chunks = []
         any_new = False
