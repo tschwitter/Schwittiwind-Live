@@ -152,18 +152,23 @@ def fetch_single_2d(collection, var_name, perturbed, ref_time_str, lead_times, v
             if valid_cells is not None:
                 ds = ds.isel(cell=valid_cells)
             return safe_squeeze(ds)
+        except IndexError:
+            # IndexError bedeutet: Keine URLs gefunden (Stunden jenseits des Modellhorizonts)
+            print(f"-> Keine Daten für {var_name} ab {lead_times[0]} bei MeteoSchweiz vorhanden.", flush=True)
+            return None
         except Exception as e:
             if attempt == 3:
-                raise e
-            print(f"⚠️ Netzwerkfehler bei {var_name} (Versuch {attempt}/3)...", flush=True)
+                print(f"⚠️ Netzwerkfehler bei {var_name}: {e}", flush=True)
+                return None
             time.sleep(3)
+    return None
 
 def fetch_dursun_hourly(collection, perturbed, ref_time_str, start_step, end_step, valid_cells):
     actual_start = max(0, start_step - 1)
     fetch_lts = [timedelta(hours=h) for h in range(actual_start, end_step + 1)]
     ds = fetch_single_2d(collection, "DURSUN", perturbed, ref_time_str, fetch_lts, valid_cells)
     
-    if "lead_time" in ds.dims and ds.sizes["lead_time"] > 1:
+    if ds is not None and "lead_time" in ds.dims and ds.sizes["lead_time"] > 1:
         diff = ds.diff(dim="lead_time")
         diff = xr.where(diff < 0, 0, diff)
         if start_step == 0:
@@ -187,10 +192,13 @@ def _fetch_and_slice_single_hour(args):
             with SilenceStderr():
                 ds_hour = ogd_api.get_from_ogd(req)
             break
-        except Exception as e:
+        except (IndexError, Exception):
             if attempt == 3:
-                raise e
-            time.sleep(3 * attempt)
+                return None
+            time.sleep(2 * attempt)
+
+    if ds_hour is None:
+        return None
 
     if valid_cells is not None:
         ds_hour = ds_hour.isel(cell=valid_cells)
@@ -217,12 +225,17 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
     with ThreadPoolExecutor(max_workers=num_workers) as pool:
         hourly_results = list(pool.map(_fetch_and_slice_single_hour, tasks))
 
+    # Nur vorhandene Zeitschritte berücksichtigen
+    valid_hourly = [hr for hr in hourly_results if hr is not None]
+    if not valid_hourly:
+        return {}
+
     results_by_alt = {}
     for alt in target_alts:
-        slices = [hr[alt] for hr in hourly_results]
+        slices = [hr[alt] for hr in valid_hourly if alt in hr]
         if len(slices) > 1:
             results_by_alt[alt] = xr.concat(slices, dim="lead_time")
-        else:
+        elif len(slices) == 1:
             results_by_alt[alt] = slices[0].expand_dims("lead_time")
     return results_by_alt
 
@@ -234,14 +247,16 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
 
     lead_times = [timedelta(hours=h) for h in range(start_step, end_step + 1)]
 
-    # Pilot-Download für Koordinaten des jeweiligen Modells
-    print(f"1. Pilot-Download [{model_name}]: Hole Referenzgitter...", flush=True)
+    # FIX: Pilot-Download holt das Referenzgitter IMMER aus Stunde 1 (oder 0)!
+    # Verhindert den IndexError bei späteren Chunks (z.B. Schritt 31, 61, 91),
+    # falls ein Modelllauf nicht bis 120h geht!
+    print(f"1. Pilot-Download [{model_name}]: Hole Referenzgitter aus Stunde 1...", flush=True)
     req_pilot = ogd_api.Request(
         collection=collection,
         variable="U_10M",
         ref_time=ref_time_str,
         perturbed=False,
-        lead_time=[lead_times[0]]
+        lead_time=[timedelta(hours=1)]
     )
     for attempt in range(1, 4):
         try:
@@ -322,8 +337,8 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
         else:
             u_ens_by_alt, v_ens_by_alt = {}, {}
 
-        altitude_hl_res = {alt: (u_hl_by_alt[alt], v_hl_by_alt[alt]) for alt in hl_altitudes}
-        altitude_ens_res = {alt: (u_ens_by_alt[alt], v_ens_by_alt[alt]) for alt in ens_altitudes}
+        altitude_hl_res = {alt: (u_hl_by_alt[alt], v_hl_by_alt[alt]) for alt in hl_altitudes if alt in u_hl_by_alt and alt in v_hl_by_alt}
+        altitude_ens_res = {alt: (u_ens_by_alt[alt], v_ens_by_alt[alt]) for alt in ens_altitudes if alt in u_ens_by_alt and alt in v_ens_by_alt}
         del alt_prep
         gc.collect()
 
