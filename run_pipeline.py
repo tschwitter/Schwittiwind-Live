@@ -38,7 +38,6 @@ def check_model_new_data(model_name):
     latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
 
     try:
-        # Stunde 1 ist immer vorhanden und liefert zuverlässig die neueste Laufzeit
         check_req = ogd_api.Request(
             collection=model_cfg["collection"],
             variable="U_10M",
@@ -141,7 +140,7 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
     with open(f"{run_dir}/config.json", "w") as f:
         json.dump(config_data, f)
 
-    # 3. runs.json aktualisieren
+    # 3. runs.json
     existing_runs = load_existing_runs(model_name)
     existing_runs = [r for r in existing_runs if r.get("id") != run_id]
 
@@ -161,7 +160,7 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
     print(f"✓ Metadaten für [{model_name} / {run_id}] bereitgestellt!", flush=True)
 
 def prune_old_runs():
-    """Löscht in dist/data alle Ordner, die älter als 24h sind (nicht in runs.json)."""
+    """Löscht in dist/data alle Ordner und Daten, die älter als 24h sind."""
     print("--- PRUNING: Bereinige veraltete Modelläufe (> 24h) ---", flush=True)
     for m_name in config.MODELS_CONFIG.keys():
         model_base_dir = f"dist/data/{m_name}"
