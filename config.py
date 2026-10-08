@@ -1,16 +1,12 @@
 # ================= CONFIGURATION =================
-# 1km-Originalauflösung der Schweiz (Zielgitter für BEIDE Modelle!)
 NX, NY = 400, 240
 
-# Bounding Box Schweiz (+ Puffer)
 XMIN, XMAX = 5.8, 10.7
 YMIN, YMAX = 45.6, 47.9
 
-# Geografischer Vorfilter
 LAT_MIN, LAT_MAX = 45.5, 48.0
 LON_MIN, LON_MAX = 5.7, 10.8
 
-# ================= ZENTRALER VARIABLEN-KATALOG =================
 VARIABLES_CONFIG = {
     "wind":     {"label": "10m Wind",     "type": "surface",  "has_arrows": True,  "palette": "wind"},
     "gust":     {"label": "Böen",         "type": "surface",  "has_arrows": False, "palette": "wind"},
@@ -30,7 +26,7 @@ VARIABLES_CONFIG = {
 
 VARIABLES = list(VARIABLES_CONFIG.keys())
 
-# ================= MODELL-SPEZIFISCHE STEUERUNG =================
+# ================= MODELL-STEUERUNG (VOLLE 24H HISTORIE) =================
 MODELS_CONFIG = {
     "icon-ch1": {
         "name": "ICON-CH1 (1km)",
@@ -38,11 +34,9 @@ MODELS_CONFIG = {
         "hhl_asset": "vertical_constants_icon-ch1-eps.grib2",
         "hours": 33,
         "max_members": 11,
-        "max_runs": 8,  # Max. 8 Läufe (24 Stunden bei 3h Intervall)
-        "active_variables": [
-            "wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
-        ],
-        "ensemble_variables": ["wind","gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"],
+        "max_runs": 8,  # Volle 24 Stunden (8 Läufe à 3 Stunden)
+        "active_variables": ["wind"],
+        "ensemble_variables": ["wind"],
         "max_chunks": 4
     },
     "icon-ch2": {
@@ -51,14 +45,13 @@ MODELS_CONFIG = {
         "hhl_asset": "vertical_constants_icon-ch2-eps.grib2",
         "hours": 120,
         "max_members": 21,
-        "max_runs": 4,  # Max. 4 Läufe (24 Stunden bei 6h Intervall)
-        "active_variables": ["wind", "sun"],
-        "ensemble_variables": ["wind", "sun"],
+        "max_runs": 4,  # Volle 24 Stunden (4 Läufe à 6 Stunden)
+        "active_variables": ["wind"],
+        "ensemble_variables": ["wind"],
         "max_chunks": 4
     }
 }
 
-# ================= HAUPT-FARBSKALEN =================
 LEVELS = [0, 4, 7, 11, 14, 18, 23, 27, 36, 45, 120]
 COLORS = [
     '#f1f6ff', '#baddf3', '#5cd184', '#89db4c', '#fed148',
@@ -88,7 +81,6 @@ CLOUD_COLORS = [
     '#828894', '#686e7a', '#505561', '#3a3e48', '#23262c'
 ]
 
-# ================= SPEZIFISCHE IQR-SKALEN =================
 IQR_BASE_COLORS = [
     '#ffffff00', '#e0f3db', '#a8ddb5', '#7bccc4', '#4eb3d3',
     '#2b8cbe', '#fec44f', '#fe9929', '#ec7014', '#d7301f'
