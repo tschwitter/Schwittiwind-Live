@@ -23,7 +23,7 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
-  # STUFE 1: Vorbereitung (Schlank & blitzschnell)
+  # STUFE 1: Schnellprüfung & Vorbereitung
   check-and-prepare:
     runs-on: ubuntu-latest
     outputs:
@@ -44,6 +44,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # Cache-Wiederherstellung (nur für Metadaten-Prüfung)
+      - name: Vorhandene Läufe aus Cache abrufen
+        uses: actions/cache/restore@v4
+        with:
+          path: dist/data
+          key: hist-runs-v6-${{ github.run_id }}
+          restore-keys: |
+            hist-runs-v6-
+
       - name: Schnellprüfung & Vorbereitung (CH1 & CH2)
         id: prep
         run: |
@@ -53,12 +62,12 @@ jobs:
             python -u run_pipeline.py --prepare
           fi
 
-      - name: Basis-Dateien zwischenspeichern (nur Metadaten < 50 KB!)
+      - name: Basis-Dateien zwischenspeichern (< 40 KB)
         if: steps.prep.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: site-base
-          path: dist/
+          path: dist-meta/
 
   # STUFE 2: DYNAMISCHE MATRIX
   compute-matrix:
@@ -87,7 +96,7 @@ jobs:
         run: |
           python -u run_pipeline.py --model ${{ matrix.model }} --run-id ${{ matrix.run_id }} --start-step ${{ matrix.start }} --end-step ${{ matrix.end }} --ref-time "${{ matrix.ref_time }}"
 
-      # Speichert den Zielordner dist/data/ inklusive der Unterordnerstruktur model/run_id/
+      # Lädt dist/data/ hoch -> Ordnerstruktur bleibt exakt erhalten!
       - name: Chunk-Daten speichern
         uses: actions/upload-artifact@v4
         with:
@@ -95,7 +104,7 @@ jobs:
           path: dist/data/
           if-no-files-found: ignore
 
-  # STUFE 3: Deploy mit frischem Cache und schlanken Paketen
+  # STUFE 3: Deploy mit sauberem Merging & voller 24h-Historie
   deploy:
     needs: [check-and-prepare, compute-matrix]
     if: needs.check-and-prepare.outputs.should_run == 'true'
@@ -104,7 +113,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Code auschecken (für Pruning-Skript)
+      - name: Code auschecken
         uses: actions/checkout@v4
 
       - name: Python einrichten
@@ -112,23 +121,23 @@ jobs:
         with:
           python-version: '3.11'
 
-      # 1. Frischer Cache-Schlüssel (verwirft die alten 5.7 GB Altlasten dauerhaft!)
+      # 1. Frischer Cache v6 (lädt bestehende Läufe der letzten 24h)
       - name: Historischen Datenbestand wiederherstellen
         uses: actions/cache/restore@v4
         with:
           path: dist/data
-          key: hist-runs-v4-${{ github.run_id }}
+          key: hist-runs-v6-${{ github.run_id }}
           restore-keys: |
-            hist-runs-v4-
+            hist-runs-v6-
 
-      # 2. Basis-Website abrufen
+      # 2. Basis-Website (Metadaten & index.html) einfügen
       - name: Basis-Website abrufen
         uses: actions/download-artifact@v4
         with:
           name: site-base
           path: dist/
 
-      # 3. Neue Chunks sauber einsortieren
+      # 3. Neue Chunks fehlerfrei direkt in die Ordner mergen
       - name: Neue Chunks zusammenführen
         uses: actions/download-artifact@v4
         with:
@@ -136,22 +145,20 @@ jobs:
           path: dist/data/
           merge-multiple: true
 
-      # 4. Alte Läufe und verirrte Dateien bereinigen
-      - name: Veraltete Läufe bereinigen & Verzeichnis aufräumen
+      # 4. Alles älter als 24 Stunden löschen
+      - name: Veraltete Läufe (> 24h) bereinigen
         run: |
-          # Lösche versehentlich lose abgelegte Dateien im data-Wurzelverzeichnis
-          find dist/data -maxdepth 1 -type f ! -name "runs.json" -delete 2>/dev/null || true
           PYTHONPATH=. python -u run_pipeline.py --prune
-          # Protokolliere tatsächliche Ordnergröße
+          echo "=== DATEIGRÖSSE VOR DEPLOY (Ziel: ~350 MB) ==="
           du -sh dist/ dist/data/* || true
 
-      # 5. Sauberen Datenbestand für nächste Durchläufe sichern
+      # 5. Aktualisierten Datenbestand im Cache v6 sichern
       - name: Aktualisierten Datenbestand cachen
         uses: actions/cache/save@v4
         if: always()
         with:
           path: dist/data
-          key: hist-runs-v4-${{ github.run_id }}
+          key: hist-runs-v6-${{ github.run_id }}
 
       - name: GitHub Pages konfigurieren
         uses: actions/configure-pages@v5
