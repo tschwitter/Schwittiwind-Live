@@ -13,7 +13,6 @@ import config
 SHARED_DATA = {}
 
 def load_existing_runs(model_name):
-    """Lädt nur Läufe, deren Ordner lokal auch tatsächlich existieren."""
     model_base_dir = f"dist/data/{model_name}"
     local_runs_file = f"{model_base_dir}/runs.json"
     
@@ -282,7 +281,7 @@ def main():
     if args.prepare:
         os.makedirs("dist-meta/data", exist_ok=True)
         
-        # Kopiert automatisch alle 3 Frontend-Dateien für das Deployment
+        # Kopiert automatisch index.html, style.css und app.js ins Deployment
         for static_file in ["index.html", "style.css", "app.js"]:
             if os.path.exists(static_file):
                 shutil.copy(static_file, f"dist-meta/{static_file}")
