@@ -121,6 +121,7 @@ function updateModelButtonLabels() {
         var activeRun = (currentModel === m) ? currentRunId : (runs[0] ? runs[0].id : null);
         var activeObj = runs.find(r => r.id === activeRun) || runs[0];
         var modName = (m === "icon-ch1") ? "CH1" : "CH2";
+        
         var runTxt = (activeObj && !isMobile) ? ` (${activeObj.label})` : "";
         btn.innerText = `${modName}${runTxt} ▾`;
     });
@@ -175,6 +176,7 @@ async function switchModel(newModel) {
     await loadModelAndRun(currentModel, runId);
 }
 
+// ================= KERN-LADEN: MERKT SICH ZEIT, MEMBER & VARIABLEN =================
 async function loadModelAndRun(modelName, runId) {
     var prevValidDate = (times && times[currentStepIdx]) ? parseLocalStr(times[currentStepIdx].local_str) : null;
     var prevMember = currentMemberIdx;
@@ -213,7 +215,7 @@ async function loadModelAndRun(modelName, runId) {
         initDayButtons();
         initMemberPanel();
 
-        // Gleiche Lokalzeit im neuen Modelllauf beibehalten
+        // 1. Exakt gleiche Lokalzeit im neuen Modelllauf beibehalten
         var bestStepIdx = 0;
         if (prevValidDate && times && times.length > 0) {
             var minDiff = Infinity;
@@ -228,6 +230,7 @@ async function loadModelAndRun(modelName, runId) {
         }
         currentStepIdx = bestStepIdx;
 
+        // 2. Member / Statistik beibehalten
         var vCfg = config.variables_config[layer1Var];
         var hasEns = vCfg ? vCfg.has_ensemble : true;
         if (!hasEns) {
@@ -249,6 +252,7 @@ async function loadModelAndRun(modelName, runId) {
     document.getElementById("loadingIndicator").style.display = "none";
 }
 
+// ================= MENÜS =================
 function toggleWetterMenu() {
     isWetterOpen = !isWetterOpen;
     document.getElementById("wetterSubRow").style.display = isWetterOpen ? "flex" : "none";
@@ -704,11 +708,11 @@ function generateContoursClient(s_flat, paletteType) {
         const geoCoords = c.coordinates.map(polygon => 
             polygon.map(ring => 
                 ring.map(pt => [
-                    xMin + (pt[0] - 0.5) * dx,
-                    yMin + (pt[1] - 0.5) * dy
-                ])
-            )
-        );
+                            xMin + (pt[0] - 0.5) * dx,
+                            yMin + (pt[1] - 0.5) * dy
+                        ])
+                    )
+                );
         
         features.push({
             type: "Feature",
@@ -739,14 +743,21 @@ async function ensureDataLoaded(varName, memberIdx, stepIdx) {
 
 async function init() {
     try {
-        // OPTION 1: Swisstopo SwissALTI3D Reliefschattierung (reines Relief, keine Beschriftungen)
-        var swisstopo_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissalti3d-reliefschattierung/default/current/3857/{z}/{x}/{y}.png";
+        // 1. Basiskarte: SwissALTI3D Reliefschattierung (reines 3D-Gelände, keine störenden Namen)
+        var swisstopo_relief_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissalti3d-reliefschattierung/default/current/3857/{z}/{x}/{y}.png";
         
+        // 2. Offizieller Schweizer Seen-Layer (Lakes / Seen mit Uferkontur und zartem Blau)
+        var swisstopo_lakes_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-seen/default/current/3857/{z}/{x}/{y}.png";
+
         map = L.map('map', {
             center: [46.8182, 8.2275],
             zoom: 9, minZoom: 7, maxZoom: 15,
             preferCanvas: true
         });
+
+        // Dedizierte Panes für saubere Schichtung
+        map.createPane('lakePane');
+        map.getPane('lakePane').style.zIndex = '250'; // Liegt direkt auf dem Relief, unter dem Wetter!
 
         map.createPane('contourPane1');
         map.getPane('contourPane1').style.opacity = layer1Opacity;
@@ -756,10 +767,17 @@ async function init() {
         map.getPane('contourPane2').style.opacity = layer2Opacity;
         map.getPane('contourPane2').style.zIndex = '450';
 
-        L.tileLayer(swisstopo_url, {
+        // 1. Relief einfügen
+        L.tileLayer(swisstopo_relief_url, {
             attribution: '&copy; <a href="https://www.swisstopo.admin.ch/" target="_blank">swisstopo</a> | Wetterdaten: &copy; <a href="https://www.meteoschweiz.admin.ch/" target="_blank">MeteoSchweiz</a>',
-            maxZoom: 15,
-            maxNativeZoom: 14
+            maxZoom: 15, maxNativeZoom: 14
+        }).addTo(map);
+
+        // 2. Schweizer Seen einfügen (gestochen scharfe Umrisse auf dem Relief)
+        L.tileLayer(swisstopo_lakes_url, {
+            pane: 'lakePane',
+            maxZoom: 15, maxNativeZoom: 14,
+            opacity: 0.85
         }).addTo(map);
 
         map.on('moveend', drawVisibleArrows);
