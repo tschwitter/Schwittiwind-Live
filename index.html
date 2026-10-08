@@ -324,7 +324,6 @@
             display: flex; align-items: center; justify-content: center; cursor: pointer;
         }
 
-        /* TOGGLE-BUTTON FÜR DIE VERTIKALEN PFEILE */
         .nav-mode-btn {
             width: 34px; height: 38px; margin-left: 5px;
             background: white; border: 1px solid #ccc; border-radius: 5px;
@@ -721,19 +720,22 @@
                 initDayButtons();
                 initMemberPanel();
 
-                // 1. Exakt gleiche Lokalzeit im neuen Modelllauf beibehalten
+                // 1. Exakt gleiche Lokalzeit im neuen Modelllauf beibehalten (KORREKTUR: bestStepIdx)
                 var bestStepIdx = 0;
                 if (prevValidDate && times && times.length > 0) {
                     var minDiff = Infinity;
                     times.forEach((t, idx) => {
                         var d = parseLocalStr(t.local_str);
                         var diff = Math.abs(d - prevValidDate);
-                        if (diff < minDiff) { minDiff = diff; bestIdx = idx; }
+                        if (diff < minDiff) { 
+                            minDiff = diff; 
+                            bestStepIdx = idx; // FIX: bestStepIdx statt bestIdx
+                        }
                     });
                 }
                 currentStepIdx = bestStepIdx;
 
-                // 2. Member / Statistik beibehalten (sofern Variable Ensemble hat)
+                // 2. Member / Statistik beibehalten
                 var vCfg = config.variables_config[layer1Var];
                 var hasEns = vCfg ? vCfg.has_ensemble : true;
                 if (!hasEns) {
