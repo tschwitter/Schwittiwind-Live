@@ -87,7 +87,7 @@ jobs:
         run: |
           python -u run_pipeline.py --model ${{ matrix.model }} --run-id ${{ matrix.run_id }} --start-step ${{ matrix.start }} --end-step ${{ matrix.end }} --ref-time "${{ matrix.ref_time }}"
 
-      # KORREKTUR: path ist dist/data/ damit die Unterordnerstruktur erhalten bleibt!
+      # Speichert den Zielordner dist/data/ inklusive der Unterordnerstruktur model/run_id/
       - name: Chunk-Daten speichern
         uses: actions/upload-artifact@v4
         with:
@@ -95,7 +95,7 @@ jobs:
           path: dist/data/
           if-no-files-found: ignore
 
-  # STUFE 3: Historische Daten aus Cache holen, neuen Lauf einfügen & live schalten
+  # STUFE 3: Deploy mit frischem Cache und schlanken Paketen
   deploy:
     needs: [check-and-prepare, compute-matrix]
     if: needs.check-and-prepare.outputs.should_run == 'true'
@@ -112,14 +112,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      # 1. Historischen Datenbestand direkt aus dem Cloud-Cache laden
+      # 1. Frischer Cache-Schlüssel (verwirft die alten 5.7 GB Altlasten dauerhaft!)
       - name: Historischen Datenbestand wiederherstellen
         uses: actions/cache/restore@v4
         with:
           path: dist/data
-          key: hist-runs-archive-${{ github.run_id }}
+          key: hist-runs-v4-${{ github.run_id }}
           restore-keys: |
-            hist-runs-archive-
+            hist-runs-v4-
 
       # 2. Basis-Website abrufen
       - name: Basis-Website abrufen
@@ -128,7 +128,7 @@ jobs:
           name: site-base
           path: dist/
 
-      # 3. Neue Berechnungs-Chunks des aktuellen Laufs einsortieren
+      # 3. Neue Chunks sauber einsortieren
       - name: Neue Chunks zusammenführen
         uses: actions/download-artifact@v4
         with:
@@ -136,18 +136,22 @@ jobs:
           path: dist/data/
           merge-multiple: true
 
-      # 4. Läufe bereinigen, die älter als 24 Stunden sind
-      - name: Veraltete Läufe bereinigen
+      # 4. Alte Läufe und verirrte Dateien bereinigen
+      - name: Veraltete Läufe bereinigen & Verzeichnis aufräumen
         run: |
+          # Lösche versehentlich lose abgelegte Dateien im data-Wurzelverzeichnis
+          find dist/data -maxdepth 1 -type f ! -name "runs.json" -delete 2>/dev/null || true
           PYTHONPATH=. python -u run_pipeline.py --prune
+          # Protokolliere tatsächliche Ordnergröße
+          du -sh dist/ dist/data/* || true
 
-      # 5. Aktualisierten Datenbestand im Cache sichern
+      # 5. Sauberen Datenbestand für nächste Durchläufe sichern
       - name: Aktualisierten Datenbestand cachen
         uses: actions/cache/save@v4
         if: always()
         with:
           path: dist/data
-          key: hist-runs-archive-${{ github.run_id }}
+          key: hist-runs-v4-${{ github.run_id }}
 
       - name: GitHub Pages konfigurieren
         uses: actions/configure-pages@v5
