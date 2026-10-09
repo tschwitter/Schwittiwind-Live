@@ -6,6 +6,7 @@ var availableRuns = { "icon-ch1": [], "icon-ch2": [] };
 
 var verticalNavMode = 'member'; // 'member' oder 'run'
 
+var baseMapOpacity = 1.0;
 var layer1Var = null;
 var layer2Var = null;
 
@@ -32,7 +33,7 @@ var uniqueDays = [];
 var dayTimesteps = {};
 var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
-// ================= ERWEITERTES ORTSNETZ DER SCHWEIZ =================
+// ================= DYNAMISCHES ORTSNETZ DER SCHWEIZ =================
 var CITIES = [
     // Stufe 1: minZoom = 7 (Ganze Schweiz - Großzentren)
     { name: "Zürich", lat: 47.3769, lon: 8.5417, minZoom: 7 },
@@ -46,7 +47,7 @@ var CITIES = [
     { name: "Chur", lat: 46.8508, lon: 9.5320, minZoom: 7 },
     { name: "Sion", lat: 46.2331, lon: 7.3606, minZoom: 7 },
 
-    // Stufe 2: minZoom = 9 (Regionalzentren)
+    // Stufe 2: minZoom = 9 (Wichtige Kantons- & Regionalzentren)
     { name: "Winterthur", lat: 47.4999, lon: 8.7241, minZoom: 9 },
     { name: "Biel/Bienne", lat: 47.1368, lon: 7.2468, minZoom: 9 },
     { name: "Thun", lat: 46.7580, lon: 7.6280, minZoom: 9 },
@@ -129,7 +130,26 @@ var CITIES = [
     { name: "Zernez", lat: 46.6997, lon: 10.0939, minZoom: 11 },
     { name: "Scuol", lat: 46.7972, lon: 10.2989, minZoom: 11 },
     { name: "Samnaun", lat: 46.9536, lon: 10.3639, minZoom: 11 },
-    { name: "Poschiavo", lat: 46.3267, lon: 10.0578, minZoom: 11 }
+    { name: "Poschiavo", lat: 46.3267, lon: 10.0578, minZoom: 11 },
+    { name: "Herisau", lat: 47.3858, lon: 9.2789, minZoom: 11 },
+    { name: "Wattwil", lat: 47.3006, lon: 9.0864, minZoom: 11 },
+    { name: "Wildhaus", lat: 47.2028, lon: 9.3514, minZoom: 11 },
+    { name: "Murten", lat: 46.9281, lon: 7.1172, minZoom: 11 },
+    { name: "Payerne", lat: 46.8211, lon: 6.9367, minZoom: 11 },
+    { name: "Estavayer", lat: 46.8500, lon: 6.8481, minZoom: 11 },
+    { name: "Le Locle", lat: 47.0583, lon: 6.7497, minZoom: 11 },
+    { name: "Saint-Imier", lat: 47.1528, lon: 7.0003, minZoom: 11 },
+    { name: "Moutier", lat: 47.2803, lon: 7.3711, minZoom: 11 },
+    { name: "Laufen", lat: 47.4222, lon: 7.5008, minZoom: 11 },
+    { name: "Rheinfelden", lat: 47.5542, lon: 7.7942, minZoom: 11 },
+    { name: "Brugg", lat: 47.4853, lon: 8.2078, minZoom: 11 },
+    { name: "Wohlen", lat: 47.3514, lon: 8.2781, minZoom: 11 },
+    { name: "Zofingen", lat: 47.2881, lon: 7.9458, minZoom: 11 },
+    { name: "Sursee", lat: 47.1722, lon: 8.1097, minZoom: 11 },
+    { name: "Willisau", lat: 47.1206, lon: 7.9908, minZoom: 11 },
+    { name: "Langnau i.E.", lat: 46.9389, lon: 7.7872, minZoom: 11 },
+    { name: "Frutigen", lat: 46.5886, lon: 7.6492, minZoom: 11 },
+    { name: "Brienz", lat: 46.7558, lon: 8.0375, minZoom: 11 }
 ];
 
 function updateCityLabels() {
@@ -186,6 +206,20 @@ function closeAllPopups() {
     document.getElementById("runDropdown-icon-ch2").style.display = "none";
     document.getElementById("layer2Dropdown").style.display = "none";
     document.getElementById("settingsPopup").style.display = "none";
+}
+
+// ================= HINTERGRUNDKARTE STEUERUNG (NEU) =================
+function setBaseMapOpacity(val) {
+    var op = val / 100.0;
+    baseMapOpacity = op;
+    var lbl = document.getElementById("opacityLabelBase");
+    var sld = document.getElementById("opacitySliderBase");
+    if (lbl) lbl.innerText = val + "%";
+    if (sld) sld.value = val;
+    if (map) {
+        if (map.getPane('reliefPane')) map.getPane('reliefPane').style.opacity = op;
+        if (map.getPane('waterPane')) map.getPane('waterPane').style.opacity = op;
+    }
 }
 
 // ================= VERTIKAL-MODUS (MEMBER VS. LÄUFE) =================
@@ -305,7 +339,7 @@ async function switchModel(newModel) {
     await loadModelAndRun(currentModel, runId);
 }
 
-// ================= KERN-LADEN: DEIN BEWÄHRTER CODE AUS #55 =================
+// ================= KERN-LADEN =================
 async function loadModelAndRun(modelName, runId) {
     var prevValidDate = (times && times[currentStepIdx]) ? parseLocalStr(times[currentStepIdx].local_str) : null;
     var prevMember = currentMemberIdx;
@@ -689,7 +723,10 @@ function jumpToDaySameHour(targetDayName) {
     targetIndices.forEach(idx => {
         var h = parseInt(times[idx].local_str.split(" ")[1].split(":")[0]);
         var diff = Math.abs(h - currentHour);
-        if (diff < minDiff) { minDiff = diff; bestIdx = idx; }
+        if (diff < minDiff) { 
+            minDiff = diff; 
+            bestIdx = idx; 
+        }
     });
     updateForecast(currentMemberIdx, bestIdx);
 }
@@ -886,9 +923,14 @@ async function init() {
             preferCanvas: true
         });
 
-        // Dedizierte Panes für saubere Ebenen-Schichtung
+        // Dedizierte Panes für saubere Schichtung
+        map.createPane('reliefPane');
+        map.getPane('reliefPane').style.zIndex = '200';
+        map.getPane('reliefPane').style.opacity = baseMapOpacity;
+
         map.createPane('waterPane');
         map.getPane('waterPane').style.zIndex = '250';
+        map.getPane('waterPane').style.opacity = baseMapOpacity;
 
         map.createPane('contourPane1');
         map.getPane('contourPane1').style.opacity = layer1Opacity;
@@ -899,23 +941,24 @@ async function init() {
         map.getPane('contourPane2').style.zIndex = '450';
 
         map.createPane('cityPane');
-        map.getPane('cityPane').style.zIndex = '520';
+        map.getPane('cityPane').style.zIndex = '520'; // Immer ganz oben, gestochen scharf!
         map.getPane('cityPane').style.pointerEvents = 'none';
 
-        // 1. Relief
+        // 1. Relief (im reliefPane)
         L.tileLayer(swisstopo_relief_url, {
+            pane: 'reliefPane',
             attribution: '&copy; <a href="https://www.swisstopo.admin.ch/" target="_blank">swisstopo</a> | Wetterdaten: &copy; <a href="https://www.meteoschweiz.admin.ch/" target="_blank">MeteoSchweiz</a>',
             maxZoom: 15, maxNativeZoom: 14
         }).addTo(map);
 
-        // 2. Seen
+        // 2. Seen (im waterPane)
         L.tileLayer(swisstopo_lakes_url, {
             pane: 'waterPane',
             maxZoom: 15, maxNativeZoom: 14,
             opacity: 0.85
         }).addTo(map);
 
-        // 3. Flüsse (dezent und dünner durch reduzierte Opacity von 0.35)
+        // 3. Flüsse (dezent & dünner durch reduzierte Opacity von 0.35)
         L.tileLayer(swisstopo_rivers_url, {
             pane: 'waterPane',
             maxZoom: 15, maxNativeZoom: 14,
