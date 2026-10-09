@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ICON Wetter & Ensembles (CH1 & CH2)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=3" />
+    <link rel="stylesheet" href="style.css?v=5" />
 </head>
 <body>
 
@@ -45,10 +45,21 @@
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-icon-ch2"></div>
     <div class="floating-popup layer2-dropdown-popup" id="layer2Dropdown"></div>
 
-    <!-- EINSTELLUNGEN-POPUP -->
+    <!-- EINSTELLUNGEN-POPUP (INKL. HINTERGRUNDKARTE) -->
     <div class="floating-popup settings-popup" id="settingsPopup">
         <div class="settings-title">⚙ Ebenen-Optionen</div>
         
+        <!-- NEU: Hintergrundkarte Transparenz -->
+        <div class="settings-section">
+            <div class="settings-section-title" style="color: #ffb74d;">Hintergrundkarte</div>
+            <div class="settings-row">
+                <span>Transparenz:</span>
+                <input type="range" class="opacity-slider" id="opacitySliderBase" min="0" max="100" value="100" oninput="setBaseMapOpacity(this.value)">
+                <span id="opacityLabelBase" style="width: 25px; text-align: right;">100%</span>
+            </div>
+        </div>
+
+        <!-- 1. Ebene: Basis -->
         <div class="settings-section">
             <div class="settings-section-title" id="cfgTitleL1">1. Ebene: Basis</div>
             <div class="settings-row">
@@ -65,6 +76,7 @@
             </div>
         </div>
 
+        <!-- 2. Ebene -->
         <div class="settings-section" id="cfgSectionL2" style="opacity: 0.5;">
             <div class="settings-section-title" id="cfgTitleL2" style="color: #64b5f6;">2. Ebene: Keine</div>
             <div class="settings-row">
@@ -123,6 +135,6 @@
     <!-- Bibliotheken & JavaScript-Anwendungslogik -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=3"></script>
+    <script src="app.js?v=5"></script>
 </body>
 </html>
