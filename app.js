@@ -1,6 +1,11 @@
 var map, config, times;
 
 var currentModel = "icon-ch1";
+var currentRunId = null;
+var availableRuns = { "icon-ch1": [], "icon-ch2": [] };
+
+var verticalNavMode = 'member'; // 'member' oder 'run'
+
 var layer1Var = null;
 var layer2Var = null;
 
@@ -27,7 +32,7 @@ var uniqueDays = [];
 var dayTimesteps = {};
 var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
-// ================= DYNAMISCHES ORTSNETZ DER SCHWEIZ =================
+// ================= ERWEITERTES ORTSNETZ DER SCHWEIZ =================
 var CITIES = [
     // Stufe 1: minZoom = 7 (Ganze Schweiz - Großzentren)
     { name: "Zürich", lat: 47.3769, lon: 8.5417, minZoom: 7 },
@@ -41,7 +46,7 @@ var CITIES = [
     { name: "Chur", lat: 46.8508, lon: 9.5320, minZoom: 7 },
     { name: "Sion", lat: 46.2331, lon: 7.3606, minZoom: 7 },
 
-    // Stufe 2: minZoom = 9 (Wichtige Kantons- & Regionalzentren)
+    // Stufe 2: minZoom = 9 (Regionalzentren)
     { name: "Winterthur", lat: 47.4999, lon: 8.7241, minZoom: 9 },
     { name: "Biel/Bienne", lat: 47.1368, lon: 7.2468, minZoom: 9 },
     { name: "Thun", lat: 46.7580, lon: 7.6280, minZoom: 9 },
@@ -124,26 +129,7 @@ var CITIES = [
     { name: "Zernez", lat: 46.6997, lon: 10.0939, minZoom: 11 },
     { name: "Scuol", lat: 46.7972, lon: 10.2989, minZoom: 11 },
     { name: "Samnaun", lat: 46.9536, lon: 10.3639, minZoom: 11 },
-    { name: "Poschiavo", lat: 46.3267, lon: 10.0578, minZoom: 11 },
-    { name: "Herisau", lat: 47.3858, lon: 9.2789, minZoom: 11 },
-    { name: "Wattwil", lat: 47.3006, lon: 9.0864, minZoom: 11 },
-    { name: "Wildhaus", lat: 47.2028, lon: 9.3514, minZoom: 11 },
-    { name: "Murten", lat: 46.9281, lon: 7.1172, minZoom: 11 },
-    { name: "Payerne", lat: 46.8211, lon: 6.9367, minZoom: 11 },
-    { name: "Estavayer", lat: 46.8500, lon: 6.8481, minZoom: 11 },
-    { name: "Le Locle", lat: 47.0583, lon: 6.7497, minZoom: 11 },
-    { name: "Saint-Imier", lat: 47.1528, lon: 7.0003, minZoom: 11 },
-    { name: "Moutier", lat: 47.2803, lon: 7.3711, minZoom: 11 },
-    { name: "Laufen", lat: 47.4222, lon: 7.5008, minZoom: 11 },
-    { name: "Rheinfelden", lat: 47.5542, lon: 7.7942, minZoom: 11 },
-    { name: "Brugg", lat: 47.4853, lon: 8.2078, minZoom: 11 },
-    { name: "Wohlen", lat: 47.3514, lon: 8.2781, minZoom: 11 },
-    { name: "Zofingen", lat: 47.2881, lon: 7.9458, minZoom: 11 },
-    { name: "Sursee", lat: 47.1722, lon: 8.1097, minZoom: 11 },
-    { name: "Willisau", lat: 47.1206, lon: 7.9908, minZoom: 11 },
-    { name: "Langnau i.E.", lat: 46.9389, lon: 7.7872, minZoom: 11 },
-    { name: "Frutigen", lat: 46.5886, lon: 7.6492, minZoom: 11 },
-    { name: "Brienz", lat: 46.7558, lon: 8.0375, minZoom: 11 }
+    { name: "Poschiavo", lat: 46.3267, lon: 10.0578, minZoom: 11 }
 ];
 
 function updateCityLabels() {
@@ -196,32 +182,156 @@ function getDayNameForStep(stepIdx) {
 }
 
 function closeAllPopups() {
+    document.getElementById("runDropdown-icon-ch1").style.display = "none";
+    document.getElementById("runDropdown-icon-ch2").style.display = "none";
     document.getElementById("layer2Dropdown").style.display = "none";
     document.getElementById("settingsPopup").style.display = "none";
 }
 
-// ================= MODELL-UMSCHALTEN =================
+// ================= VERTIKAL-MODUS (MEMBER VS. LÄUFE) =================
+function toggleNavMode() {
+    verticalNavMode = (verticalNavMode === 'member') ? 'run' : 'member';
+    updateNavModeButton();
+}
+
+function updateNavModeButton() {
+    var btn = document.getElementById("navModeBtn");
+    if (!btn) return;
+    if (verticalNavMode === 'run') {
+        btn.innerText = "Lauf";
+        btn.classList.add("mode-run");
+        btn.title = "▲/▼ wechselt Modelläufe (z.B. 18Z, 12Z). Klick für Member-Modus";
+    } else {
+        btn.innerText = "Mbr";
+        btn.classList.remove("mode-run");
+        btn.title = "▲/▼ wechselt Ensemble-Member. Klick für Lauf-Modus";
+    }
+}
+
+function navRun(dir) {
+    var runs = availableRuns[currentModel] || [];
+    if (runs.length <= 1) return;
+    var currentIdx = runs.findIndex(r => r.id === currentRunId);
+    if (currentIdx === -1) currentIdx = 0;
+
+    var newIdx = currentIdx + dir;
+    if (newIdx >= 0 && newIdx < runs.length) {
+        selectRun(currentModel, runs[newIdx].id);
+    }
+}
+
+// ================= MODELL-BUTTON KLICK =================
+async function handleModelButtonClick(modelName) {
+    if (currentModel !== modelName) {
+        closeAllPopups();
+        await switchModel(modelName);
+    } else {
+        toggleRunDropdown(modelName);
+    }
+}
+
+async function fetchAvailableRuns(modelName) {
+    try {
+        const res = await fetch(`data/${modelName}/runs.json?t=${Date.now()}`);
+        if (res.ok) {
+            availableRuns[modelName] = await res.json();
+        }
+    } catch (e) {
+        console.warn("Konnte runs.json nicht laden für " + modelName, e);
+    }
+    updateModelButtonLabels();
+}
+
+function updateModelButtonLabels() {
+    var isMobile = window.innerWidth <= 768;
+    ["icon-ch1", "icon-ch2"].forEach(m => {
+        var btn = document.getElementById(`btnModel-${m}`);
+        var runs = availableRuns[m] || [];
+        var activeRun = (currentModel === m) ? currentRunId : (runs[0] ? runs[0].id : null);
+        var activeObj = runs.find(r => r.id === activeRun) || runs[0];
+        var modName = (m === "icon-ch1") ? "CH1" : "CH2";
+        
+        var runTxt = (activeObj && !isMobile) ? ` (${activeObj.label})` : "";
+        btn.innerText = `${modName}${runTxt} ▾`;
+    });
+}
+
+function toggleRunDropdown(modelName) {
+    var el = document.getElementById(`runDropdown-${modelName}`);
+    var isAlreadyOpen = (el.style.display === "flex");
+    closeAllPopups();
+    if (isAlreadyOpen) return;
+
+    var btn = document.getElementById(`btnModel-${modelName}`);
+    var runs = availableRuns[modelName] || [];
+    el.innerHTML = "";
+
+    if (runs.length === 0) {
+        el.innerHTML = `<div style="font-size:11px; padding:4px 8px; color:#aaa;">Keine alten Läufe</div>`;
+    } else {
+        runs.forEach((r, idx) => {
+            var item = document.createElement("button");
+            item.className = "run-item" + (r.id === currentRunId ? " active" : "");
+            var labelHtml = `<span>${r.label}</span>`;
+            if (idx === 0) labelHtml += `<span class="run-tag-latest">Neu</span>`;
+            item.innerHTML = labelHtml;
+            item.onclick = function(e) {
+                e.stopPropagation();
+                selectRun(modelName, r.id);
+            };
+            el.appendChild(item);
+        });
+    }
+
+    var rect = btn.getBoundingClientRect();
+    el.style.top = (rect.bottom + 6) + "px";
+    el.style.left = (rect.left + rect.width / 2) + "px";
+    el.style.transform = "translateX(-50%)";
+    el.style.display = "flex";
+}
+
+async function selectRun(modelName, runId) {
+    closeAllPopups();
+    currentModel = modelName;
+    currentRunId = runId;
+    await loadModelAndRun(currentModel, currentRunId);
+}
+
 async function switchModel(newModel) {
     if (currentModel === newModel && config) return;
+    currentModel = newModel;
+    var runs = availableRuns[currentModel] || [];
+    var runId = (runs.length > 0) ? runs[0].id : null;
+    await loadModelAndRun(currentModel, runId);
+}
 
+// ================= KERN-LADEN: DEIN BEWÄHRTER CODE AUS #55 =================
+async function loadModelAndRun(modelName, runId) {
     var prevValidDate = (times && times[currentStepIdx]) ? parseLocalStr(times[currentStepIdx].local_str) : null;
     var prevMember = currentMemberIdx;
 
-    currentModel = newModel;
-
-    document.getElementById("btnModel-icon-ch1").classList.toggle("active", currentModel === "icon-ch1");
-    document.getElementById("btnModel-icon-ch2").classList.toggle("active", currentModel === "icon-ch2");
+    document.getElementById("btnModel-icon-ch1").classList.toggle("active", modelName === "icon-ch1");
+    document.getElementById("btnModel-icon-ch2").classList.toggle("active", modelName === "icon-ch2");
 
     document.getElementById("loadingIndicator").style.display = "block";
     try {
+        if (!availableRuns[modelName] || availableRuns[modelName].length === 0) {
+            await fetchAvailableRuns(modelName);
+        }
+        var runs = availableRuns[modelName] || [];
+        if (!runId && runs.length > 0) runId = runs[0].id;
+        currentRunId = runId;
+
+        updateModelButtonLabels();
+
         const cacheBuster = Date.now();
+        const runPath = runId ? `data/${modelName}/${runId}` : `data/${modelName}`;
         
-        // KORREKTE DIREKTE PFADE: data/${currentModel}/config.json
-        const configRes = await fetch(`data/${currentModel}/config.json?t=${cacheBuster}`);
+        const configRes = await fetch(`${runPath}/config.json?t=${cacheBuster}`);
         if (!configRes.ok) throw new Error("Konnte config.json nicht laden: " + configRes.status);
         config = await configRes.json();
 
-        const timesRes = await fetch(`data/${currentModel}/times.json?t=${cacheBuster}`);
+        const timesRes = await fetch(`${runPath}/times.json?t=${cacheBuster}`);
         if (!timesRes.ok) throw new Error("Konnte times.json nicht laden: " + timesRes.status);
         times = await timesRes.json();
 
@@ -234,7 +344,7 @@ async function switchModel(newModel) {
         initDayButtons();
         initMemberPanel();
 
-        // 1. Exakt gleiche Lokalzeit im neuen Modell beibehalten
+        // Gleiche Lokalzeit im neuen Modelllauf beibehalten
         var bestStepIdx = 0;
         if (prevValidDate && times && times.length > 0) {
             var minDiff = Infinity;
@@ -249,7 +359,6 @@ async function switchModel(newModel) {
         }
         currentStepIdx = bestStepIdx;
 
-        // 2. Member / Statistik beibehalten
         var vCfg = config.variables_config[layer1Var];
         var hasEns = vCfg ? vCfg.has_ensemble : true;
         if (!hasEns) {
@@ -266,7 +375,7 @@ async function switchModel(newModel) {
 
         await updateForecast(currentMemberIdx, currentStepIdx);
     } catch (err) {
-        console.error("Fehler beim Modellwechsel:", err);
+        console.error("Fehler beim Laden des Laufs:", err);
     }
     document.getElementById("loadingIndicator").style.display = "none";
 }
@@ -524,15 +633,23 @@ function navRight() {
 }
 
 function navUp() {
-    var vCfg = config.variables_config[layer1Var];
-    if (vCfg && !vCfg.has_ensemble) return;
-    updateForecast(Math.max(0, currentMemberIdx - 1), currentStepIdx);
+    if (verticalNavMode === 'run') {
+        navRun(-1);
+    } else {
+        var vCfg = config.variables_config[layer1Var];
+        if (vCfg && !vCfg.has_ensemble) return;
+        updateForecast(Math.max(0, currentMemberIdx - 1), currentStepIdx);
+    }
 }
 
 function navDown() {
-    var vCfg = config.variables_config[layer1Var];
-    if (vCfg && !vCfg.has_ensemble) return;
-    updateForecast(Math.min(config.member_names.length - 1, currentMemberIdx + 1), currentStepIdx);
+    if (verticalNavMode === 'run') {
+        navRun(1);
+    } else {
+        var vCfg = config.variables_config[layer1Var];
+        if (vCfg && !vCfg.has_ensemble) return;
+        updateForecast(Math.min(config.member_names.length - 1, currentMemberIdx + 1), currentStepIdx);
+    }
 }
 
 function initDayButtons() {
@@ -735,7 +852,7 @@ function generateContoursClient(s_flat, paletteType) {
 }
 
 async function ensureDataLoaded(varName, memberIdx, stepIdx) {
-    const cacheKey = `${currentModel}_${varName}_${memberIdx}_${stepIdx}`;
+    const cacheKey = `${currentModel}_${currentRunId}_${varName}_${memberIdx}_${stepIdx}`;
     const vCfg = config.variables_config[varName] || {};
     var iqrIdx = config.member_names.length - 1;
     const isIQR = (vCfg.has_ensemble && memberIdx === iqrIdx);
@@ -743,9 +860,9 @@ async function ensureDataLoaded(varName, memberIdx, stepIdx) {
 
     if (!cacheContours[cacheKey]) {
         const runBuster = encodeURIComponent(config.ref_time_utc);
-        // KORREKTE DIREKTE URL: data/{currentModel}/grid_...
+        const basePath = currentRunId ? `data/${currentModel}/${currentRunId}` : `data/${currentModel}`;
         if (!cacheGrid[cacheKey]) {
-            cacheGrid[cacheKey] = await fetchAndDecompress(`data/${currentModel}/grid_${varName}_m${memberIdx}_s${stepIdx}.json.gz?v=${runBuster}`);
+            cacheGrid[cacheKey] = await fetchAndDecompress(`${basePath}/grid_${varName}_m${memberIdx}_s${stepIdx}.json.gz?v=${runBuster}`);
         }
         cacheContours[cacheKey] = generateContoursClient(cacheGrid[cacheKey].s, paletteType);
     }
@@ -754,11 +871,13 @@ async function ensureDataLoaded(varName, memberIdx, stepIdx) {
 
 async function init() {
     try {
-        // 1. Relief
+        // 1. Basiskarte: SwissALTI3D Reliefschattierung (3D-Relief ohne Text)
         var swisstopo_relief_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissalti3d-reliefschattierung/default/current/3857/{z}/{x}/{y}.png";
-        // 2. Seen
+        
+        // 2. Schweizer Seen (ch.bafu.vec25-seen)
         var swisstopo_lakes_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-seen/default/current/3857/{z}/{x}/{y}.png";
-        // 3. Flüsse
+
+        // 3. Schweizer Hauptflüsse (ch.bafu.vec25-gewaessernetz_2000)
         var swisstopo_rivers_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-gewaessernetz_2000/default/current/3857/{z}/{x}/{y}.png";
 
         map = L.map('map', {
@@ -767,6 +886,7 @@ async function init() {
             preferCanvas: true
         });
 
+        // Dedizierte Panes für saubere Ebenen-Schichtung
         map.createPane('waterPane');
         map.getPane('waterPane').style.zIndex = '250';
 
@@ -782,21 +902,24 @@ async function init() {
         map.getPane('cityPane').style.zIndex = '520';
         map.getPane('cityPane').style.pointerEvents = 'none';
 
+        // 1. Relief
         L.tileLayer(swisstopo_relief_url, {
             attribution: '&copy; <a href="https://www.swisstopo.admin.ch/" target="_blank">swisstopo</a> | Wetterdaten: &copy; <a href="https://www.meteoschweiz.admin.ch/" target="_blank">MeteoSchweiz</a>',
             maxZoom: 15, maxNativeZoom: 14
         }).addTo(map);
 
+        // 2. Seen
         L.tileLayer(swisstopo_lakes_url, {
             pane: 'waterPane',
             maxZoom: 15, maxNativeZoom: 14,
             opacity: 0.85
         }).addTo(map);
 
+        // 3. Flüsse (dezent und dünner durch reduzierte Opacity von 0.35)
         L.tileLayer(swisstopo_rivers_url, {
             pane: 'waterPane',
             maxZoom: 15, maxNativeZoom: 14,
-            opacity: 0.38
+            opacity: 0.35
         }).addTo(map);
 
         map.on('moveend', function() {
@@ -841,12 +964,19 @@ async function init() {
 
         window.onresize = function() {
             closeAllPopups();
+            updateModelButtonLabels();
             initMemberPanel();
             updateForecast(currentMemberIdx, currentStepIdx);
             updateCityLabels();
         };
 
-        // Starte direkt mit ICON-CH1
+        updateNavModeButton();
+
+        // 1. Läufe beider Modelle abrufen
+        await fetchAvailableRuns("icon-ch1");
+        await fetchAvailableRuns("icon-ch2");
+
+        // 2. Mit dem neuesten Lauf von ICON-CH1 starten
         await switchModel("icon-ch1");
         updateCityLabels();
     } catch (err) {
@@ -911,7 +1041,7 @@ async function updateForecast(newMemberIdx, newStepIdx) {
 
 function renderContours() {
     if (contourLayer1) map.removeLayer(contourLayer1);
-    const key1 = `${currentModel}_${layer1Var}_${currentMemberIdx}_${currentStepIdx}`;
+    const key1 = `${currentModel}_${currentRunId}_${layer1Var}_${currentMemberIdx}_${currentStepIdx}`;
     
     contourLayer1 = L.geoJson(cacheContours[key1], {
         pane: 'contourPane1',
@@ -931,7 +1061,7 @@ function renderContours() {
     if (layer2Var) {
         var vCfg2 = config.variables_config[layer2Var] || {};
         var m2 = (vCfg2.has_ensemble) ? currentMemberIdx : 0;
-        const key2 = `${currentModel}_${layer2Var}_${m2}_${currentStepIdx}`;
+        const key2 = `${currentModel}_${currentRunId}_${layer2Var}_${m2}_${currentStepIdx}`;
 
         contourLayer2 = L.geoJson(cacheContours[key2], {
             pane: 'contourPane2',
@@ -971,7 +1101,7 @@ function drawVisibleArrows() {
 
     if (!arrowVar) return;
 
-    const cacheKey = `${currentModel}_${arrowVar}_${arrowMember}_${currentStepIdx}`;
+    const cacheKey = `${currentModel}_${currentRunId}_${arrowVar}_${arrowMember}_${currentStepIdx}`;
     const gridData = cacheGrid[cacheKey];
     if (!gridData || !gridData.s || !gridData.d || gridData.d.length === 0) return;
 
