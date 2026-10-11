@@ -83,17 +83,17 @@ html, body {
     white-space: nowrap;
 }
 
-/* --- HOCHPRÄZISE, DÜNNE DECKEND SCHWARZE SWISSTOPO-GRENZEN --- */
-/* Macht die originale Swisstopo-Landesgrenze dünn und deckend schwarz */
+/* --- FEINE SWISSTOPO-GRENZEN --- */
 .boundary-national {
-    filter: grayscale(100%) brightness(0) !important;
-    opacity: 1.0 !important;
+    filter: grayscale(100%) contrast(180%) !important;
+    opacity: 0.70 !important;
+    mix-blend-mode: multiply;
 }
 
-/* Macht die originalen Swisstopo-Kantonsgrenzen hauchdünn und dezent deckend */
 .boundary-cantonal {
-    filter: grayscale(100%) brightness(0) !important;
-    opacity: 0.80 !important;
+    filter: grayscale(100%) contrast(140%) !important;
+    opacity: 0.40 !important;
+    mix-blend-mode: multiply;
 }
 
 /* Schlichter neutral-grauer Hintergrund */
