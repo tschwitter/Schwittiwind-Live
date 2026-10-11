@@ -5,18 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ICON Wetter & Ensembles (CH1 & CH2)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=6" />
+    <link rel="stylesheet" href="style.css?v=7" />
 </head>
 <body>
 
     <!-- Die Karte -->
     <div id="map"></div>
 
-    <!-- EINSTELLUNGS-BUTTON OBEN LINKS (UNTER LEAFLET ZOOM + / -) -->
-    <div class="leaflet-top leaflet-left" style="pointer-events: auto; z-index: 1000;">
-        <div class="leaflet-control leaflet-bar custom-settings-bar">
-            <a href="#" class="settings-control-btn" id="settingsBtn" onclick="toggleSettings(event)" title="Karten- und Ebenen-Optionen">⚙</a>
-        </div>
+    <!-- EINSTELLUNGS-BUTTON OBEN LINKS (SAUBER UNTER DEN LEAFLET ZOOM + / - TASTEN) -->
+    <div class="custom-settings-control">
+        <a href="#" class="settings-control-btn" id="settingsBtn" onclick="toggleSettings(event)" title="Karten- & Ebenen-Optionen">⚙</a>
     </div>
 
     <!-- OBERES KONTROLL-PANEL (MITTE) -->
@@ -51,17 +49,24 @@
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-icon-ch2"></div>
     <div class="floating-popup layer2-dropdown-popup" id="layer2Dropdown"></div>
 
-    <!-- EINSTELLUNGEN-POPUP (PLATZIERT OBEN LINKS BEIM ZAHNRAD) -->
+    <!-- EINSTELLUNGEN-POPUP -->
     <div class="floating-popup settings-popup" id="settingsPopup">
         <div class="settings-title">⚙ Karten- & Ebenen-Optionen</div>
         
-        <!-- HINTERGRUNDKARTE SCHIEBEREGLER -->
+        <!-- HINTERGRUNDKARTE: STIL & TRANSPARENZ -->
         <div class="settings-section">
             <div class="settings-section-title" style="color: #ffb74d;">Hintergrundkarte</div>
             <div class="settings-row">
+                <span>Kartenstil:</span>
+                <div class="mode-toggle-group">
+                    <button class="mode-btn active" id="btnBaseRelief" onclick="setBaseMapStyle('relief')">Relief</button>
+                    <button class="mode-btn" id="btnBaseSimple" onclick="setBaseMapStyle('simple')">Schlicht</button>
+                </div>
+            </div>
+            <div class="settings-row">
                 <span>Transparenz:</span>
-                <input type="range" class="opacity-slider" id="opacitySliderBase" min="0" max="100" value="100" oninput="setBaseMapOpacity(this.value)">
-                <span id="opacityLabelBase" style="width: 30px; text-align: right;">100%</span>
+                <input type="range" class="opacity-slider" id="opacitySliderBase" min="0" max="100" value="60" oninput="setBaseMapOpacity(this.value)">
+                <span id="opacityLabelBase" style="width: 30px; text-align: right;">60%</span>
             </div>
         </div>
 
@@ -138,9 +143,8 @@
     <!-- DYNAMISCHE LEGENDE -->
     <div class="legend-box" id="legendBox"></div>
 
-    <!-- Bibliotheken & JavaScript-Anwendungslogik -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=6"></script>
+    <script src="app.js?v=7"></script>
 </body>
 </html>
