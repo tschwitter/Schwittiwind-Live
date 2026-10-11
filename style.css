@@ -83,18 +83,11 @@ html, body {
     white-space: nowrap;
 }
 
-/* --- FEINE SWISSTOPO-GRENZEN --- */
-.boundary-national {
-    filter: grayscale(100%) contrast(180%) !important;
-    opacity: 0.70 !important;
-    mix-blend-mode: multiply;
+/* --- VEKTOR-GRENZEN (LEAFLET SVG) --- */
+.boundary-vector {
+    pointer-events: none !important;
 }
 
-.boundary-cantonal {
-    filter: grayscale(100%) contrast(140%) !important;
-    opacity: 0.40 !important;
-    mix-blend-mode: multiply;
-}
 
 /* Schlichter neutral-grauer Hintergrund */
 .simple-gray-background {
