@@ -227,7 +227,7 @@ function setBaseMapOpacity(val) {
     if (map) {
         if (map.getPane('reliefPane')) map.getPane('reliefPane').style.opacity = op;
         if (map.getPane('waterPane')) map.getPane('waterPane').style.opacity = op;
-        // boundaryPane bleibt bewusst bei 100% Deckkraft (nicht transparent!)
+        // boundaryPane bleibt bei 100% Deckkraft
     }
 }
 
@@ -409,6 +409,7 @@ async function loadModelAndRun(modelName, runId) {
         initDayButtons();
         initMemberPanel();
 
+        // 1. Exakt gleiche Lokalzeit im neuen Modelllauf beibehalten
         var bestStepIdx = 0;
         if (prevValidDate && times && times.length > 0) {
             var minDiff = Infinity;
@@ -423,6 +424,7 @@ async function loadModelAndRun(modelName, runId) {
         }
         currentStepIdx = bestStepIdx;
 
+        // 2. Member / Statistik beibehalten
         var vCfg = config.variables_config[layer1Var];
         var hasEns = vCfg ? vCfg.has_ensemble : true;
         if (!hasEns) {
@@ -933,64 +935,15 @@ async function ensureDataLoaded(varName, memberIdx, stepIdx) {
     return cacheKey;
 }
 
-// ================= ECHTE VEKTOR-GRENZEN RENDERN =================
-async function loadVectorBoundaries() {
-    try {
-        // Schweizer Landesgrenze (GeoJSON)
-        const resNat = await fetch('https://raw.githubusercontent.com/openlayers/openlayers/main/examples/data/geojson/switzerland.geojson');
-        if (resNat.ok) {
-            const geojsonNat = await resNat.json();
-            nationalBoundaryLayer = L.geoJson(geojsonNat, {
-                pane: 'boundaryPane',
-                interactive: false,
-                style: {
-                    color: '#111111',   // Deckend schwarz
-                    weight: 1.1,         // Dünne, scharfe Kontur
-                    opacity: 1.0,        // 100% deckend
-                    fill: false
-                }
-            }).addTo(map);
-        }
-    } catch (e) {
-        console.warn("Konnte Landesgrenzen-Vektoren nicht laden:", e);
-    }
-
-    try {
-        // Kantonsgrenzen (GeoJSON)
-        const resCant = await fetch('https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/10m/cultural/ne_10m_admin_1_states_provinces.json');
-        if (resCant.ok) {
-            const geojsonAll = await resCant.json();
-            // Nur Schweizer Kantone filtern
-            const swissCantons = {
-                type: "FeatureCollection",
-                features: geojsonAll.features.filter(f => f.properties && f.properties.adm0_a3 === 'CHE')
-            };
-
-            cantonalBoundaryLayer = L.geoJson(swissCantons, {
-                pane: 'boundaryPane',
-                interactive: false,
-                style: {
-                    color: '#222222',   // Sehr feines Schwarz
-                    weight: 0.65,        // Hauchdünne Haarlinie!
-                    opacity: 1.0,        // 100% deckend
-                    fill: false
-                }
-            });
-            // Initial nur aktiv wenn Schlicht gewählt ist
-            if (baseMapStyle === 'simple') {
-                cantonalBoundaryLayer.addTo(map);
-            }
-        }
-    } catch (e) {
-        console.warn("Konnte Kantonsgrenzen-Vektoren nicht laden:", e);
-    }
-}
-
 async function init() {
     try {
         var swisstopo_relief_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissalti3d-reliefschattierung/default/current/3857/{z}/{x}/{y}.png";
         var swisstopo_lakes_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-seen/default/current/3857/{z}/{x}/{y}.png";
         var swisstopo_rivers_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-gewaessernetz_2000/default/current/3857/{z}/{x}/{y}.png";
+
+        // OFFIZIELLE SWISSTOPO-GRENZEN
+        var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
+        var swisstopo_cantons_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-kanton-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
 
         map = L.map('map', {
             center: [46.8182, 8.2275],
@@ -998,6 +951,7 @@ async function init() {
             preferCanvas: true
         });
 
+        // Dedizierte Panes für saubere Schichtung
         map.createPane('reliefPane');
         map.getPane('reliefPane').style.zIndex = '200';
         map.getPane('reliefPane').style.opacity = baseMapOpacity;
@@ -1006,9 +960,10 @@ async function init() {
         map.getPane('waterPane').style.zIndex = '250';
         map.getPane('waterPane').style.opacity = baseMapOpacity;
 
+        // Eigene Grenze-Pane (immer 100% deckend!)
         map.createPane('boundaryPane');
         map.getPane('boundaryPane').style.zIndex = '280';
-        map.getPane('boundaryPane').style.opacity = '1.0'; // 100% deckend!
+        map.getPane('boundaryPane').style.opacity = '1.0';
         map.getPane('boundaryPane').style.pointerEvents = 'none';
 
         map.createPane('contourPane1');
@@ -1037,15 +992,26 @@ async function init() {
             opacity: 0.85
         }).addTo(map);
 
-        // 3. Flüsse
+        // 3. Flüsse (dezent & dünner)
         riversLayer = L.tileLayer(swisstopo_rivers_url, {
             pane: 'waterPane',
             maxZoom: 15, maxNativeZoom: 14,
             opacity: 0.35
         }).addTo(map);
 
-        // 4. Hauchdünne Vektorgrenzen laden
-        loadVectorBoundaries();
+        // 4. Landesgrenze (originale Swisstopo-Grenze, deckend schwarz gefärbt)
+        nationalBoundaryLayer = L.tileLayer(swisstopo_boundary_url, {
+            pane: 'boundaryPane',
+            className: 'boundary-national',
+            maxZoom: 15, maxNativeZoom: 14
+        }).addTo(map);
+
+        // 5. Kantonsgrenzen (originale Swisstopo-Grenzen)
+        cantonalBoundaryLayer = L.tileLayer(swisstopo_cantons_url, {
+            pane: 'boundaryPane',
+            className: 'boundary-cantonal',
+            maxZoom: 15, maxNativeZoom: 14
+        });
 
         map.on('moveend', function() {
             drawVisibleArrows();
