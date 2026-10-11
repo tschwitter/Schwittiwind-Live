@@ -6,8 +6,8 @@ var availableRuns = { "icon-ch1": [], "icon-ch2": [] };
 
 var verticalNavMode = 'member'; // 'member' oder 'run'
 
-var baseMapOpacity = 0.60; // Standardmäßig 60 %
-var baseMapStyle = 'relief'; // 'relief' oder 'simple'
+var baseMapOpacity = 0.60;
+var baseMapStyle = 'relief'; // 'relief' oder 'simple' (XC-Therm)
 
 var layer1Var = null;
 var layer2Var = null;
@@ -24,9 +24,9 @@ var currentMemberIdx = 0;
 var currentStepIdx = 0;
 
 var baseReliefLayer = null;
-var baseSimpleLayer = null;
 var lakesLayer = null;
 var riversLayer = null;
+var boundaryLayer = null;
 
 var contourLayer1 = null;
 var contourLayer2 = null;
@@ -40,9 +40,9 @@ var uniqueDays = [];
 var dayTimesteps = {};
 var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
-// ================= ERWEITERTES ORTSNETZ DER SCHWEIZ =================
+// ================= DYNAMISCHES ORTSNETZ DER SCHWEIZ =================
 var CITIES = [
-    // Stufe 1: minZoom = 7 (Ganze Schweiz - Großzentren)
+    // Stufe 1: minZoom = 7 (Großzentren)
     { name: "Zürich", lat: 47.3769, lon: 8.5417, minZoom: 7 },
     { name: "Bern", lat: 46.9480, lon: 7.4474, minZoom: 7 },
     { name: "Basel", lat: 47.5596, lon: 7.5886, minZoom: 7 },
@@ -76,7 +76,7 @@ var CITIES = [
     { name: "Frauenfeld", lat: 47.5583, lon: 8.8986, minZoom: 9 },
     { name: "Liestal", lat: 47.4844, lon: 7.7348, minZoom: 9 },
 
-    // Stufe 3: minZoom = 10 (Größere Talschaften, Seen & Tourismusorte)
+    // Stufe 3: minZoom = 10 (Talschaften & Seen)
     { name: "Interlaken", lat: 46.6863, lon: 7.8632, minZoom: 10 },
     { name: "Spiez", lat: 46.6888, lon: 7.6806, minZoom: 10 },
     { name: "Zermatt", lat: 45.9765, lon: 7.7491, minZoom: 10 },
@@ -196,7 +196,7 @@ function closeAllPopups() {
     document.getElementById("settingsPopup").style.display = "none";
 }
 
-// ================= HINTERGRUNDKARTE: TRANSPARENZ & STIL =================
+// ================= HINTERGRUNDKARTE: TRANSPARENZ & STIL (XC-THERM) =================
 function setBaseMapOpacity(val) {
     var op = val / 100.0;
     baseMapOpacity = op;
@@ -217,12 +217,21 @@ function setBaseMapStyle(style) {
 
     if (!map) return;
 
+    var reliefPane = map.getPane('reliefPane');
+
     if (style === 'simple') {
-        if (baseReliefLayer && map.hasLayer(baseReliefLayer)) map.removeLayer(baseReliefLayer);
-        if (baseSimpleLayer && !map.hasLayer(baseSimpleLayer)) baseSimpleLayer.addTo(map);
+        // XC-THERM STIL:
+        // 1. Relief weicher/heller machen
+        if (reliefPane) reliefPane.classList.add('xctherm-soft-relief');
+        // 2. Neongrüne Landesgrenze einblenden
+        if (boundaryLayer && !map.hasLayer(boundaryLayer)) boundaryLayer.addTo(map);
+        // 3. Flüsse ausblenden (XC-Therm hat keine blauen Flüsse)
+        if (riversLayer && map.hasLayer(riversLayer)) map.removeLayer(riversLayer);
     } else {
-        if (baseSimpleLayer && map.hasLayer(baseSimpleLayer)) map.removeLayer(baseSimpleLayer);
-        if (baseReliefLayer && !map.hasLayer(baseReliefLayer)) baseReliefLayer.addTo(map);
+        // RELIEF STIL:
+        if (reliefPane) reliefPane.classList.remove('xctherm-soft-relief');
+        if (boundaryLayer && map.hasLayer(boundaryLayer)) map.removeLayer(boundaryLayer);
+        if (riversLayer && !map.hasLayer(riversLayer)) riversLayer.addTo(map);
     }
 }
 
@@ -286,6 +295,7 @@ function updateModelButtonLabels() {
         var activeRun = (currentModel === m) ? currentRunId : (runs[0] ? runs[0].id : null);
         var activeObj = runs.find(r => r.id === activeRun) || runs[0];
         var modName = (m === "icon-ch1") ? "CH1" : "CH2";
+        
         var runTxt = (activeObj && !isMobile) ? ` (${activeObj.label})` : "";
         btn.innerText = `${modName}${runTxt} ▾`;
     });
@@ -379,7 +389,6 @@ async function loadModelAndRun(modelName, runId) {
         initDayButtons();
         initMemberPanel();
 
-        // 1. Exakt gleiche Lokalzeit im neuen Modelllauf beibehalten
         var bestStepIdx = 0;
         if (prevValidDate && times && times.length > 0) {
             var minDiff = Infinity;
@@ -394,7 +403,6 @@ async function loadModelAndRun(modelName, runId) {
         }
         currentStepIdx = bestStepIdx;
 
-        // 2. Member / Statistik beibehalten
         var vCfg = config.variables_config[layer1Var];
         var hasEns = vCfg ? vCfg.has_ensemble : true;
         if (!hasEns) {
@@ -907,17 +915,17 @@ async function ensureDataLoaded(varName, memberIdx, stepIdx) {
 
 async function init() {
     try {
-        // 1. Basiskarte A: SwissALTI3D Reliefschattierung (3D-Relief ohne Text)
+        // 1. Basiskarte: SwissALTI3D Reliefschattierung (3D-Relief)
         var swisstopo_relief_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissalti3d-reliefschattierung/default/current/3857/{z}/{x}/{y}.png";
         
-        // 2. Basiskarte B: Schlichte Graustufen-Landeskarte (minimalistisch)
-        var swisstopo_simple_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-grau/default/current/3857/{z}/{x}/{y}.jpeg";
-
-        // 3. Schweizer Seen (ch.bafu.vec25-seen)
+        // 2. Schweizer Seen (ch.bafu.vec25-seen)
         var swisstopo_lakes_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-seen/default/current/3857/{z}/{x}/{y}.png";
 
-        // 4. Schweizer Hauptflüsse (ch.bafu.vec25-gewaessernetz_2000)
+        // 3. Schweizer Hauptflüsse (ch.bafu.vec25-gewaessernetz_2000)
         var swisstopo_rivers_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-gewaessernetz_2000/default/current/3857/{z}/{x}/{y}.png";
+
+        // 4. Schweizer Landesgrenzen für den XC-Therm Stil (swissboundaries3d)
+        var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
 
         map = L.map('map', {
             center: [46.8182, 8.2275],
@@ -934,6 +942,10 @@ async function init() {
         map.getPane('waterPane').style.zIndex = '250';
         map.getPane('waterPane').style.opacity = baseMapOpacity;
 
+        map.createPane('boundaryPane');
+        map.getPane('boundaryPane').style.zIndex = '280'; // Liegt sauber über dem Relief & unter dem Wetter!
+        map.getPane('boundaryPane').style.pointerEvents = 'none';
+
         map.createPane('contourPane1');
         map.getPane('contourPane1').style.opacity = layer1Opacity;
         map.getPane('contourPane1').style.zIndex = '400';
@@ -943,39 +955,37 @@ async function init() {
         map.getPane('contourPane2').style.zIndex = '450';
 
         map.createPane('cityPane');
-        map.getPane('cityPane').style.zIndex = '520';
+        map.getPane('cityPane').style.zIndex = '520'; // Immer ganz oben, gestochen scharf!
         map.getPane('cityPane').style.pointerEvents = 'none';
 
-        // Relief
+        // 1. Relief
         baseReliefLayer = L.tileLayer(swisstopo_relief_url, {
             pane: 'reliefPane',
             attribution: '&copy; <a href="https://www.swisstopo.admin.ch/" target="_blank">swisstopo</a> | Wetterdaten: &copy; <a href="https://www.meteoschweiz.admin.ch/" target="_blank">MeteoSchweiz</a>',
             maxZoom: 15, maxNativeZoom: 14
-        });
+        }).addTo(map);
 
-        // Schlichte Karte
-        baseSimpleLayer = L.tileLayer(swisstopo_simple_url, {
-            pane: 'reliefPane',
-            attribution: '&copy; <a href="https://www.swisstopo.admin.ch/" target="_blank">swisstopo</a> | Wetterdaten: &copy; <a href="https://www.meteoschweiz.admin.ch/" target="_blank">MeteoSchweiz</a>',
-            maxZoom: 15, maxNativeZoom: 14
-        });
-
-        // Initial: Relief aktiv
-        baseReliefLayer.addTo(map);
-
-        // Seen
+        // 2. Seen
         lakesLayer = L.tileLayer(swisstopo_lakes_url, {
             pane: 'waterPane',
             maxZoom: 15, maxNativeZoom: 14,
             opacity: 0.85
         }).addTo(map);
 
-        // Flüsse (dezent & dünner durch 0.35 Opacity)
+        // 3. Flüsse (dezent & dünner durch reduzierte Opacity von 0.35)
         riversLayer = L.tileLayer(swisstopo_rivers_url, {
             pane: 'waterPane',
             maxZoom: 15, maxNativeZoom: 14,
             opacity: 0.35
         }).addTo(map);
+
+        // 4. Landesgrenze für den XC-Therm Stil (mit neongrünem CSS-Filter)
+        boundaryLayer = L.tileLayer(swisstopo_boundary_url, {
+            pane: 'boundaryPane',
+            className: 'xctherm-boundary',
+            maxZoom: 15, maxNativeZoom: 14,
+            opacity: 0.95
+        });
 
         map.on('moveend', function() {
             drawVisibleArrows();
@@ -1027,11 +1037,11 @@ async function init() {
 
         updateNavModeButton();
 
-        // 1. Läufe abrufen
+        // 1. Läufe beider Modelle abrufen
         await fetchAvailableRuns("icon-ch1");
         await fetchAvailableRuns("icon-ch2");
 
-        // 2. Starten
+        // 2. Mit dem neuesten Lauf von ICON-CH1 starten
         await switchModel("icon-ch1");
         updateCityLabels();
     } catch (err) {
