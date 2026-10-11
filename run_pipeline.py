@@ -281,8 +281,19 @@ def main():
     if args.prepare:
         os.makedirs("dist-meta/data", exist_ok=True)
         
-        # Kopiert automatisch index.html, style.css und app.js ins Deployment
-        for static_file in ["index.html", "style.css", "app.js"]:
+        # GeoJSON-Grenzen sicherstellen und mitkopieren
+        geo_sources = {
+            "switzerland_national.geojson": "https://cdn.jsdelivr.net/gh/ZHB/switzerland-geojson@master/country.geojson",
+            "switzerland_cantons.geojson": "https://cdn.jsdelivr.net/gh/empet/Datasets@master/swiss-cantons.geojson"
+        }
+        for fname, url in geo_sources.items():
+            if not os.path.exists(fname):
+                try:
+                    urllib.request.urlretrieve(url, fname)
+                except Exception as e:
+                    print(f"Hinweis: Konnte {fname} nicht vorab herunterladen ({e})", flush=True)
+
+        for static_file in ["index.html", "style.css", "app.js", "switzerland_national.geojson", "switzerland_cantons.geojson"]:
             if os.path.exists(static_file):
                 shutil.copy(static_file, f"dist-meta/{static_file}")
 
