@@ -841,7 +841,7 @@ function renderSingleLegendCol(varName, isIQR) {
         <div class="legend-column">
             <div class="legend-title">${title}</div>
             <div class="legend-scale">
-                <div class="legend-bar">${barHtml}</div>
+                        <div class="legend-bar">${barHtml}</div>
                 <div class="legend-labels">${labelsHtml}</div>
             </div>
         </div>
@@ -938,7 +938,7 @@ async function ensureDataLoaded(varName, memberIdx, stepIdx) {
 
 async function init() {
     try {
-        // 1. Basiskarte A: SwissALTI3D Reliefschattierung (3D-Relief ohne Text)
+        // 1. Basiskarte: SwissALTI3D Reliefschattierung (3D-Relief ohne Text)
         var swisstopo_relief_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissalti3d-reliefschattierung/default/current/3857/{z}/{x}/{y}.png";
         
         // 2. Schweizer Seen (ch.bafu.vec25-seen)
@@ -947,10 +947,10 @@ async function init() {
         // 3. Schweizer Hauptflüsse (ch.bafu.vec25-gewaessernetz_2000)
         var swisstopo_rivers_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-gewaessernetz_2000/default/current/3857/{z}/{x}/{y}.png";
 
-        // 4. Schweizer Landesgrenzen (dezent feine Linie: .line statt .fill!)
+        // 4. Schweizer Landesgrenzen (dezent feine Linie: .line statt .fill)
         var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.line/default/current/3857/{z}/{x}/{y}.png";
 
-        // 5. Schweizer Kantonsgrenzen (feine Linie: .line statt .fill!)
+        // 5. Schweizer Kantonsgrenzen (feine Linie: .line statt .fill)
         var swisstopo_cantons_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-kanton-flaeche.line/default/current/3857/{z}/{x}/{y}.png";
 
         map = L.map('map', {
