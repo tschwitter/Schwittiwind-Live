@@ -35,9 +35,9 @@ MODELS_CONFIG = {
         "hours": 3,
         "max_members": 11,
         "max_runs": 8,  # Volle 24 Stunden (8 Läufe à 3 Stunden)
-        "active_variables": ["wind"],
+        "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"],
         #, "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
-        "ensemble_variables": [],
+        "ensemble_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl",  "wind1500"],
         #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl",  "wind1500"
         "max_chunks": 4
     },
@@ -48,10 +48,10 @@ MODELS_CONFIG = {
         "hours": 120,
         "max_members": 21,
         "max_runs": 4,  # Volle 24 Stunden (4 Läufe à 6 Stunden)
-        "active_variables": [],
+        "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"],
         #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"
-        "ensemble_variables": [],
-        #"wind"
+        "ensemble_variables": ["wind", "sun"],
+        #"wind", "sun"
         "max_chunks": 4
     }
 }
