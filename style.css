@@ -56,6 +56,7 @@ html, body {
     user-select: none;
 }
 
+/* Kleiner schwarzer Punkt */
 .city-dot {
     width: 3.5px;
     height: 3.5px;
@@ -66,6 +67,7 @@ html, body {
     flex-shrink: 0;
 }
 
+/* Dünnere schwarze Schrift mit feinem weißem Rand */
 .city-name {
     font-family: Arial, sans-serif;
     font-size: 10.5px;
@@ -81,17 +83,15 @@ html, body {
     white-space: nowrap;
 }
 
-/* --- DEZENTE, DÜNNE SCHWARZE GRENZEN --- */
-/* Landesgrenze: Dünne, scharfe schwarze Kontur */
+/* --- DECKEND SCHWARZE, SEHR DÜNNE GRENZEN (NICHT TRANSPARENT) --- */
 .boundary-national {
-    filter: brightness(0%) !important;
-    opacity: 0.55 !important;
+    filter: brightness(0%) contrast(250%) !important;
+    opacity: 1.0 !important;
 }
 
-/* Kantonsgrenzen: Hauchdünn und sehr dezent */
 .boundary-cantonal {
-    filter: brightness(0%) !important;
-    opacity: 0.28 !important;
+    filter: brightness(0%) contrast(300%) !important;
+    opacity: 0.95 !important;
 }
 
 /* Schlichter neutral-grauer Hintergrund */
@@ -284,6 +284,7 @@ html, body {
 .dropdown-item.clear { background: rgba(217, 83, 79, 0.3); color: #ff8a80; }
 .dropdown-item.clear:hover { background: #d9534f; color: white; }
 
+/* Einstellungs-Popup */
 .settings-popup {
     top: 82px;
     left: 50px;
