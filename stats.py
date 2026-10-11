@@ -254,7 +254,7 @@ def compute_timestep(model_name, weather_data, step_idx, weights):
                 ue_s = get_step_slice(u_ens.sel(eps=eps_val), step_idx)
                 ve_s = get_step_slice(v_ens.sel(eps=eps_val), step_idx)
                 gue = remap_fast(ue_s, weights)
-                gve = remap_fast(vs_e, weights)
+                gve = remap_fast(ve_s, weights)
                 spe = np.sqrt(gue**2 + gve**2) * 3.6
                 dre = (np.arctan2(gue, gve) * 180 / np.pi) % 360
                 all_sp[m_i, :, :] = spe
