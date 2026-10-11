@@ -1005,36 +1005,28 @@ async function init() {
                     fetch("switzerland_cantons.geojson").catch(() => null).then(r => (r && r.ok) ? r.json() : fetch("https://cdn.jsdelivr.net/gh/empet/Datasets@master/swiss-cantons.geojson").then(res => res.json()))
                 ]);
 
-                // Landesgrenze (Fein, gestochen scharf)
-                nationalBoundaryLayer = L.geoJSON(resNat, {
-                    pane: 'boundaryPane',
-                    className: 'boundary-vector',
-                    interactive: false,
-                    style: {
-                        color: "#111111",
-                        weight: 1.1,      // <-- Hier Linienstärke der Landesgrenze ändern
-                        opacity: 0.95,
-                        fill: false
-                    }
-                }).addTo(map);
+        // 4. Landesgrenze: Offizieller, hauchfeiner Linien-Layer der Landesvermessung
+        var swisstopo_national_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.hoheitsgrenze-landesvermessung/default/current/3857/{z}/{x}/{y}.png";
+        
+        // 5. Kantonsgrenzen: Swisstopo Kantonsgrenzen
+        var swisstopo_cantons_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-kanton-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
 
-                // Kantonsgrenzen (Hauchdünn)
-                cantonalBoundaryLayer = L.geoJSON(resCant, {
-                    pane: 'boundaryPane',
-                    className: 'boundary-vector',
-                    interactive: false,
-                    style: {
-                        color: "#444444",
-                        weight: 0.6,      // <-- Hier Linienstärke der Kantonsgrenzen ändern
-                        opacity: 0.70,
-                        fill: false
-                    }
-                });
+        nationalBoundaryLayer = L.tileLayer(swisstopo_national_url, {
+            pane: 'boundaryPane',
+            className: 'boundary-national',
+            maxZoom: 15, maxNativeZoom: 14
+        }).addTo(map);
 
-                // Falls beim Start "Schlicht" gewählt ist, Kantonsgrenzen direkt anzeigen
-                if (baseMapStyle === 'simple') {
-                    cantonalBoundaryLayer.addTo(map);
-                }
+        cantonalBoundaryLayer = L.tileLayer(swisstopo_cantons_url, {
+            pane: 'boundaryPane',
+            className: 'boundary-cantonal',
+            maxZoom: 15, maxNativeZoom: 14
+        });
+
+        // Falls beim Start "Schlicht" aktiv ist, Kantonsgrenzen direkt einblenden
+        if (baseMapStyle === 'simple') {
+            cantonalBoundaryLayer.addTo(map);
+        }
             } catch (e) {
                 console.warn("Konnte Vektorgrenzen nicht laden:", e);
             }
