@@ -941,7 +941,10 @@ async function init() {
         var swisstopo_lakes_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-seen/default/current/3857/{z}/{x}/{y}.png";
         var swisstopo_rivers_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-gewaessernetz_2000/default/current/3857/{z}/{x}/{y}.png";
 
-        
+        // OFFIZIELLE SWISSTOPO-GRENZEN
+        var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
+        var swisstopo_cantons_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-kanton-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
+
         map = L.map('map', {
             center: [46.8182, 8.2275],
             zoom: 9, minZoom: 7, maxZoom: 15,
@@ -996,39 +999,19 @@ async function init() {
             opacity: 0.35
         }).addTo(map);
 
-        // 4. & 5. Hauchdünne Vektor-Grenzen (GeoJSON)
-        const loadBoundaries = async () => {
-            try {
-                // Lädt zuerst lokal (falls vorhanden), ansonsten vom schnellen CDN
-                const [resNat, resCant] = await Promise.all([
-                    fetch("switzerland_national.geojson").catch(() => null).then(r => (r && r.ok) ? r.json() : fetch("https://cdn.jsdelivr.net/gh/ZHB/switzerland-geojson@master/country.geojson").then(res => res.json())),
-                    fetch("switzerland_cantons.geojson").catch(() => null).then(r => (r && r.ok) ? r.json() : fetch("https://cdn.jsdelivr.net/gh/empet/Datasets@master/swiss-cantons.geojson").then(res => res.json()))
-                ]);
-
-    // 4. Landesgrenze (Swisstopo)
-        var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
-
-        // 5. Kantonsgrenzen (Swisstopo)
-        var swisstopo_cantons_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-kanton-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
-
+        // 4. Landesgrenze (originale Swisstopo-Grenze, deckend schwarz gefärbt)
         nationalBoundaryLayer = L.tileLayer(swisstopo_boundary_url, {
             pane: 'boundaryPane',
             className: 'boundary-national',
             maxZoom: 15, maxNativeZoom: 14
         }).addTo(map);
 
+        // 5. Kantonsgrenzen (originale Swisstopo-Grenzen)
         cantonalBoundaryLayer = L.tileLayer(swisstopo_cantons_url, {
             pane: 'boundaryPane',
             className: 'boundary-cantonal',
             maxZoom: 15, maxNativeZoom: 14
         });
-
-        // Falls beim Laden "Schlicht" gewählt ist, Kantonsgrenzen direkt einblenden
-        if (baseMapStyle === 'simple') {
-            cantonalBoundaryLayer.addTo(map);
-        }
-        };
-        loadBoundaries();
 
         map.on('moveend', function() {
             drawVisibleArrows();
