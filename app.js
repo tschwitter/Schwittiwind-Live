@@ -227,7 +227,7 @@ function setBaseMapOpacity(val) {
     if (map) {
         if (map.getPane('reliefPane')) map.getPane('reliefPane').style.opacity = op;
         if (map.getPane('waterPane')) map.getPane('waterPane').style.opacity = op;
-        if (map.getPane('boundaryPane')) map.getPane('boundaryPane').style.opacity = op;
+        // boundaryPane bleibt bei 100% Deckkraft (nicht transparent!)
     }
 }
 
@@ -237,7 +237,6 @@ function setBaseMapStyle(style) {
     document.getElementById("btnBaseSimple").classList.toggle("active", style === 'simple');
 
     if (!map) return;
-
     var mapContainer = map.getContainer();
 
     if (style === 'simple') {
@@ -245,14 +244,16 @@ function setBaseMapStyle(style) {
         if (baseReliefLayer && map.hasLayer(baseReliefLayer)) map.removeLayer(baseReliefLayer);
         if (riversLayer && map.hasLayer(riversLayer)) map.removeLayer(riversLayer);
         mapContainer.classList.add('simple-gray-background');
-        // Feine Kantonsgrenzen einblenden
+        // Kantonsgrenzen einblenden
         if (cantonalBoundaryLayer && !map.hasLayer(cantonalBoundaryLayer)) cantonalBoundaryLayer.addTo(map);
+        if (nationalBoundaryLayer && !map.hasLayer(nationalBoundaryLayer)) nationalBoundaryLayer.addTo(map);
     } else {
         // RELIEF STIL:
         mapContainer.classList.remove('simple-gray-background');
         if (cantonalBoundaryLayer && map.hasLayer(cantonalBoundaryLayer)) map.removeLayer(cantonalBoundaryLayer);
         if (baseReliefLayer && !map.hasLayer(baseReliefLayer)) baseReliefLayer.addTo(map);
         if (riversLayer && !map.hasLayer(riversLayer)) riversLayer.addTo(map);
+        if (nationalBoundaryLayer && !map.hasLayer(nationalBoundaryLayer)) nationalBoundaryLayer.addTo(map);
     }
 }
 
@@ -316,7 +317,6 @@ function updateModelButtonLabels() {
         var activeRun = (currentModel === m) ? currentRunId : (runs[0] ? runs[0].id : null);
         var activeObj = runs.find(r => r.id === activeRun) || runs[0];
         var modName = (m === "icon-ch1") ? "CH1" : "CH2";
-        
         var runTxt = (activeObj && !isMobile) ? ` (${activeObj.label})` : "";
         btn.innerText = `${modName}${runTxt} ▾`;
     });
@@ -410,7 +410,6 @@ async function loadModelAndRun(modelName, runId) {
         initDayButtons();
         initMemberPanel();
 
-        // 1. Exakt gleiche Lokalzeit im neuen Modelllauf beibehalten
         var bestStepIdx = 0;
         if (prevValidDate && times && times.length > 0) {
             var minDiff = Infinity;
@@ -425,7 +424,6 @@ async function loadModelAndRun(modelName, runId) {
         }
         currentStepIdx = bestStepIdx;
 
-        // 2. Member / Statistik beibehalten
         var vCfg = config.variables_config[layer1Var];
         var hasEns = vCfg ? vCfg.has_ensemble : true;
         if (!hasEns) {
@@ -841,7 +839,7 @@ function renderSingleLegendCol(varName, isIQR) {
         <div class="legend-column">
             <div class="legend-title">${title}</div>
             <div class="legend-scale">
-                        <div class="legend-bar">${barHtml}</div>
+                <div class="legend-bar">${barHtml}</div>
                 <div class="legend-labels">${labelsHtml}</div>
             </div>
         </div>
@@ -947,11 +945,11 @@ async function init() {
         // 3. Schweizer Hauptflüsse (ch.bafu.vec25-gewaessernetz_2000)
         var swisstopo_rivers_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-gewaessernetz_2000/default/current/3857/{z}/{x}/{y}.png";
 
-        // 4. Schweizer Landesgrenzen (dezent feine Linie: .line statt .fill)
-        var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.line/default/current/3857/{z}/{x}/{y}.png";
+        // 4. Schweizer Landesgrenzen (offizieller WMTS-Layer)
+        var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
 
-        // 5. Schweizer Kantonsgrenzen (feine Linie: .line statt .fill)
-        var swisstopo_cantons_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-kanton-flaeche.line/default/current/3857/{z}/{x}/{y}.png";
+        // 5. Schweizer Kantonsgrenzen (offizieller WMTS-Layer)
+        var swisstopo_cantons_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-kanton-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
 
         map = L.map('map', {
             center: [46.8182, 8.2275],
@@ -970,6 +968,7 @@ async function init() {
 
         map.createPane('boundaryPane');
         map.getPane('boundaryPane').style.zIndex = '280'; // Liegt über dem Relief / unter dem Wetter
+        map.getPane('boundaryPane').style.opacity = '1.0'; // 100% deckend!
         map.getPane('boundaryPane').style.pointerEvents = 'none';
 
         map.createPane('contourPane1');
@@ -998,21 +997,21 @@ async function init() {
             opacity: 0.85
         }).addTo(map);
 
-        // 3. Flüsse (dezent & dünner durch reduzierte Opacity von 0.35)
+        // 3. Flüsse (dezent & dünner durch 0.35 Opacity)
         riversLayer = L.tileLayer(swisstopo_rivers_url, {
             pane: 'waterPane',
             maxZoom: 15, maxNativeZoom: 14,
             opacity: 0.35
         }).addTo(map);
 
-        // 4. Landesgrenze (dezent feine schwarze Linie)
+        // 4. Landesgrenze (auf beiden Karten aktiv, 100% deckend schwarz)
         nationalBoundaryLayer = L.tileLayer(swisstopo_boundary_url, {
             pane: 'boundaryPane',
             className: 'boundary-national',
             maxZoom: 15, maxNativeZoom: 14
         }).addTo(map);
 
-        // 5. Kantonsgrenzen (feine dezente Linie)
+        // 5. Kantonsgrenzen (auf Schlicht aktiv)
         cantonalBoundaryLayer = L.tileLayer(swisstopo_cantons_url, {
             pane: 'boundaryPane',
             className: 'boundary-cantonal',
