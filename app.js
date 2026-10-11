@@ -138,7 +138,26 @@ var CITIES = [
     { name: "Zernez", lat: 46.6997, lon: 10.0939, minZoom: 11 },
     { name: "Scuol", lat: 46.7972, lon: 10.2989, minZoom: 11 },
     { name: "Samnaun", lat: 46.9536, lon: 10.3639, minZoom: 11 },
-    { name: "Poschiavo", lat: 46.3267, lon: 10.0578, minZoom: 11 }
+    { name: "Poschiavo", lat: 46.3267, lon: 10.0578, minZoom: 11 },
+    { name: "Herisau", lat: 47.3858, lon: 9.2789, minZoom: 11 },
+    { name: "Wattwil", lat: 47.3006, lon: 9.0864, minZoom: 11 },
+    { name: "Wildhaus", lat: 47.2028, lon: 9.3514, minZoom: 11 },
+    { name: "Murten", lat: 46.9281, lon: 7.1172, minZoom: 11 },
+    { name: "Payerne", lat: 46.8211, lon: 6.9367, minZoom: 11 },
+    { name: "Estavayer", lat: 46.8500, lon: 6.8481, minZoom: 11 },
+    { name: "Le Locle", lat: 47.0583, lon: 6.7497, minZoom: 11 },
+    { name: "Saint-Imier", lat: 47.1528, lon: 7.0003, minZoom: 11 },
+    { name: "Moutier", lat: 47.2803, lon: 7.3711, minZoom: 11 },
+    { name: "Laufen", lat: 47.4222, lon: 7.5008, minZoom: 11 },
+    { name: "Rheinfelden", lat: 47.5542, lon: 7.7942, minZoom: 11 },
+    { name: "Brugg", lat: 47.4853, lon: 8.2078, minZoom: 11 },
+    { name: "Wohlen", lat: 47.3514, lon: 8.2781, minZoom: 11 },
+    { name: "Zofingen", lat: 47.2881, lon: 7.9458, minZoom: 11 },
+    { name: "Sursee", lat: 47.1722, lon: 8.1097, minZoom: 11 },
+    { name: "Willisau", lat: 47.1206, lon: 7.9908, minZoom: 11 },
+    { name: "Langnau i.E.", lat: 46.9389, lon: 7.7872, minZoom: 11 },
+    { name: "Frutigen", lat: 46.5886, lon: 7.6492, minZoom: 11 },
+    { name: "Brienz", lat: 46.7558, lon: 8.0375, minZoom: 11 }
 ];
 
 function updateCityLabels() {
@@ -223,12 +242,10 @@ function setBaseMapStyle(style) {
 
     if (style === 'simple') {
         // SCHLICHTER STIL:
-        // 1. Relief und Flüsse ausblenden
         if (baseReliefLayer && map.hasLayer(baseReliefLayer)) map.removeLayer(baseReliefLayer);
         if (riversLayer && map.hasLayer(riversLayer)) map.removeLayer(riversLayer);
-        // 2. Grauer Hintergrund
         mapContainer.classList.add('simple-gray-background');
-        // 3. Dezent schwarze Kantonsgrenzen einblenden
+        // Feine Kantonsgrenzen einblenden
         if (cantonalBoundaryLayer && !map.hasLayer(cantonalBoundaryLayer)) cantonalBoundaryLayer.addTo(map);
     } else {
         // RELIEF STIL:
@@ -393,6 +410,7 @@ async function loadModelAndRun(modelName, runId) {
         initDayButtons();
         initMemberPanel();
 
+        // 1. Exakt gleiche Lokalzeit im neuen Modelllauf beibehalten
         var bestStepIdx = 0;
         if (prevValidDate && times && times.length > 0) {
             var minDiff = Infinity;
@@ -407,6 +425,7 @@ async function loadModelAndRun(modelName, runId) {
         }
         currentStepIdx = bestStepIdx;
 
+        // 2. Member / Statistik beibehalten
         var vCfg = config.variables_config[layer1Var];
         var hasEns = vCfg ? vCfg.has_ensemble : true;
         if (!hasEns) {
@@ -919,7 +938,7 @@ async function ensureDataLoaded(varName, memberIdx, stepIdx) {
 
 async function init() {
     try {
-        // 1. Basiskarte: SwissALTI3D Reliefschattierung (3D-Relief)
+        // 1. Basiskarte A: SwissALTI3D Reliefschattierung (3D-Relief ohne Text)
         var swisstopo_relief_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissalti3d-reliefschattierung/default/current/3857/{z}/{x}/{y}.png";
         
         // 2. Schweizer Seen (ch.bafu.vec25-seen)
@@ -928,11 +947,11 @@ async function init() {
         // 3. Schweizer Hauptflüsse (ch.bafu.vec25-gewaessernetz_2000)
         var swisstopo_rivers_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-gewaessernetz_2000/default/current/3857/{z}/{x}/{y}.png";
 
-        // 4. Schweizer Landesgrenzen (dezent schwarz)
-        var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
+        // 4. Schweizer Landesgrenzen (dezent feine Linie: .line statt .fill!)
+        var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.line/default/current/3857/{z}/{x}/{y}.png";
 
-        // 5. Schweizer Kantonsgrenzen (für schlichte Karte)
-        var swisstopo_cantons_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-kanton-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
+        // 5. Schweizer Kantonsgrenzen (feine Linie: .line statt .fill!)
+        var swisstopo_cantons_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-kanton-flaeche.line/default/current/3857/{z}/{x}/{y}.png";
 
         map = L.map('map', {
             center: [46.8182, 8.2275],
@@ -986,14 +1005,14 @@ async function init() {
             opacity: 0.35
         }).addTo(map);
 
-        // 4. Landesgrenze (dezent schwarz über Relief und Schlichter Karte)
+        // 4. Landesgrenze (dezent feine schwarze Linie)
         nationalBoundaryLayer = L.tileLayer(swisstopo_boundary_url, {
             pane: 'boundaryPane',
             className: 'boundary-national',
             maxZoom: 15, maxNativeZoom: 14
         }).addTo(map);
 
-        // 5. Kantonsgrenzen (nur für schlichte Karte)
+        // 5. Kantonsgrenzen (feine dezente Linie)
         cantonalBoundaryLayer = L.tileLayer(swisstopo_cantons_url, {
             pane: 'boundaryPane',
             className: 'boundary-cantonal',
@@ -1050,9 +1069,11 @@ async function init() {
 
         updateNavModeButton();
 
+        // 1. Läufe abrufen
         await fetchAvailableRuns("icon-ch1");
         await fetchAvailableRuns("icon-ch2");
 
+        // 2. Starten
         await switchModel("icon-ch1");
         updateCityLabels();
     } catch (err) {
