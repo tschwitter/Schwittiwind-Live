@@ -7,7 +7,7 @@ var availableRuns = { "icon-ch1": [], "icon-ch2": [] };
 var verticalNavMode = 'member'; // 'member' oder 'run'
 
 var baseMapOpacity = 0.60;
-var baseMapStyle = 'relief'; // 'relief' oder 'simple' (XC-Therm)
+var baseMapStyle = 'relief'; // 'relief' oder 'simple'
 
 var layer1Var = null;
 var layer2Var = null;
@@ -26,7 +26,8 @@ var currentStepIdx = 0;
 var baseReliefLayer = null;
 var lakesLayer = null;
 var riversLayer = null;
-var boundaryLayer = null;
+var nationalBoundaryLayer = null;
+var cantonalBoundaryLayer = null;
 
 var contourLayer1 = null;
 var contourLayer2 = null;
@@ -40,7 +41,7 @@ var uniqueDays = [];
 var dayTimesteps = {};
 var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
-// ================= DYNAMISCHES ORTSNETZ DER SCHWEIZ =================
+// ================= ERWEITERTES ORTSNETZ DER SCHWEIZ =================
 var CITIES = [
     // Stufe 1: minZoom = 7 (Großzentren)
     { name: "Zürich", lat: 47.3769, lon: 8.5417, minZoom: 7 },
@@ -196,7 +197,7 @@ function closeAllPopups() {
     document.getElementById("settingsPopup").style.display = "none";
 }
 
-// ================= HINTERGRUNDKARTE: TRANSPARENZ & STIL (XC-THERM) =================
+// ================= HINTERGRUNDKARTE: TRANSPARENZ & STIL =================
 function setBaseMapOpacity(val) {
     var op = val / 100.0;
     baseMapOpacity = op;
@@ -207,6 +208,7 @@ function setBaseMapOpacity(val) {
     if (map) {
         if (map.getPane('reliefPane')) map.getPane('reliefPane').style.opacity = op;
         if (map.getPane('waterPane')) map.getPane('waterPane').style.opacity = op;
+        if (map.getPane('boundaryPane')) map.getPane('boundaryPane').style.opacity = op;
     }
 }
 
@@ -217,20 +219,22 @@ function setBaseMapStyle(style) {
 
     if (!map) return;
 
-    var reliefPane = map.getPane('reliefPane');
+    var mapContainer = map.getContainer();
 
     if (style === 'simple') {
-        // XC-THERM STIL:
-        // 1. Relief weicher/heller machen
-        if (reliefPane) reliefPane.classList.add('xctherm-soft-relief');
-        // 2. Neongrüne Landesgrenze einblenden
-        if (boundaryLayer && !map.hasLayer(boundaryLayer)) boundaryLayer.addTo(map);
-        // 3. Flüsse ausblenden (XC-Therm hat keine blauen Flüsse)
+        // SCHLICHTER STIL:
+        // 1. Relief und Flüsse ausblenden
+        if (baseReliefLayer && map.hasLayer(baseReliefLayer)) map.removeLayer(baseReliefLayer);
         if (riversLayer && map.hasLayer(riversLayer)) map.removeLayer(riversLayer);
+        // 2. Grauer Hintergrund
+        mapContainer.classList.add('simple-gray-background');
+        // 3. Dezent schwarze Kantonsgrenzen einblenden
+        if (cantonalBoundaryLayer && !map.hasLayer(cantonalBoundaryLayer)) cantonalBoundaryLayer.addTo(map);
     } else {
         // RELIEF STIL:
-        if (reliefPane) reliefPane.classList.remove('xctherm-soft-relief');
-        if (boundaryLayer && map.hasLayer(boundaryLayer)) map.removeLayer(boundaryLayer);
+        mapContainer.classList.remove('simple-gray-background');
+        if (cantonalBoundaryLayer && map.hasLayer(cantonalBoundaryLayer)) map.removeLayer(cantonalBoundaryLayer);
+        if (baseReliefLayer && !map.hasLayer(baseReliefLayer)) baseReliefLayer.addTo(map);
         if (riversLayer && !map.hasLayer(riversLayer)) riversLayer.addTo(map);
     }
 }
@@ -924,8 +928,11 @@ async function init() {
         // 3. Schweizer Hauptflüsse (ch.bafu.vec25-gewaessernetz_2000)
         var swisstopo_rivers_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-gewaessernetz_2000/default/current/3857/{z}/{x}/{y}.png";
 
-        // 4. Schweizer Landesgrenzen für den XC-Therm Stil (swissboundaries3d)
+        // 4. Schweizer Landesgrenzen (dezent schwarz)
         var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
+
+        // 5. Schweizer Kantonsgrenzen (für schlichte Karte)
+        var swisstopo_cantons_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-kanton-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
 
         map = L.map('map', {
             center: [46.8182, 8.2275],
@@ -943,7 +950,7 @@ async function init() {
         map.getPane('waterPane').style.opacity = baseMapOpacity;
 
         map.createPane('boundaryPane');
-        map.getPane('boundaryPane').style.zIndex = '280'; // Liegt sauber über dem Relief & unter dem Wetter!
+        map.getPane('boundaryPane').style.zIndex = '280'; // Liegt über dem Relief / unter dem Wetter
         map.getPane('boundaryPane').style.pointerEvents = 'none';
 
         map.createPane('contourPane1');
@@ -979,12 +986,18 @@ async function init() {
             opacity: 0.35
         }).addTo(map);
 
-        // 4. Landesgrenze für den XC-Therm Stil (mit neongrünem CSS-Filter)
-        boundaryLayer = L.tileLayer(swisstopo_boundary_url, {
+        // 4. Landesgrenze (dezent schwarz über Relief und Schlichter Karte)
+        nationalBoundaryLayer = L.tileLayer(swisstopo_boundary_url, {
             pane: 'boundaryPane',
-            className: 'xctherm-boundary',
-            maxZoom: 15, maxNativeZoom: 14,
-            opacity: 0.95
+            className: 'boundary-national',
+            maxZoom: 15, maxNativeZoom: 14
+        }).addTo(map);
+
+        // 5. Kantonsgrenzen (nur für schlichte Karte)
+        cantonalBoundaryLayer = L.tileLayer(swisstopo_cantons_url, {
+            pane: 'boundaryPane',
+            className: 'boundary-cantonal',
+            maxZoom: 15, maxNativeZoom: 14
         });
 
         map.on('moveend', function() {
@@ -1037,11 +1050,9 @@ async function init() {
 
         updateNavModeButton();
 
-        // 1. Läufe beider Modelle abrufen
         await fetchAvailableRuns("icon-ch1");
         await fetchAvailableRuns("icon-ch2");
 
-        // 2. Mit dem neuesten Lauf von ICON-CH1 starten
         await switchModel("icon-ch1");
         updateCityLabels();
     } catch (err) {
