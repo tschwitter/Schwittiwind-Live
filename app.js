@@ -227,7 +227,7 @@ function setBaseMapOpacity(val) {
     if (map) {
         if (map.getPane('reliefPane')) map.getPane('reliefPane').style.opacity = op;
         if (map.getPane('waterPane')) map.getPane('waterPane').style.opacity = op;
-        // boundaryPane bleibt bei 100% Deckkraft (nicht transparent!)
+        // boundaryPane bleibt bewusst bei 100% Deckkraft (nicht transparent!)
     }
 }
 
@@ -246,14 +246,12 @@ function setBaseMapStyle(style) {
         mapContainer.classList.add('simple-gray-background');
         // Kantonsgrenzen einblenden
         if (cantonalBoundaryLayer && !map.hasLayer(cantonalBoundaryLayer)) cantonalBoundaryLayer.addTo(map);
-        if (nationalBoundaryLayer && !map.hasLayer(nationalBoundaryLayer)) nationalBoundaryLayer.addTo(map);
     } else {
         // RELIEF STIL:
         mapContainer.classList.remove('simple-gray-background');
         if (cantonalBoundaryLayer && map.hasLayer(cantonalBoundaryLayer)) map.removeLayer(cantonalBoundaryLayer);
         if (baseReliefLayer && !map.hasLayer(baseReliefLayer)) baseReliefLayer.addTo(map);
         if (riversLayer && !map.hasLayer(riversLayer)) riversLayer.addTo(map);
-        if (nationalBoundaryLayer && !map.hasLayer(nationalBoundaryLayer)) nationalBoundaryLayer.addTo(map);
     }
 }
 
@@ -317,6 +315,7 @@ function updateModelButtonLabels() {
         var activeRun = (currentModel === m) ? currentRunId : (runs[0] ? runs[0].id : null);
         var activeObj = runs.find(r => r.id === activeRun) || runs[0];
         var modName = (m === "icon-ch1") ? "CH1" : "CH2";
+        
         var runTxt = (activeObj && !isMobile) ? ` (${activeObj.label})` : "";
         btn.innerText = `${modName}${runTxt} ▾`;
     });
@@ -418,7 +417,7 @@ async function loadModelAndRun(modelName, runId) {
                 var diff = Math.abs(d - prevValidDate);
                 if (diff < minDiff) { 
                     minDiff = diff; 
-                    bestStepIdx = idx;
+                    bestStepIdx = idx; 
                 }
             });
         }
@@ -934,22 +933,64 @@ async function ensureDataLoaded(varName, memberIdx, stepIdx) {
     return cacheKey;
 }
 
+// ================= ECHTE VEKTOR-GRENZEN RENDERN =================
+async function loadVectorBoundaries() {
+    try {
+        // Schweizer Landesgrenze (GeoJSON)
+        const resNat = await fetch('https://raw.githubusercontent.com/openlayers/openlayers/main/examples/data/geojson/switzerland.geojson');
+        if (resNat.ok) {
+            const geojsonNat = await resNat.json();
+            nationalBoundaryLayer = L.geoJson(geojsonNat, {
+                pane: 'boundaryPane',
+                interactive: false,
+                style: {
+                    color: '#111111',   // Deckend schwarz
+                    weight: 1.1,         // Dünne, scharfe Kontur
+                    opacity: 1.0,        // 100% deckend
+                    fill: false
+                }
+            }).addTo(map);
+        }
+    } catch (e) {
+        console.warn("Konnte Landesgrenzen-Vektoren nicht laden:", e);
+    }
+
+    try {
+        // Kantonsgrenzen (GeoJSON)
+        const resCant = await fetch('https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/10m/cultural/ne_10m_admin_1_states_provinces.json');
+        if (resCant.ok) {
+            const geojsonAll = await resCant.json();
+            // Nur Schweizer Kantone filtern
+            const swissCantons = {
+                type: "FeatureCollection",
+                features: geojsonAll.features.filter(f => f.properties && f.properties.adm0_a3 === 'CHE')
+            };
+
+            cantonalBoundaryLayer = L.geoJson(swissCantons, {
+                pane: 'boundaryPane',
+                interactive: false,
+                style: {
+                    color: '#222222',   // Sehr feines Schwarz
+                    weight: 0.65,        // Hauchdünne Haarlinie!
+                    opacity: 1.0,        // 100% deckend
+                    fill: false
+                }
+            });
+            // Initial nur aktiv wenn Schlicht gewählt ist
+            if (baseMapStyle === 'simple') {
+                cantonalBoundaryLayer.addTo(map);
+            }
+        }
+    } catch (e) {
+        console.warn("Konnte Kantonsgrenzen-Vektoren nicht laden:", e);
+    }
+}
+
 async function init() {
     try {
-        // 1. Basiskarte: SwissALTI3D Reliefschattierung (3D-Relief ohne Text)
         var swisstopo_relief_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissalti3d-reliefschattierung/default/current/3857/{z}/{x}/{y}.png";
-        
-        // 2. Schweizer Seen (ch.bafu.vec25-seen)
         var swisstopo_lakes_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-seen/default/current/3857/{z}/{x}/{y}.png";
-
-        // 3. Schweizer Hauptflüsse (ch.bafu.vec25-gewaessernetz_2000)
         var swisstopo_rivers_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-gewaessernetz_2000/default/current/3857/{z}/{x}/{y}.png";
-
-        // 4. Schweizer Landesgrenzen (offizieller WMTS-Layer)
-        var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
-
-        // 5. Schweizer Kantonsgrenzen (offizieller WMTS-Layer)
-        var swisstopo_cantons_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-kanton-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
 
         map = L.map('map', {
             center: [46.8182, 8.2275],
@@ -957,7 +998,6 @@ async function init() {
             preferCanvas: true
         });
 
-        // Panes mit Standard 60 % Opacity
         map.createPane('reliefPane');
         map.getPane('reliefPane').style.zIndex = '200';
         map.getPane('reliefPane').style.opacity = baseMapOpacity;
@@ -967,7 +1007,7 @@ async function init() {
         map.getPane('waterPane').style.opacity = baseMapOpacity;
 
         map.createPane('boundaryPane');
-        map.getPane('boundaryPane').style.zIndex = '280'; // Liegt über dem Relief / unter dem Wetter
+        map.getPane('boundaryPane').style.zIndex = '280';
         map.getPane('boundaryPane').style.opacity = '1.0'; // 100% deckend!
         map.getPane('boundaryPane').style.pointerEvents = 'none';
 
@@ -980,7 +1020,7 @@ async function init() {
         map.getPane('contourPane2').style.zIndex = '450';
 
         map.createPane('cityPane');
-        map.getPane('cityPane').style.zIndex = '520'; // Immer ganz oben, gestochen scharf!
+        map.getPane('cityPane').style.zIndex = '520';
         map.getPane('cityPane').style.pointerEvents = 'none';
 
         // 1. Relief
@@ -997,26 +1037,15 @@ async function init() {
             opacity: 0.85
         }).addTo(map);
 
-        // 3. Flüsse (dezent & dünner durch 0.35 Opacity)
+        // 3. Flüsse
         riversLayer = L.tileLayer(swisstopo_rivers_url, {
             pane: 'waterPane',
             maxZoom: 15, maxNativeZoom: 14,
             opacity: 0.35
         }).addTo(map);
 
-        // 4. Landesgrenze (auf beiden Karten aktiv, 100% deckend schwarz)
-        nationalBoundaryLayer = L.tileLayer(swisstopo_boundary_url, {
-            pane: 'boundaryPane',
-            className: 'boundary-national',
-            maxZoom: 15, maxNativeZoom: 14
-        }).addTo(map);
-
-        // 5. Kantonsgrenzen (auf Schlicht aktiv)
-        cantonalBoundaryLayer = L.tileLayer(swisstopo_cantons_url, {
-            pane: 'boundaryPane',
-            className: 'boundary-cantonal',
-            maxZoom: 15, maxNativeZoom: 14
-        });
+        // 4. Hauchdünne Vektorgrenzen laden
+        loadVectorBoundaries();
 
         map.on('moveend', function() {
             drawVisibleArrows();
@@ -1068,11 +1097,9 @@ async function init() {
 
         updateNavModeButton();
 
-        // 1. Läufe abrufen
         await fetchAvailableRuns("icon-ch1");
         await fetchAvailableRuns("icon-ch2");
 
-        // 2. Starten
         await switchModel("icon-ch1");
         updateCityLabels();
     } catch (err) {
