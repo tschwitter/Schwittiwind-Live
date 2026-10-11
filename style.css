@@ -83,16 +83,16 @@ html, body {
     white-space: nowrap;
 }
 
-/* --- SWISSTOPO GRENZEN (FEIN & SCHARF) --- */
+/* --- SWISSTOPO GRENZEN --- */
 .boundary-national {
-    /* Macht die lilafarbene Originallinie neutral dunkelgrau/schwarz, ohne die Kanten aufzublähen */
-    filter: grayscale(100%) brightness(0.4) contrast(150%) !important;
+    /* Macht die lilafarbene Landesgrenze neutral-dunkel, lässt die Kanten aber weich und fein */
+    filter: grayscale(100%) brightness(0.3) !important;
     opacity: 0.85 !important;
 }
 
 .boundary-cantonal {
-    /* Feine, unaufdringliche Kantonsgrenzen für die Schlicht-Karte */
-    filter: grayscale(100%) brightness(0.6) !important;
+    /* Dezente Kantonsgrenzen für die Schlichtkarte */
+    filter: grayscale(100%) brightness(0.5) !important;
     opacity: 0.60 !important;
 }
 
