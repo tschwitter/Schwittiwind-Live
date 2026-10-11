@@ -81,15 +81,17 @@ html, body {
     white-space: nowrap;
 }
 
-/* --- DEZENTE SCHWARZE GRENZEN --- */
-/* Landesgrenze: Dezent schwarz und nicht zu dick */
+/* --- DEZENTE, DÜNNE SCHWARZE GRENZEN --- */
+/* Landesgrenze: Dünne, scharfe schwarze Kontur */
 .boundary-national {
-    filter: brightness(0%) opacity(75%) !important;
+    filter: brightness(0%) !important;
+    opacity: 0.55 !important;
 }
 
-/* Kantonsgrenzen: Noch feiner und dezenter */
+/* Kantonsgrenzen: Hauchdünn und sehr dezent */
 .boundary-cantonal {
-    filter: brightness(0%) opacity(40%) !important;
+    filter: brightness(0%) !important;
+    opacity: 0.28 !important;
 }
 
 /* Schlichter neutral-grauer Hintergrund */
