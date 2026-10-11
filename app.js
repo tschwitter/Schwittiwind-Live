@@ -1005,9 +1005,9 @@ async function init() {
                     fetch("switzerland_cantons.geojson").catch(() => null).then(r => (r && r.ok) ? r.json() : fetch("https://cdn.jsdelivr.net/gh/empet/Datasets@master/swiss-cantons.geojson").then(res => res.json()))
                 ]);
 
-        // 4. Landesgrenze (Swisstopo)
+    // 4. Landesgrenze (Swisstopo)
         var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
-        
+
         // 5. Kantonsgrenzen (Swisstopo)
         var swisstopo_cantons_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-kanton-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
 
@@ -1023,13 +1023,10 @@ async function init() {
             maxZoom: 15, maxNativeZoom: 14
         });
 
-        // Falls beim Laden "Schlicht" aktiv ist, Kantone direkt einblenden
+        // Falls beim Laden "Schlicht" gewählt ist, Kantonsgrenzen direkt einblenden
         if (baseMapStyle === 'simple') {
             cantonalBoundaryLayer.addTo(map);
         }
-            } catch (e) {
-                console.warn("Konnte Vektorgrenzen nicht laden:", e);
-            }
         };
         loadBoundaries();
 
