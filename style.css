@@ -83,17 +83,17 @@ html, body {
     white-space: nowrap;
 }
 
-/* --- HOCHPRÄZISE, FEINE SWISSTOPO-GRENZEN --- */
+/* --- SWISSTOPO GRENZEN (FEIN & SCHARF) --- */
 .boundary-national {
-    /* Macht die Linie dezent dunkelgrau/schwarz, ohne die Kanten aufzublähen */
-    filter: grayscale(100%) brightness(0.2) !important;
-    opacity: 0.90 !important;
+    /* Macht die lilafarbene Originallinie neutral dunkelgrau/schwarz, ohne die Kanten aufzublähen */
+    filter: grayscale(100%) brightness(0.4) contrast(150%) !important;
+    opacity: 0.85 !important;
 }
 
 .boundary-cantonal {
-    /* Dezente, dünne Kantonsgrenzen */
-    filter: grayscale(100%) brightness(0.3) !important;
-    opacity: 0.55 !important;
+    /* Feine, unaufdringliche Kantonsgrenzen für die Schlicht-Karte */
+    filter: grayscale(100%) brightness(0.6) !important;
+    opacity: 0.60 !important;
 }
 
 /* Schlichter neutral-grauer Hintergrund */
