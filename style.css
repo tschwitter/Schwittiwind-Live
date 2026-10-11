@@ -83,11 +83,18 @@ html, body {
     white-space: nowrap;
 }
 
-/* --- VEKTOR-GRENZEN (LEAFLET SVG) --- */
-.boundary-vector {
-    pointer-events: none !important;
+/* --- HOCHPRÄZISE, FEINE SWISSTOPO-GRENZEN --- */
+.boundary-national {
+    /* Macht die Linie dezent dunkelgrau/schwarz, ohne die Kanten aufzublähen */
+    filter: grayscale(100%) brightness(0.2) !important;
+    opacity: 0.90 !important;
 }
 
+.boundary-cantonal {
+    /* Dezente, dünne Kantonsgrenzen */
+    filter: grayscale(100%) brightness(0.3) !important;
+    opacity: 0.55 !important;
+}
 
 /* Schlichter neutral-grauer Hintergrund */
 .simple-gray-background {
