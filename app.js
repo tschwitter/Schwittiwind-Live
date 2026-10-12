@@ -239,14 +239,11 @@ function setBaseMapStyle(style) {
     var mapContainer = map.getContainer();
 
     if (style === 'simple') {
-        // SCHLICHTER STIL:
         if (baseReliefLayer && map.hasLayer(baseReliefLayer)) map.removeLayer(baseReliefLayer);
         if (riversLayer && map.hasLayer(riversLayer)) map.removeLayer(riversLayer);
         mapContainer.classList.add('simple-gray-background');
-        // Kantonsgrenzen einblenden
         if (cantonalBoundaryLayer && !map.hasLayer(cantonalBoundaryLayer)) cantonalBoundaryLayer.addTo(map);
     } else {
-        // RELIEF STIL:
         mapContainer.classList.remove('simple-gray-background');
         if (cantonalBoundaryLayer && map.hasLayer(cantonalBoundaryLayer)) map.removeLayer(cantonalBoundaryLayer);
         if (baseReliefLayer && !map.hasLayer(baseReliefLayer)) baseReliefLayer.addTo(map);
@@ -307,16 +304,16 @@ async function fetchAvailableRuns(modelName) {
 }
 
 function updateModelButtonLabels() {
-    var isMobile = window.innerWidth <= 768;
     ["icon-ch1", "icon-ch2"].forEach(m => {
         var btn = document.getElementById(`btnModel-${m}`);
+        if (!btn) return;
         var runs = availableRuns[m] || [];
         var activeRun = (currentModel === m) ? currentRunId : (runs[0] ? runs[0].id : null);
         var activeObj = runs.find(r => r.id === activeRun) || runs[0];
         var modName = (m === "icon-ch1") ? "CH1" : "CH2";
+        var timeTxt = activeObj ? activeObj.label : "--";
         
-        var runTxt = (activeObj && !isMobile) ? ` (${activeObj.label})` : "";
-        btn.innerText = `${modName}${runTxt} ▾`;
+        btn.innerHTML = `<span class="model-title">${modName} ▾</span><span class="model-time">${timeTxt}</span>`;
     });
 }
 
@@ -326,7 +323,6 @@ function toggleRunDropdown(modelName) {
     closeAllPopups();
     if (isAlreadyOpen) return;
 
-    var btn = document.getElementById(`btnModel-${modelName}`);
     var runs = availableRuns[modelName] || [];
     el.innerHTML = "";
 
@@ -347,8 +343,9 @@ function toggleRunDropdown(modelName) {
         });
     }
 
-    var rect = btn.getBoundingClientRect();
-    el.style.top = (rect.bottom + 6) + "px";
+    var header = document.querySelector(".model-select-header");
+    var rect = header.getBoundingClientRect();
+    el.style.top = (rect.bottom + 5) + "px";
     el.style.right = (window.innerWidth - rect.right) + "px";
     el.style.left = "auto";
     el.style.transform = "none";
@@ -409,7 +406,6 @@ async function loadModelAndRun(modelName, runId) {
         initDayButtons();
         initMemberPanel();
 
-        // 1. Exakt gleiche Lokalzeit im neuen Modelllauf beibehalten
         var bestStepIdx = 0;
         if (prevValidDate && times && times.length > 0) {
             var minDiff = Infinity;
@@ -424,7 +420,6 @@ async function loadModelAndRun(modelName, runId) {
         }
         currentStepIdx = bestStepIdx;
 
-        // 2. Member / Statistik beibehalten
         var vCfg = config.variables_config[layer1Var];
         var hasEns = vCfg ? vCfg.has_ensemble : true;
         if (!hasEns) {
@@ -436,7 +431,6 @@ async function loadModelAndRun(modelName, runId) {
         updateMemberPanelVisibility(hasEns);
         document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (vCfg ? vCfg.label : layer1Var);
 
-        // Standardmässig 60% (Wolken 95%)
         var initialOp1 = (vCfg && vCfg.palette === "cloud") ? 95 : 60;
         setLayerOpacity(1, initialOp1);
 
@@ -619,7 +613,6 @@ function setSecondaryVar(newVar) {
         cfgSec.style.opacity = "1";
         titleSec.innerText = "2. Ebene: " + lbl;
 
-        // Standardmässig 60% (Wolken 95%)
         var targetOp = (vCfg.palette === "cloud") ? 95 : 60;
         setLayerOpacity(2, targetOp);
     } else {
@@ -644,7 +637,6 @@ function switchLayer1(newVar) {
 
     document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (vCfg ? vCfg.label : layer1Var);
 
-    // Standardmässig 60% (Wolken 95%)
     var targetOp = (vCfg && vCfg.palette === "cloud") ? 95 : 60;
     setLayerOpacity(1, targetOp);
 
@@ -953,7 +945,6 @@ async function init() {
             preferCanvas: true
         });
 
-        // Dedizierte Panes für saubere Schichtung
         map.createPane('reliefPane');
         map.getPane('reliefPane').style.zIndex = '200';
         map.getPane('reliefPane').style.opacity = baseMapOpacity;
@@ -962,7 +953,6 @@ async function init() {
         map.getPane('waterPane').style.zIndex = '250';
         map.getPane('waterPane').style.opacity = baseMapOpacity;
 
-        // Eigene Grenze-Pane (immer 100% deckend!)
         map.createPane('boundaryPane');
         map.getPane('boundaryPane').style.zIndex = '280';
         map.getPane('boundaryPane').style.opacity = '1.0';
@@ -980,35 +970,30 @@ async function init() {
         map.getPane('cityPane').style.zIndex = '520';
         map.getPane('cityPane').style.pointerEvents = 'none';
 
-        // 1. Relief
         baseReliefLayer = L.tileLayer(swisstopo_relief_url, {
             pane: 'reliefPane',
             attribution: '&copy; <a href="https://www.swisstopo.admin.ch/" target="_blank">swisstopo</a> | Wetterdaten: &copy; <a href="https://www.meteoschweiz.admin.ch/" target="_blank">MeteoSchweiz</a>',
             maxZoom: 15, maxNativeZoom: 14
         }).addTo(map);
 
-        // 2. Seen
         lakesLayer = L.tileLayer(swisstopo_lakes_url, {
             pane: 'waterPane',
             maxZoom: 15, maxNativeZoom: 14,
             opacity: 0.85
         }).addTo(map);
 
-        // 3. Flüsse (dezent & dünner)
         riversLayer = L.tileLayer(swisstopo_rivers_url, {
             pane: 'waterPane',
             maxZoom: 15, maxNativeZoom: 14,
             opacity: 0.35
         }).addTo(map);
 
-        // 4. Landesgrenze (deckend schwarz)
         nationalBoundaryLayer = L.tileLayer(swisstopo_boundary_url, {
             pane: 'boundaryPane',
             className: 'boundary-national',
             maxZoom: 15, maxNativeZoom: 14
         }).addTo(map);
 
-        // 5. Kantonsgrenzen: Robuster LayerGroup
         cantonalBoundaryLayer = L.layerGroup();
         
         fetch("https://cdn.jsdelivr.net/gh/empet/Datasets@master/swiss-cantons.geojson")
