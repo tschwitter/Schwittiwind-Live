@@ -5,21 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ICON Wetter & Ensembles (CH1 & CH2)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=7" />
+    <link rel="stylesheet" href="style.css?v=10" />
 </head>
 <body>
-
-    <!-- SVG-FILTER: Rasiert Pixel von Rasterlinien ab, um sie dünner zu machen -->
-    <svg style="position: absolute; width: 0; height: 0; pointer-events: none;" aria-hidden="true">
-        <defs>
-            <filter id="thin-cantons">
-                <feMorphology operator="erode" radius="0.7" />
-            </filter>
-        </defs>
-    </svg>
-
-    <!-- Die Karte -->
-    <div id="map"></div>
 
     <!-- Die Karte -->
     <div id="map"></div>
@@ -157,6 +145,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=7"></script>
+    <script src="app.js?v=10"></script>
 </body>
 </html>
