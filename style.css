@@ -90,9 +90,10 @@ html, body {
 }
 
 .boundary-cantonal {
-    /* Macht die Kantonsgrenze dünner, indem die breiten Randpixel abgeschnitten werden */
-    filter: grayscale(100%) brightness(0.65) contrast(300%) !important;
-    opacity: 1.0 !important; /* Volle Deckkraft, nicht transparent! */
+/* Hauchdünne, 100% deckend schwarze Kantonsgrenzen via morphologischer Erosion */
+.boundary-cantonal {
+    filter: url(#thin-cantons) grayscale(100%) brightness(0) !important;
+    opacity: 1.0 !important; /* 100% deckend, nicht transparent! */
 }
 
 /* Schlichter neutral-grauer Hintergrund */
