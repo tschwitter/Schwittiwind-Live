@@ -20,7 +20,9 @@ var layer2Opacity = 0.60;
 
 var isWetterOpen = false;
 var isHoehenOpen = false;
-var isEnsembleOpen = false; // Standardmäßig minimiert
+
+// Zustand des Ensembles aus Speicher laden (Standard: geschlossen)
+var isEnsembleOpen = (localStorage.getItem("icon_ensemble_open") === "true");
 
 var currentMemberIdx = 0;
 var currentStepIdx = 0;
@@ -376,11 +378,13 @@ async function switchModel(newModel) {
     await loadModelAndRun(currentModel, runId);
 }
 
-// ================= ENSEMBLE-AKKORDEON =================
+// ================= ENSEMBLE-AKKORDEON MIT PERSISTENZ =================
 function toggleEnsembleAccordion(forceOpen) {
     if (forceOpen === true) isEnsembleOpen = true;
     else if (forceOpen === false) isEnsembleOpen = false;
     else isEnsembleOpen = !isEnsembleOpen;
+
+    localStorage.setItem("icon_ensemble_open", isEnsembleOpen ? "true" : "false");
 
     var cont = document.getElementById("ensembleContainer");
     var btn = document.getElementById("btnToggleEnsemble");
@@ -624,13 +628,14 @@ function setSecondaryVar(newVar) {
     closeAllPopups();
     
     var btn = document.getElementById("layer2Btn");
+    var labelEl = btn ? btn.querySelector(".notch-label") : null;
     var cfgSec = document.getElementById("cfgSectionL2");
     var titleSec = document.getElementById("cfgTitleL2");
 
     if (layer2Var) {
         var vCfg = config.variables_config[layer2Var] || {};
         var lbl = vCfg.label || layer2Var;
-        btn.innerText = "2. Ebene: " + lbl + " ✕";
+        if (labelEl) labelEl.innerText = "2. Ebene: " + lbl + " ✕";
         btn.classList.add("active");
         cfgSec.style.opacity = "1";
         titleSec.innerText = "2. Ebene: " + lbl;
@@ -638,7 +643,7 @@ function setSecondaryVar(newVar) {
         var targetOp = (vCfg.palette === "cloud") ? 95 : 60;
         setLayerOpacity(2, targetOp);
     } else {
-        btn.innerText = "+ 2. Ebene";
+        if (labelEl) labelEl.innerText = "+ 2. Ebene";
         btn.classList.remove("active");
         cfgSec.style.opacity = "0.5";
         titleSec.innerText = "2. Ebene: Keine";
@@ -673,7 +678,7 @@ function updateMemberPanelVisibility(hasEns) {
     if (notice) notice.style.display = hasEns ? "none" : "block";
 }
 
-// ================= 24H-SLIDER & DYNAMISCHE TAGES-PAGINIERUNG =================
+// ================= INTELLIGENTE VERTIKAL- & HORIZONTAL-NAVIGATION =================
 function navLeft() {
     var curDay = getDayNameForStep(currentStepIdx);
     var steps = dayTimesteps[curDay] || [];
@@ -715,9 +720,29 @@ function navRight() {
 function navUp() {
     if (verticalNavMode === 'run') {
         navRun(-1);
+        return;
+    }
+
+    var vCfg = config.variables_config[layer1Var];
+    if (vCfg && !vCfg.has_ensemble) return;
+
+    var statOffset = config.member_names.length - 6;
+
+    // INTELLIGENTES SPRINGEN WENN ENSEMBLE ZUGEKLAPPT IST
+    if (!isEnsembleOpen) {
+        if (currentMemberIdx >= statOffset) {
+            // Befindet man sich auf der ersten Statistik (Median), springt man direkt zum Hauptlauf
+            if (currentMemberIdx === statOffset) {
+                updateForecast(0, currentStepIdx);
+            } else {
+                updateForecast(currentMemberIdx - 1, currentStepIdx);
+            }
+        } else {
+            // Bleibt auf Hauptlauf (0)
+            updateForecast(0, currentStepIdx);
+        }
     } else {
-        var vCfg = config.variables_config[layer1Var];
-        if (vCfg && !vCfg.has_ensemble) return;
+        // Normaler schrittweiser Wechsel wenn ausgeklappt
         updateForecast(Math.max(0, currentMemberIdx - 1), currentStepIdx);
     }
 }
@@ -725,10 +750,29 @@ function navUp() {
 function navDown() {
     if (verticalNavMode === 'run') {
         navRun(1);
+        return;
+    }
+
+    var vCfg = config.variables_config[layer1Var];
+    if (vCfg && !vCfg.has_ensemble) return;
+
+    var maxIdx = config.member_names.length - 1;
+    var statOffset = config.member_names.length - 6;
+
+    // INTELLIGENTES SPRINGEN WENN ENSEMBLE ZUGEKLAPPT IST
+    if (!isEnsembleOpen) {
+        if (currentMemberIdx === 0) {
+            // Vom Hauptlauf direkt zur ersten Statistik (Median)
+            updateForecast(statOffset, currentStepIdx);
+        } else if (currentMemberIdx >= statOffset) {
+            updateForecast(Math.min(maxIdx, currentMemberIdx + 1), currentStepIdx);
+        } else {
+            // Befand man sich noch auf einem Member, springt man zur ersten Statistik
+            updateForecast(statOffset, currentStepIdx);
+        }
     } else {
-        var vCfg = config.variables_config[layer1Var];
-        if (vCfg && !vCfg.has_ensemble) return;
-        updateForecast(Math.min(config.member_names.length - 1, currentMemberIdx + 1), currentStepIdx);
+        // Normaler schrittweiser Wechsel wenn ausgeklappt
+        updateForecast(Math.min(maxIdx, currentMemberIdx + 1), currentStepIdx);
     }
 }
 
@@ -793,10 +837,7 @@ function initMemberPanel() {
             btn.innerText = isMobile ? "HL" : "Hauptlauf";
             hauptContainer.appendChild(btn);
         } else if (idx >= 1 && idx < config.member_names.length - 6) {
-            // Aus "Ens Member 1" wird "Member 1" (bzw. "M1" mobil)
-            var shortMemberName = name.replace("Ens Member", "Member").replace("Member", "Member ");
-            shortMemberName = shortMemberName.replace("  ", " ");
-            btn.innerText = isMobile ? "M" + idx : shortMemberName;
+            btn.innerText = isMobile ? "M" + idx : "Member " + idx;
             ensembleContainer.appendChild(btn);
         } else {
             var statOffset = config.member_names.length - 6;
@@ -1152,9 +1193,9 @@ async function updateForecast(newMemberIdx, newStepIdx) {
         if (btn) btn.classList.toggle("active", d === currentDayName);
     });
 
-    // Wenn ein Member gewählt ist, Klapp-Bereich automatisch öffnen
+    // Wenn ein einzelner Member direkt per Klick gewählt wird, öffnen
     var statOffset = config.member_names.length - 6;
-    if (currentMemberIdx >= 1 && currentMemberIdx < statOffset) {
+    if (currentMemberIdx >= 1 && currentMemberIdx < statOffset && !isEnsembleOpen) {
         toggleEnsembleAccordion(true);
     }
 
