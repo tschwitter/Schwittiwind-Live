@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ICON Wetter & Ensembles (CH1 & CH2)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=10" />
+    <link rel="stylesheet" href="style.css?v=11" />
 </head>
 <body>
 
@@ -82,8 +82,8 @@
             </div>
             <div class="settings-row">
                 <span>Transparenz:</span>
-                <input type="range" class="opacity-slider" id="opacitySliderL1" min="10" max="100" value="55" oninput="setLayerOpacity(1, this.value)">
-                <span id="opacityLabelL1" style="width: 30px; text-align: right;">55%</span>
+                <input type="range" class="opacity-slider" id="opacitySliderL1" min="0" max="100" value="60" oninput="setLayerOpacity(1, this.value)">
+                <span id="opacityLabelL1" style="width: 30px; text-align: right;">60%</span>
             </div>
         </div>
 
@@ -99,8 +99,8 @@
             </div>
             <div class="settings-row">
                 <span>Transparenz:</span>
-                <input type="range" class="opacity-slider" id="opacitySliderL2" min="10" max="100" value="65" oninput="setLayerOpacity(2, this.value)">
-                <span id="opacityLabelL2" style="width: 30px; text-align: right;">65%</span>
+                <input type="range" class="opacity-slider" id="opacitySliderL2" min="0" max="100" value="60" oninput="setLayerOpacity(2, this.value)">
+                <span id="opacityLabelL2" style="width: 30px; text-align: right;">60%</span>
             </div>
         </div>
     </div>
@@ -109,16 +109,16 @@
 
     <!-- RECHTES PANEL (LÄUFE) -->
     <div class="member-panel">
-        <div class="member-panel-title">Läufe</div>
-        <div class="member-section-title">Hauptlauf</div>
+        <div class="member-panel-title">LÄUFE</div>
+        <div class="member-section-title title-hl">Hauptlauf</div>
         <div id="hauptlaufContainer"></div>
         <div id="ensembleGroup">
-            <div class="member-section-title">Ensemble</div>
-            <div id="ensembleContainer"></div>
-            <div class="member-section-title">Statistiken</div>
-            <div id="statistikenContainer"></div>
+            <div class="member-section-title title-ens">Ensemble</div>
+            <div id="ensembleContainer" class="member-grid"></div>
+            <div class="member-section-title title-stat">Statistiken</div>
+            <div id="statistikenContainer" class="member-grid"></div>
         </div>
-        <div id="onlyHlNotice" class="only-hl-info">Nur Hauptlauf</div>
+        <div id="onlyHlNotice" class="only-hl-info">Nur Hauptlauf verfügbar</div>
     </div>
 
     <!-- UNTERES KONTROLLZENTRUM -->
@@ -145,6 +145,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=10"></script>
+    <script src="app.js?v=11"></script>
 </body>
 </html>
