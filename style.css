@@ -185,7 +185,7 @@ html, body {
     box-shadow: 0 0 8px rgba(0, 122, 183, 0.4);
 }
 
-/* --- 2. EBENE: SEHR FLACH & ORGANISCH GESCHWUNGEN AM AUSSENRAHMEN --- */
+/* --- 2. EBENE: WATERDROP NOTCH LOOK --- */
 .layer2-anchor-wrap {
     display: flex;
     justify-content: center;
@@ -196,43 +196,69 @@ html, body {
 }
 
 .layer2-btn {
+    position: relative;
     background: rgba(24, 33, 42, 0.96);
-    border: 1px solid rgba(255,255,255,0.18);
+    border: 1px solid rgba(255,255,255,0.22);
     border-top: none;
     color: #cbd5e1;
     font-family: Arial, sans-serif;
     font-size: 11px; font-weight: bold;
-    padding: 6px 36px 5px 36px;
+    padding: 5px 28px 6px 28px;
     cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center;
     white-space: nowrap;
-    border-radius: 0 0 18px 18px;
-    clip-path: polygon(
-        0% 0%, 
-        100% 0%, 
-        96% 25%, 
-        88% 70%, 
-        80% 92%, 
-        72% 100%, 
-        28% 100%, 
-        20% 92%, 
-        12% 70%, 
-        4% 25%
-    );
+    
+    /* Organische Tropfen-Notch mit weichen Übergängen */
+    border-radius: 0 0 20px 20px;
     box-shadow: 0 6px 14px rgba(0,0,0,0.55);
     transition: all 0.2s ease;
 }
+
+/* Weich auslaufende Tropfen-Flanken links und rechts */
+.layer2-btn::before,
+.layer2-btn::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    width: 14px;
+    height: 12px;
+    pointer-events: none;
+}
+
+.layer2-btn::before {
+    left: -14px;
+    background: radial-gradient(circle at 0 0, transparent 13px, rgba(24, 33, 42, 0.96) 13.5px);
+}
+
+.layer2-btn::after {
+    right: -14px;
+    background: radial-gradient(circle at 100% 0, transparent 13px, rgba(24, 33, 42, 0.96) 13.5px);
+}
+
 .layer2-btn:hover {
     background: rgba(30, 42, 54, 0.98);
     color: #ffffff;
-    padding-top: 7px;
+    padding-top: 6px;
 }
+.layer2-btn:hover::before {
+    background: radial-gradient(circle at 0 0, transparent 13px, rgba(30, 42, 54, 0.98) 13.5px);
+}
+.layer2-btn:hover::after {
+    background: radial-gradient(circle at 100% 0, transparent 13px, rgba(30, 42, 54, 0.98) 13.5px);
+}
+
 .layer2-btn.active {
     background-color: #2e7d32;
     color: white;
     border-color: #81c784;
     border-top: none;
     box-shadow: 0 0 10px rgba(46, 125, 50, 0.65), 0 4px 10px rgba(0,0,0,0.4);
+}
+.layer2-btn.active::before {
+    background: radial-gradient(circle at 0 0, transparent 13px, #2e7d32 13.5px);
+}
+.layer2-btn.active::after {
+    background: radial-gradient(circle at 100% 0, transparent 13px, #2e7d32 13.5px);
 }
 
 /* --- MODELL-AUSWAHL RECHTS ÜBER DEM PANEL --- */
@@ -457,6 +483,34 @@ html, body {
     color: #ffffff !important;
 }
 
+/* KLAPP-BUTTON FÜR DAS ENSEMBLE */
+.member-section-toggle {
+    width: 100%;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    color: #ffffff;
+    font-family: Arial, sans-serif;
+    font-size: 10px; font-weight: bold;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 5px 8px;
+    margin: 8px 0 4px 0;
+    display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+}
+.member-section-toggle:hover {
+    background: rgba(255,255,255,0.1);
+}
+.member-section-toggle .chevron {
+    font-size: 10px;
+    transition: transform 0.2s ease;
+}
+.member-section-toggle.open .chevron {
+    transform: rotate(180deg);
+}
+
 .member-btn {
     width: 100%;
     background-color: rgba(255,255,255,0.06);
@@ -590,7 +644,7 @@ html, body {
     .top-control-panel { top: 6px; }
     .top-row { padding: 2px 4px; gap: 2px; border-radius: 14px; }
     .var-btn, .nav-toggle-btn { font-size: 10px; padding: 4px 6px; border-radius: 10px; }
-    .layer2-btn { font-size: 9.5px; padding: 5px 22px 4px 22px; }
+    .layer2-btn { font-size: 9.5px; padding: 4px 20px 5px 20px; border-radius: 0 0 16px 16px; }
     
     .model-select-header { top: 8px; right: 6px; width: 58px; }
     .model-title { font-size: 9px; }
@@ -599,6 +653,7 @@ html, body {
     .control-panel { bottom: 8px; left: 8px; right: 8px; width: auto; transform: none; padding: 8px 10px; }
     .member-panel { top: 66px; right: 6px; width: 58px; padding: 6px 2px; border-radius: 10px; }
     .member-panel-title, .member-section-title { display: none; }
+    .member-section-toggle { font-size: 8.5px; padding: 3px 2px; }
     .member-btn { font-size: 9.5px; padding: 5px 1px; border-radius: 8px; }
     .nav-mode-btn { width: 30px; height: 38px; font-size: 9px; margin-left: 3px; }
     .legend-box { bottom: 135px; left: 8px; padding: 5px; }
