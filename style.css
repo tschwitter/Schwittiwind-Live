@@ -183,37 +183,11 @@ html, body {
     color: #a5d6a7;
 }
 
-/* UNTERE LEISTE */
+/* 2. EBENE ZEILE (ALLEINE MITTIG) */
 .bottom-nav-row {
-    padding: 2px 6px;
-    gap: 5px;
+    padding: 2px 8px;
     background-color: rgba(20, 28, 36, 0.95);
     border-color: rgba(0, 122, 183, 0.35);
-}
-
-.model-toggle-group {
-    display: flex;
-    gap: 2px;
-    background: rgba(0,0,0,0.35);
-    border-radius: 14px;
-    padding: 2px;
-}
-
-.model-btn {
-    background: transparent;
-    border: none; border-radius: 12px;
-    color: #8faec5;
-    font-family: Arial, sans-serif;
-    font-size: 11px; font-weight: bold;
-    padding: 4px 10px;
-    cursor: pointer; transition: all 0.2s;
-    white-space: nowrap;
-    display: flex; align-items: center; gap: 3px;
-}
-.model-btn.active {
-    background-color: #007ab7;
-    color: white;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
 }
 
 .layer2-btn {
@@ -223,7 +197,7 @@ html, body {
     color: #ccc;
     font-family: Arial, sans-serif;
     font-size: 11px; font-weight: bold;
-    padding: 4px 10px;
+    padding: 4px 12px;
     cursor: pointer;
     display: flex; align-items: center; gap: 4px;
     white-space: nowrap;
@@ -231,6 +205,43 @@ html, body {
 }
 .layer2-btn:hover { background-color: rgba(255,255,255,0.12); color: white; }
 .layer2-btn.active { background-color: #2e7d32; color: white; border-color: #81c784; }
+
+/* --- MODELL-AUSWAHL RECHTS ÜBER DEM PANEL --- */
+.model-select-header {
+    position: fixed;
+    top: 25px;
+    right: 20px;
+    z-index: 10000;
+}
+
+.model-toggle-group {
+    display: flex;
+    gap: 3px;
+    background: rgba(24, 33, 42, 0.94);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 14px;
+    padding: 3px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+
+.model-btn {
+    background: transparent;
+    border: none; border-radius: 11px;
+    color: #cbd5e1;
+    font-family: Arial, sans-serif;
+    font-size: 11px; font-weight: bold;
+    padding: 4px 11px;
+    cursor: pointer; transition: all 0.2s;
+    white-space: nowrap;
+    display: flex; align-items: center; gap: 3px;
+}
+.model-btn:hover { color: #ffffff; background: rgba(255,255,255,0.08); }
+.model-btn.active {
+    background-color: #007ab7;
+    color: white;
+    box-shadow: 0 2px 6px rgba(0, 122, 183, 0.45);
+}
 
 /* --- SCHWEBENDE POPUPS & DROPDOWNS --- */
 .floating-popup {
@@ -293,12 +304,18 @@ html, body {
 .settings-title {
     font-size: 13px; font-weight: bold; border-bottom: 1px solid rgba(255,255,255,0.2);
     padding-bottom: 6px; margin-bottom: 10px; text-align: center;
+    color: #ffffff !important;
 }
 .settings-section {
     background: rgba(255,255,255,0.05);
     border-radius: 6px; padding: 8px; margin-bottom: 8px;
 }
-.settings-section-title { font-size: 11px; font-weight: bold; color: #81c784; margin-bottom: 6px; }
+/* Alle Abschnittsüberschriften weiß */
+.settings-section-title { 
+    font-size: 11px; font-weight: bold; 
+    color: #ffffff !important; 
+    margin-bottom: 6px; 
+}
 .settings-row {
     display: flex; align-items: center; justify-content: space-between;
     font-size: 11px; margin-bottom: 6px;
@@ -328,10 +345,10 @@ html, body {
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
 }
 
-/* --- VERTICAL PANEL (RECHTS) - MODERN DARK GLASS LOOK --- */
+/* --- VERTICAL PANEL (RECHTS) --- */
 .member-panel {
     position: fixed;
-    top: 75px; right: 20px; bottom: 150px;
+    top: 72px; right: 20px; bottom: 150px;
     width: 155px;
     background-color: rgba(24, 33, 42, 0.94);
     backdrop-filter: blur(8px);
@@ -345,7 +362,6 @@ html, body {
     overflow-y: auto; box-sizing: border-box;
 }
 
-/* Subtile Scrollbar für das Member-Panel */
 .member-panel::-webkit-scrollbar {
     width: 4px;
 }
@@ -361,16 +377,16 @@ html, body {
     font-weight: bold; font-size: 12px; letter-spacing: 1px;
     text-align: center; margin-bottom: 8px;
     border-bottom: 1px solid rgba(255,255,255,0.15);
-    padding-bottom: 5px; color: #8faec5;
+    padding-bottom: 5px; 
+    color: #ffffff !important;
 }
 
+/* Alle Überschriften im Läufe-Panel weiß */
 .member-section-title {
     font-size: 10px; font-weight: bold;
     margin: 8px 0 4px 2px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: #ffffff !important;
 }
-.title-hl { color: #ffb74d; }
-.title-ens { color: #81c784; }
-.title-stat { color: #64b5f6; }
 
 .member-btn {
     width: 100%;
@@ -497,9 +513,12 @@ html, body {
     .custom-settings-control { top: 78px; left: 8px; }
     .top-control-panel { top: 6px; gap: 3px; }
     .top-row { padding: 2px 4px; gap: 2px; border-radius: 14px; }
-    .model-btn { font-size: 9.5px; padding: 3px 6px; }
     .var-btn, .nav-toggle-btn { font-size: 10px; padding: 4px 6px; border-radius: 10px; }
-    .layer2-btn { font-size: 9.5px; padding: 3px 6px; }
+    .layer2-btn { font-size: 9.5px; padding: 3px 8px; }
+    
+    .model-select-header { top: 10px; right: 6px; }
+    .model-btn { font-size: 9px; padding: 3px 6px; }
+
     .control-panel { bottom: 8px; left: 8px; right: 8px; width: auto; transform: none; padding: 8px 10px; }
     .member-panel { top: 50px; right: 6px; width: 52px; padding: 6px 2px; border-radius: 10px; }
     .member-panel-title, .member-section-title { display: none; }
