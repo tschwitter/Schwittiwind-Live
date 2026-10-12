@@ -9,6 +9,18 @@
 </head>
 <body>
 
+    <!-- SVG-FILTER: Rasiert Pixel von Rasterlinien ab, um sie dünner zu machen -->
+    <svg style="position: absolute; width: 0; height: 0; pointer-events: none;" aria-hidden="true">
+        <defs>
+            <filter id="thin-cantons">
+                <feMorphology operator="erode" radius="0.7" />
+            </filter>
+        </defs>
+    </svg>
+
+    <!-- Die Karte -->
+    <div id="map"></div>
+
     <!-- Die Karte -->
     <div id="map"></div>
 
