@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ICON Wetter & Ensembles (CH1 & CH2)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=11" />
+    <link rel="stylesheet" href="style.css?v=12" />
 </head>
 <body>
 
     <!-- Die Karte -->
     <div id="map"></div>
 
-    <!-- EINSTELLUNGS-BUTTON OBEN LINKS (SAUBER UNTER DEN LEAFLET ZOOM + / - TASTEN) -->
+    <!-- EINSTELLUNGS-BUTTON OBEN LINKS (UNTER LEAFLET ZOOM + / -) -->
     <div class="custom-settings-control">
         <a href="#" class="settings-control-btn" id="settingsBtn" onclick="toggleSettings(event)" title="Karten- & Ebenen-Optionen">⚙</a>
     </div>
@@ -33,14 +33,17 @@
         <!-- ZEILE 3: HÖHENWIND-SUBLEISTE -->
         <div class="top-row sub-nav-row" id="hoehenSubRow" style="display: none;"></div>
 
-        <!-- ZEILE 4: MODELLE (CH1/CH2) + 2. EBENE -->
+        <!-- ZEILE 4: 2. EBENE (ALLEINE MITTIG) -->
         <div class="top-row bottom-nav-row">
-            <div class="model-toggle-group">
-                <button class="model-btn active" id="btnModel-icon-ch1" onclick="handleModelButtonClick('icon-ch1')">CH1 ▾</button>
-                <button class="model-btn" id="btnModel-icon-ch2" onclick="handleModelButtonClick('icon-ch2')">CH2 ▾</button>
-            </div>
-
             <button class="layer2-btn" id="layer2Btn" onclick="toggleLayer2Dropdown()">+ 2. Ebene</button>
+        </div>
+    </div>
+
+    <!-- MODELL-AUSWAHL RECHTS ÜBER DEM LÄUFE-PANEL -->
+    <div class="model-select-header">
+        <div class="model-toggle-group">
+            <button class="model-btn active" id="btnModel-icon-ch1" onclick="handleModelButtonClick('icon-ch1')">CH1 ▾</button>
+            <button class="model-btn" id="btnModel-icon-ch2" onclick="handleModelButtonClick('icon-ch2')">CH2 ▾</button>
         </div>
     </div>
 
@@ -55,7 +58,7 @@
         
         <!-- HINTERGRUNDKARTE: STIL & TRANSPARENZ -->
         <div class="settings-section">
-            <div class="settings-section-title" style="color: #ffb74d;">Hintergrundkarte</div>
+            <div class="settings-section-title">Hintergrundkarte</div>
             <div class="settings-row">
                 <span>Kartenstil:</span>
                 <div class="mode-toggle-group">
@@ -89,7 +92,7 @@
 
         <!-- 2. EBENE -->
         <div class="settings-section" id="cfgSectionL2" style="opacity: 0.5;">
-            <div class="settings-section-title" id="cfgTitleL2" style="color: #64b5f6;">2. Ebene: Keine</div>
+            <div class="settings-section-title" id="cfgTitleL2">2. Ebene: Keine</div>
             <div class="settings-row">
                 <span>Darstellung:</span>
                 <div class="mode-toggle-group">
@@ -110,12 +113,12 @@
     <!-- RECHTES PANEL (LÄUFE) -->
     <div class="member-panel">
         <div class="member-panel-title">LÄUFE</div>
-        <div class="member-section-title title-hl">Hauptlauf</div>
+        <div class="member-section-title">Hauptlauf</div>
         <div id="hauptlaufContainer"></div>
         <div id="ensembleGroup">
-            <div class="member-section-title title-ens">Ensemble</div>
+            <div class="member-section-title">Ensemble</div>
             <div id="ensembleContainer" class="member-grid"></div>
-            <div class="member-section-title title-stat">Statistiken</div>
+            <div class="member-section-title">Statistiken</div>
             <div id="statistikenContainer" class="member-grid"></div>
         </div>
         <div id="onlyHlNotice" class="only-hl-info">Nur Hauptlauf verfügbar</div>
@@ -145,6 +148,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=11"></script>
+    <script src="app.js?v=12"></script>
 </body>
 </html>
