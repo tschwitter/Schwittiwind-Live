@@ -3,6 +3,7 @@ var map, config, times;
 var currentModel = "icon-ch1";
 var currentRunId = null;
 var availableRuns = { "icon-ch1": [], "icon-ch2": [] };
+var selectedRuns = { "icon-ch1": null, "icon-ch2": null };
 
 var verticalNavMode = 'member'; // 'member' oder 'run'
 
@@ -215,7 +216,6 @@ function closeAllPopups() {
     document.getElementById("layer2Dropdown").style.display = "none";
     document.getElementById("settingsPopup").style.display = "none";
     
-    // Panel-Abdunklung entfernen
     var p = document.getElementById("memberPanel");
     if (p) p.classList.remove("panel-dimmed");
 }
@@ -312,7 +312,7 @@ function updateModelButtonLabels() {
         var btn = document.getElementById(`btnModel-${m}`);
         if (!btn) return;
         var runs = availableRuns[m] || [];
-        var activeRun = (currentModel === m) ? currentRunId : (runs[0] ? runs[0].id : null);
+        var activeRun = (currentModel === m) ? currentRunId : (selectedRuns[m] || (runs[0] ? runs[0].id : null));
         var activeObj = runs.find(r => r.id === activeRun) || runs[0];
         var modName = (m === "icon-ch1") ? "CH1" : "CH2";
         var timeTxt = activeObj ? activeObj.label : "--";
@@ -355,7 +355,6 @@ function toggleRunDropdown(modelName) {
     el.style.transform = "none";
     el.style.display = "flex";
 
-    // Panel während Dropdown geöffnet ist deutlich abdunkeln
     var p = document.getElementById("memberPanel");
     if (p) p.classList.add("panel-dimmed");
 }
@@ -364,6 +363,7 @@ async function selectRun(modelName, runId) {
     closeAllPopups();
     currentModel = modelName;
     currentRunId = runId;
+    selectedRuns[modelName] = runId;
     await loadModelAndRun(currentModel, currentRunId);
 }
 
@@ -371,7 +371,7 @@ async function switchModel(newModel) {
     if (currentModel === newModel && config) return;
     currentModel = newModel;
     var runs = availableRuns[currentModel] || [];
-    var runId = (runs.length > 0) ? runs[0].id : null;
+    var runId = selectedRuns[currentModel] || (runs.length > 0 ? runs[0].id : null);
     await loadModelAndRun(currentModel, runId);
 }
 
@@ -391,6 +391,7 @@ async function loadModelAndRun(modelName, runId) {
         var runs = availableRuns[modelName] || [];
         if (!runId && runs.length > 0) runId = runs[0].id;
         currentRunId = runId;
+        selectedRuns[modelName] = currentRunId;
 
         updateModelButtonLabels();
 
