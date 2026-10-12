@@ -153,7 +153,6 @@ html, body {
 }
 .var-btn:hover { color: white; }
 
-/* AKTIVER PARAMETER MIT DEZENTEM CYAN/BLAU-GLOW */
 .var-btn.active {
     background-color: #007ab7;
     color: white;
@@ -186,12 +185,12 @@ html, body {
     box-shadow: 0 0 8px rgba(0, 122, 183, 0.4);
 }
 
-/* --- 2. EBENE: V-FÖRMIG & GESCHWUNGEN AM AUSSENRAHMEN --- */
+/* --- 2. EBENE: SEHR FLACH & ORGANISCH GESCHWUNGEN AM AUSSENRAHMEN --- */
 .layer2-anchor-wrap {
     display: flex;
     justify-content: center;
     position: relative;
-    margin-top: -1px; /* Exakt bündig am Außenrahmen der Hauptleiste */
+    margin-top: -1px;
     z-index: 1;
     pointer-events: auto;
 }
@@ -199,17 +198,27 @@ html, body {
 .layer2-btn {
     background: rgba(24, 33, 42, 0.96);
     border: 1px solid rgba(255,255,255,0.18);
-    border-top: none; /* Verschmilzt fugenlos mit dem Außenrahmen */
+    border-top: none;
     color: #cbd5e1;
     font-family: Arial, sans-serif;
     font-size: 11px; font-weight: bold;
-    padding: 6px 26px 5px 26px;
+    padding: 6px 36px 5px 36px;
     cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center;
     white-space: nowrap;
-    /* Geschwungene V-Flanken nach unten */
-    border-radius: 0 0 16px 16px;
-    clip-path: polygon(4% 0%, 96% 0%, 86% 100%, 14% 100%);
+    border-radius: 0 0 18px 18px;
+    clip-path: polygon(
+        0% 0%, 
+        100% 0%, 
+        96% 25%, 
+        88% 70%, 
+        80% 92%, 
+        72% 100%, 
+        28% 100%, 
+        20% 92%, 
+        12% 70%, 
+        4% 25%
+    );
     box-shadow: 0 6px 14px rgba(0,0,0,0.55);
     transition: all 0.2s ease;
 }
@@ -324,7 +333,6 @@ html, body {
 }
 .run-item:hover { background: #007ab7; color: white; }
 
-/* AKTIVER LAUF: BLAU MIT CYAN-GLOW */
 .run-item.active { 
     background: #007ab7; 
     color: white;
@@ -418,7 +426,6 @@ html, body {
     transition: opacity 0.25s ease, filter 0.25s ease;
 }
 
-/* WIRD AKTIVIERT WENN EIN MODELL-DROPDOWN OFFEN IST */
 .member-panel.panel-dimmed {
     opacity: 0.22 !important;
     filter: blur(1px);
@@ -502,7 +509,6 @@ html, body {
     box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: all 0.2s;
 }
 
-/* AKTIVER TAG MIT BLAU-GLOW */
 .day-btn.active { 
     background: #007ab7; 
     color: white; 
@@ -584,9 +590,8 @@ html, body {
     .top-control-panel { top: 6px; }
     .top-row { padding: 2px 4px; gap: 2px; border-radius: 14px; }
     .var-btn, .nav-toggle-btn { font-size: 10px; padding: 4px 6px; border-radius: 10px; }
-    .layer2-btn { font-size: 9.5px; padding: 5px 18px 4px 18px; }
+    .layer2-btn { font-size: 9.5px; padding: 5px 22px 4px 22px; }
     
-    /* Mobile: Header & Panel mit ausreichend Abstand nach unten */
     .model-select-header { top: 8px; right: 6px; width: 58px; }
     .model-title { font-size: 9px; }
     .model-time { font-size: 7.5px; }
