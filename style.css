@@ -83,17 +83,17 @@ html, body {
     white-space: nowrap;
 }
 
-/* --- PRÄZISE SWISSTOPO-GRENZEN --- */
+/* --- SWISSTOPO GRENZEN --- */
+/* Landesgrenze: deckend schwarz */
 .boundary-national {
     filter: grayscale(100%) brightness(0) !important;
     opacity: 1.0 !important;
 }
 
+/* Kantonsgrenzen: Fallback-Rasterlayer (falls offline) */
 .boundary-cantonal {
-/* Hauchdünne, 100% deckend schwarze Kantonsgrenzen via morphologischer Erosion */
-.boundary-cantonal {
-    filter: url(#thin-cantons) grayscale(100%) brightness(0) !important;
-    opacity: 1.0 !important; /* 100% deckend, nicht transparent! */
+    filter: grayscale(100%) brightness(0) !important;
+    opacity: 0.60 !important;
 }
 
 /* Schlichter neutral-grauer Hintergrund */
@@ -302,7 +302,7 @@ html, body {
 }
 .settings-section-title { font-size: 11px; font-weight: bold; color: #81c784; margin-bottom: 6px; }
 .settings-row {
-    display: flex align-items: center; justify-content: space-between;
+    display: flex; align-items: center; justify-content: space-between;
     font-size: 11px; margin-bottom: 6px;
 }
 .mode-toggle-group {
