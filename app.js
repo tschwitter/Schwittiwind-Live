@@ -20,6 +20,7 @@ var layer2Opacity = 0.60;
 
 var isWetterOpen = false;
 var isHoehenOpen = false;
+var isEnsembleOpen = false; // Standardmäßig minimiert
 
 var currentMemberIdx = 0;
 var currentStepIdx = 0;
@@ -373,6 +374,18 @@ async function switchModel(newModel) {
     var runs = availableRuns[currentModel] || [];
     var runId = selectedRuns[currentModel] || (runs.length > 0 ? runs[0].id : null);
     await loadModelAndRun(currentModel, runId);
+}
+
+// ================= ENSEMBLE-AKKORDEON =================
+function toggleEnsembleAccordion(forceOpen) {
+    if (forceOpen === true) isEnsembleOpen = true;
+    else if (forceOpen === false) isEnsembleOpen = false;
+    else isEnsembleOpen = !isEnsembleOpen;
+
+    var cont = document.getElementById("ensembleContainer");
+    var btn = document.getElementById("btnToggleEnsemble");
+    if (cont) cont.style.display = isEnsembleOpen ? "block" : "none";
+    if (btn) btn.classList.toggle("open", isEnsembleOpen);
 }
 
 // ================= KERN-LADEN =================
@@ -794,6 +807,12 @@ function initMemberPanel() {
         }
         btn.onclick = function() { updateForecast(idx, currentStepIdx); };
     });
+
+    // Akkordeon Zustand nach Modell-Neuladen anwenden
+    var cont = document.getElementById("ensembleContainer");
+    var tBtn = document.getElementById("btnToggleEnsemble");
+    if (cont) cont.style.display = isEnsembleOpen ? "block" : "none";
+    if (tBtn) tBtn.classList.toggle("open", isEnsembleOpen);
 }
 
 function renderSingleLegendCol(varName, isIQR) {
@@ -1130,6 +1149,12 @@ async function updateForecast(newMemberIdx, newStepIdx) {
         var btn = document.getElementById("day-btn-" + d);
         if (btn) btn.classList.toggle("active", d === currentDayName);
     });
+
+    // Falls ein Ensemble-Member angewählt wurde, Ensemble-Gruppe automatisch aufklappen
+    var statOffset = config.member_names.length - 6;
+    if (currentMemberIdx >= 1 && currentMemberIdx < statOffset) {
+        toggleEnsembleAccordion(true);
+    }
 
     for (var i = 0; i < config.member_names.length; i++) {
         var btn = document.getElementById("member-btn-" + i);
