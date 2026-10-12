@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ICON Wetter & Ensembles (CH1 & CH2)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=16" />
+    <link rel="stylesheet" href="style.css?v=17" />
 </head>
 <body>
 
@@ -33,7 +33,7 @@
         <!-- ZEILE 3: HÖHENWIND-SUBLEISTE -->
         <div class="top-row sub-nav-row" id="hoehenSubRow" style="display: none;"></div>
 
-        <!-- 2. EBENE: ECHTE WATERDROP NOTCH AM AUSSENRAHMEN -->
+        <!-- 2. EBENE: PERFEKT GESCHWUNGENE DROP-NOTCH -->
         <div class="layer2-anchor-wrap">
             <button class="layer2-btn" id="layer2Btn" onclick="toggleLayer2Dropdown()">+ 2. Ebene</button>
         </div>
@@ -122,9 +122,11 @@
         <div class="member-section-title">Hauptlauf</div>
         <div id="hauptlaufContainer"></div>
         <div id="ensembleGroup">
-            <!-- KLAPPBARE ENSEMBLE-LEISTE (STANDARDMÄSSIG ZUGEKLAPPT) -->
+            <!-- ENSEMBLE TITEL BLEIBT ERHALTEN -->
+            <div class="member-section-title" style="margin-top: 10px;">Ensemble</div>
+            <!-- KLAPP-BUTTON FÜR MEMBERS -->
             <button class="member-section-toggle" id="btnToggleEnsemble" onclick="toggleEnsembleAccordion()">
-                <span>Ensemble</span>
+                <span>Members</span>
                 <span id="ensembleChevron" class="chevron">▾</span>
             </button>
             <div id="ensembleContainer" class="member-grid" style="display: none;"></div>
@@ -159,6 +161,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=16"></script>
+    <script src="app.js?v=17"></script>
 </body>
 </html>
