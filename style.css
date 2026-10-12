@@ -84,13 +84,11 @@ html, body {
 }
 
 /* --- SWISSTOPO GRENZEN --- */
-/* Landesgrenze: deckend schwarz */
 .boundary-national {
     filter: grayscale(100%) brightness(0) !important;
     opacity: 1.0 !important;
 }
 
-/* Kantonsgrenzen: Fallback-Rasterlayer (falls offline) */
 .boundary-cantonal {
     filter: grayscale(100%) brightness(0) !important;
     opacity: 0.60 !important;
@@ -330,43 +328,78 @@ html, body {
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
 }
 
-/* --- VERTICAL PANEL (RECHTS) --- */
+/* --- VERTICAL PANEL (RECHTS) - MODERN DARK GLASS LOOK --- */
 .member-panel {
     position: fixed;
     top: 75px; right: 20px; bottom: 150px;
-    width: 150px;
-    background-color: rgba(33, 43, 54, 0.85);
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 8px;
-    padding: 12px 8px;
+    width: 155px;
+    background-color: rgba(24, 33, 42, 0.94);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 14px;
+    padding: 10px 8px;
     z-index: 9999;
-    box-shadow: 4px 4px 12px rgba(0,0,0,0.5);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.65);
     font-family: Arial, sans-serif; color: white;
     display: flex; flex-direction: column;
     overflow-y: auto; box-sizing: border-box;
 }
-.member-panel-title {
-    font-weight: bold; font-size: 15px; text-align: center;
-    margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.2);
-    padding-bottom: 6px;
+
+/* Subtile Scrollbar für das Member-Panel */
+.member-panel::-webkit-scrollbar {
+    width: 4px;
 }
+.member-panel::-webkit-scrollbar-track {
+    background: transparent;
+}
+.member-panel::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.2);
+    border-radius: 4px;
+}
+
+.member-panel-title {
+    font-weight: bold; font-size: 12px; letter-spacing: 1px;
+    text-align: center; margin-bottom: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.15);
+    padding-bottom: 5px; color: #8faec5;
+}
+
 .member-section-title {
-    font-size: 11px; font-weight: bold; color: #aaa;
+    font-size: 10px; font-weight: bold;
     margin: 8px 0 4px 2px; text-transform: uppercase; letter-spacing: 0.5px;
 }
+.title-hl { color: #ffb74d; }
+.title-ens { color: #81c784; }
+.title-stat { color: #64b5f6; }
+
 .member-btn {
     width: 100%;
-    background-color: rgba(255,255,255,0.15);
-    border: none; border-radius: 6px;
-    color: white; font-weight: bold; font-size: 12px;
-    padding: 8px 6px; margin: 3px 0;
+    background-color: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    color: #e0e0e0; font-weight: bold; font-size: 11px;
+    padding: 6px 4px; margin: 2px 0;
     cursor: pointer; text-align: center;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-    transition: background 0.2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    transition: all 0.15s ease-in-out;
+    user-select: none;
 }
-.member-btn:hover { background-color: rgba(255,255,255,0.25); }
-.member-btn.active { background-color: #007ab7; color: white; }
-.only-hl-info { display: none; font-size: 11px; color: #aaa; text-align: center; padding: 10px 4px; font-style: italic; }
+.member-btn:hover { 
+    background-color: rgba(255,255,255,0.16);
+    color: #ffffff;
+    border-color: rgba(255,255,255,0.25);
+}
+.member-btn.active { 
+    background-color: #007ab7; 
+    color: white; 
+    border-color: #70c4ff;
+    box-shadow: 0 2px 8px rgba(0, 122, 183, 0.55);
+}
+
+.only-hl-info { 
+    display: none; font-size: 10.5px; color: #999; 
+    text-align: center; padding: 12px 4px; font-style: italic; 
+}
 
 /* --- KONTROLLZENTRUM (UNTEN MITTE) --- */
 .control-panel {
@@ -468,9 +501,9 @@ html, body {
     .var-btn, .nav-toggle-btn { font-size: 10px; padding: 4px 6px; border-radius: 10px; }
     .layer2-btn { font-size: 9.5px; padding: 3px 6px; }
     .control-panel { bottom: 8px; left: 8px; right: 8px; width: auto; transform: none; padding: 8px 10px; }
-    .member-panel { top: 50px; right: 6px; width: 50px; padding: 6px 2px; }
+    .member-panel { top: 50px; right: 6px; width: 52px; padding: 6px 2px; border-radius: 10px; }
     .member-panel-title, .member-section-title { display: none; }
-    .member-btn { font-size: 10px; padding: 5px 1px; }
+    .member-btn { font-size: 9.5px; padding: 5px 1px; border-radius: 8px; }
     .nav-mode-btn { width: 30px; height: 38px; font-size: 9px; margin-left: 3px; }
     .legend-box { bottom: 135px; left: 8px; padding: 5px; }
     .legend-column { width: 52px; }
