@@ -349,8 +349,9 @@ function toggleRunDropdown(modelName) {
 
     var rect = btn.getBoundingClientRect();
     el.style.top = (rect.bottom + 6) + "px";
-    el.style.left = (rect.left + rect.width / 2) + "px";
-    el.style.transform = "translateX(-50%)";
+    el.style.right = (window.innerWidth - rect.right) + "px";
+    el.style.left = "auto";
+    el.style.transform = "none";
     el.style.display = "flex";
 }
 
@@ -1010,7 +1011,6 @@ async function init() {
         // 5. Kantonsgrenzen: Robuster LayerGroup
         cantonalBoundaryLayer = L.layerGroup();
         
-        // Hauchdünne Vektorgrenzen
         fetch("https://cdn.jsdelivr.net/gh/empet/Datasets@master/swiss-cantons.geojson")
             .then(res => res.json())
             .then(geojson => {
