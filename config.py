@@ -32,12 +32,12 @@ MODELS_CONFIG = {
         "name": "ICON-CH1 (1km)",
         "collection": "ogd-forecasting-icon-ch1",
         "hhl_asset": "vertical_constants_icon-ch1-eps.grib2",
-        "hours": 33,
+        "hours": 3,
         "max_members": 11,
         "max_runs": 8,  # Volle 24 Stunden (8 Läufe à 3 Stunden)
-        "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"],
+        "active_variables": ["wind"],
         #, "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
-        "ensemble_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl",  "wind1500"],
+        "ensemble_variables": [],
         #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl",  "wind1500"
         "max_chunks": 4
     },
@@ -48,9 +48,9 @@ MODELS_CONFIG = {
         "hours": 120,
         "max_members": 21,
         "max_runs": 4,  # Volle 24 Stunden (4 Läufe à 6 Stunden)
-        "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"],
+        "active_variables": [],
         #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"
-        "ensemble_variables": ["wind", "sun"],
+        "ensemble_variables": [],
         #"wind", "sun"
         "max_chunks": 4
     }
