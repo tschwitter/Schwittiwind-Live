@@ -793,7 +793,10 @@ function initMemberPanel() {
             btn.innerText = isMobile ? "HL" : "Hauptlauf";
             hauptContainer.appendChild(btn);
         } else if (idx >= 1 && idx < config.member_names.length - 6) {
-            btn.innerText = isMobile ? "M" + idx : name;
+            // Aus "Ens Member 1" wird "Member 1" (bzw. "M1" mobil)
+            var shortMemberName = name.replace("Ens Member", "Member").replace("Member", "Member ");
+            shortMemberName = shortMemberName.replace("  ", " ");
+            btn.innerText = isMobile ? "M" + idx : shortMemberName;
             ensembleContainer.appendChild(btn);
         } else {
             var statOffset = config.member_names.length - 6;
@@ -808,7 +811,6 @@ function initMemberPanel() {
         btn.onclick = function() { updateForecast(idx, currentStepIdx); };
     });
 
-    // Akkordeon Zustand nach Modell-Neuladen anwenden
     var cont = document.getElementById("ensembleContainer");
     var tBtn = document.getElementById("btnToggleEnsemble");
     if (cont) cont.style.display = isEnsembleOpen ? "block" : "none";
@@ -1150,7 +1152,7 @@ async function updateForecast(newMemberIdx, newStepIdx) {
         if (btn) btn.classList.toggle("active", d === currentDayName);
     });
 
-    // Falls ein Ensemble-Member angewählt wurde, Ensemble-Gruppe automatisch aufklappen
+    // Wenn ein Member gewählt ist, Klapp-Bereich automatisch öffnen
     var statOffset = config.member_names.length - 6;
     if (currentMemberIdx >= 1 && currentMemberIdx < statOffset) {
         toggleEnsembleAccordion(true);
