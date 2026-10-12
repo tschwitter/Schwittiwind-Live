@@ -14,8 +14,8 @@ var layer2Var = null;
 
 var layer1Mode = 'fill';
 var layer2Mode = 'fill';
-var layer1Opacity = 0.55;
-var layer2Opacity = 0.65;
+var layer1Opacity = 0.60;
+var layer2Opacity = 0.60;
 
 var isWetterOpen = false;
 var isHoehenOpen = false;
@@ -435,7 +435,8 @@ async function loadModelAndRun(modelName, runId) {
         updateMemberPanelVisibility(hasEns);
         document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (vCfg ? vCfg.label : layer1Var);
 
-        var initialOp1 = (vCfg && vCfg.palette === "cloud") ? 95 : 55;
+        // Standardmässig 60% (Wolken 95%)
+        var initialOp1 = (vCfg && vCfg.palette === "cloud") ? 95 : 60;
         setLayerOpacity(1, initialOp1);
 
         await updateForecast(currentMemberIdx, currentStepIdx);
@@ -617,7 +618,8 @@ function setSecondaryVar(newVar) {
         cfgSec.style.opacity = "1";
         titleSec.innerText = "2. Ebene: " + lbl;
 
-        var targetOp = (vCfg.palette === "cloud") ? 95 : 65;
+        // Standardmässig 60% (Wolken 95%)
+        var targetOp = (vCfg.palette === "cloud") ? 95 : 60;
         setLayerOpacity(2, targetOp);
     } else {
         btn.innerText = "+ 2. Ebene";
@@ -641,7 +643,8 @@ function switchLayer1(newVar) {
 
     document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (vCfg ? vCfg.label : layer1Var);
 
-    var targetOp = (vCfg && vCfg.palette === "cloud") ? 95 : 55;
+    // Standardmässig 60% (Wolken 95%)
+    var targetOp = (vCfg && vCfg.palette === "cloud") ? 95 : 60;
     setLayerOpacity(1, targetOp);
 
     updateMemberPanelVisibility(hasEns);
@@ -940,7 +943,6 @@ async function init() {
         var swisstopo_lakes_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-seen/default/current/3857/{z}/{x}/{y}.png";
         var swisstopo_rivers_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-gewaessernetz_2000/default/current/3857/{z}/{x}/{y}.png";
 
-        // OFFIZIELLE SWISSTOPO-LANDESGRENZE (Bleibt stabil & 100% deckend)
         var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
         var swisstopo_cantons_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-kanton-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
 
@@ -1005,10 +1007,10 @@ async function init() {
             maxZoom: 15, maxNativeZoom: 14
         }).addTo(map);
 
-        // 5. KANTONSGRENZEN: Robuster LayerGroup (stürzt nie ab)
+        // 5. Kantonsgrenzen: Robuster LayerGroup
         cantonalBoundaryLayer = L.layerGroup();
         
-        // Lädt die präzisen Kantonsgrenzen direkt online als hauchdünnen Vektor:
+        // Hauchdünne Vektorgrenzen
         fetch("https://cdn.jsdelivr.net/gh/empet/Datasets@master/swiss-cantons.geojson")
             .then(res => res.json())
             .then(geojson => {
@@ -1016,15 +1018,14 @@ async function init() {
                     pane: 'boundaryPane',
                     interactive: false,
                     style: {
-                        color: "#111111", // Deckend schwarz
-                        weight: 0.7,      // <-- Hauchdünne Linienstärke!
-                        opacity: 1.0,     // 100% deckend (nicht transparent)
+                        color: "#111111",
+                        weight: 0.7,
+                        opacity: 1.0,
                         fill: false
                     }
                 }).addTo(cantonalBoundaryLayer);
             })
             .catch(() => {
-                // Fallback auf Kacheln falls offline
                 L.tileLayer(swisstopo_cantons_url, {
                     pane: 'boundaryPane',
                     className: 'boundary-cantonal',
