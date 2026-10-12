@@ -185,12 +185,12 @@ html, body {
     box-shadow: 0 0 8px rgba(0, 122, 183, 0.4);
 }
 
-/* --- 2. EBENE: VEKTOR-BASIERTE DROP-NOTCH AUS EINEM GUSS --- */
+/* --- 2. EBENE: SCHLANKE, FLIEHENDE DROP NOTCH --- */
 .layer2-anchor-wrap {
     display: flex;
     justify-content: center;
     position: relative;
-    margin-top: -2px; /* Schiebt die Vektor-Fläche fugenlos an die Leiste */
+    margin-top: -2px;
     z-index: 1;
     pointer-events: auto;
 }
@@ -202,9 +202,9 @@ html, body {
     outline: none;
     color: #cbd5e1;
     font-family: Arial, sans-serif;
-    font-size: 11px; font-weight: bold;
-    width: 148px;
-    height: 29px;
+    font-size: 10px; font-weight: bold;
+    width: 118px; /* Schmaler & kompakter */
+    height: 22px; /* Dünner */
     padding: 0;
     cursor: pointer;
     display: inline-flex;
@@ -220,7 +220,7 @@ html, body {
     height: 100%;
     z-index: 1;
     overflow: visible;
-    filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.55));
+    filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.5));
 }
 
 .notch-path {
@@ -233,8 +233,8 @@ html, body {
 .notch-label {
     position: relative;
     z-index: 2;
-    margin-top: 3px;
-    letter-spacing: 0.2px;
+    margin-top: 2px;
+    letter-spacing: 0.1px;
     transition: color 0.2s ease;
 }
 
@@ -446,7 +446,9 @@ html, body {
     transition: opacity 0.25s ease, filter 0.25s ease;
 }
 
-.member-panel.panel-dimmed {
+/* Abdunklung für Member-Panel UND Farbskalen */
+.member-panel.panel-dimmed,
+.legend-box.panel-dimmed {
     opacity: 0.22 !important;
     filter: blur(1px);
     pointer-events: none;
@@ -503,6 +505,14 @@ html, body {
 }
 .member-section-toggle.open .chevron {
     transform: rotate(180deg);
+}
+
+/* MEMBERS-BUTTON LEUCHTET BLAU WENN EIN MEMBER AKTIV, ABER EINGEKLAPPT IST */
+.member-section-toggle.active-indicator {
+    background-color: #007ab7 !important;
+    border-color: #70c4ff !important;
+    color: #ffffff !important;
+    box-shadow: 0 0 10px rgba(0, 122, 183, 0.65), 0 2px 6px rgba(0, 0, 0, 0.3) !important;
 }
 
 .member-btn {
@@ -617,6 +627,7 @@ html, body {
     font-family: Arial, sans-serif; color: white; 
     box-shadow: 4px 4px 12px rgba(0,0,0,0.5); 
     display: flex; gap: 8px; box-sizing: border-box; font-size: 10px; 
+    transition: opacity 0.25s ease, filter 0.25s ease;
 }
 .legend-column { display: flex; flex-direction: column; align-items: center; width: 68px; }
 .legend-title { font-weight: bold; font-size: 11px; text-align: center; margin-bottom: 4px; }
@@ -638,7 +649,7 @@ html, body {
     .top-control-panel { top: 6px; }
     .top-row { padding: 2px 4px; gap: 2px; border-radius: 14px; }
     .var-btn, .nav-toggle-btn { font-size: 10px; padding: 4px 6px; border-radius: 10px; }
-    .layer2-btn { width: 128px; height: 25px; font-size: 9.5px; }
+    .layer2-btn { width: 102px; height: 20px; font-size: 8.5px; }
     
     .model-select-header { top: 8px; right: 6px; width: 58px; }
     .model-title { font-size: 9px; }
