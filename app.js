@@ -214,6 +214,10 @@ function closeAllPopups() {
     document.getElementById("runDropdown-icon-ch2").style.display = "none";
     document.getElementById("layer2Dropdown").style.display = "none";
     document.getElementById("settingsPopup").style.display = "none";
+    
+    // Panel-Abdunklung entfernen
+    var p = document.getElementById("memberPanel");
+    if (p) p.classList.remove("panel-dimmed");
 }
 
 // ================= HINTERGRUNDKARTE: TRANSPARENZ & STIL =================
@@ -350,6 +354,10 @@ function toggleRunDropdown(modelName) {
     el.style.left = "auto";
     el.style.transform = "none";
     el.style.display = "flex";
+
+    // Panel während Dropdown geöffnet ist deutlich abdunkeln
+    var p = document.getElementById("memberPanel");
+    if (p) p.classList.add("panel-dimmed");
 }
 
 async function selectRun(modelName, runId) {
