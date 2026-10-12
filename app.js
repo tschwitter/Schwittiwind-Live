@@ -21,7 +21,6 @@ var layer2Opacity = 0.60;
 var isWetterOpen = false;
 var isHoehenOpen = false;
 
-// Zustand des Ensembles aus Speicher laden (Standard: geschlossen)
 var isEnsembleOpen = (localStorage.getItem("icon_ensemble_open") === "true");
 
 var currentMemberIdx = 0;
@@ -47,7 +46,6 @@ var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
 // ================= ERWEITERTES ORTSNETZ DER SCHWEIZ =================
 var CITIES = [
-    // Stufe 1: minZoom = 7 (Großzentren)
     { name: "Zürich", lat: 47.3769, lon: 8.5417, minZoom: 7 },
     { name: "Bern", lat: 46.9480, lon: 7.4474, minZoom: 7 },
     { name: "Basel", lat: 47.5596, lon: 7.5886, minZoom: 7 },
@@ -58,8 +56,6 @@ var CITIES = [
     { name: "Lugano", lat: 46.0037, lon: 8.9511, minZoom: 7 },
     { name: "Chur", lat: 46.8508, lon: 9.5320, minZoom: 7 },
     { name: "Sion", lat: 46.2331, lon: 7.3606, minZoom: 7 },
-
-    // Stufe 2: minZoom = 9 (Regionalzentren)
     { name: "Winterthur", lat: 47.4999, lon: 8.7241, minZoom: 9 },
     { name: "Biel/Bienne", lat: 47.1368, lon: 7.2468, minZoom: 9 },
     { name: "Thun", lat: 46.7580, lon: 7.6280, minZoom: 9 },
@@ -80,8 +76,6 @@ var CITIES = [
     { name: "Delémont", lat: 47.3653, lon: 7.3444, minZoom: 9 },
     { name: "Frauenfeld", lat: 47.5583, lon: 8.8986, minZoom: 9 },
     { name: "Liestal", lat: 47.4844, lon: 7.7348, minZoom: 9 },
-
-    // Stufe 3: minZoom = 10 (Talschaften & Seen)
     { name: "Interlaken", lat: 46.6863, lon: 7.8632, minZoom: 10 },
     { name: "Spiez", lat: 46.6888, lon: 7.6806, minZoom: 10 },
     { name: "Zermatt", lat: 45.9765, lon: 7.7491, minZoom: 10 },
@@ -100,68 +94,7 @@ var CITIES = [
     { name: "Burgdorf", lat: 47.0573, lon: 7.6258, minZoom: 10 },
     { name: "Langenthal", lat: 47.2132, lon: 7.7915, minZoom: 10 },
     { name: "Solothurn", lat: 47.2088, lon: 7.5370, minZoom: 10 },
-    { name: "Glarus", lat: 47.0406, lon: 9.0678, minZoom: 10 },
-
-    // Stufe 4: minZoom = 11 (Täler, Pässe & Berggemeinden)
-    { name: "Grindelwald", lat: 46.6242, lon: 8.0414, minZoom: 11 },
-    { name: "Lauterbrunnen", lat: 46.5935, lon: 7.9077, minZoom: 11 },
-    { name: "Mürren", lat: 46.5594, lon: 7.8927, minZoom: 11 },
-    { name: "Adelboden", lat: 46.4927, lon: 7.5606, minZoom: 11 },
-    { name: "Kandersteg", lat: 46.4957, lon: 7.6743, minZoom: 11 },
-    { name: "Lenk", lat: 46.4581, lon: 7.4439, minZoom: 11 },
-    { name: "Gstaad", lat: 46.4744, lon: 7.2863, minZoom: 11 },
-    { name: "Meiringen", lat: 46.7283, lon: 8.1882, minZoom: 11 },
-    { name: "Engelberg", lat: 46.8206, lon: 8.4072, minZoom: 11 },
-    { name: "Einsiedeln", lat: 47.1278, lon: 8.7472, minZoom: 11 },
-    { name: "Brunnen", lat: 46.9956, lon: 8.6053, minZoom: 11 },
-    { name: "Weggis", lat: 47.0325, lon: 8.4344, minZoom: 11 },
-    { name: "Flüelen", lat: 46.9014, lon: 8.6239, minZoom: 11 },
-    { name: "Erstfeld", lat: 46.8336, lon: 8.6494, minZoom: 11 },
-    { name: "Göschenen", lat: 46.6675, lon: 8.5861, minZoom: 11 },
-    { name: "Airolo", lat: 46.5286, lon: 8.6083, minZoom: 11 },
-    { name: "Faido", lat: 46.4772, lon: 8.7997, minZoom: 11 },
-    { name: "Biasca", lat: 46.3589, lon: 8.9706, minZoom: 11 },
-    { name: "Ascona", lat: 46.1558, lon: 8.7725, minZoom: 11 },
-    { name: "Mendrisio", lat: 45.8703, lon: 8.9875, minZoom: 11 },
-    { name: "Chiasso", lat: 45.8344, lon: 9.0322, minZoom: 11 },
-    { name: "Leukerbad", lat: 46.3797, lon: 7.6289, minZoom: 11 },
-    { name: "Crans-Montana", lat: 46.3119, lon: 7.4822, minZoom: 11 },
-    { name: "Saas-Fee", lat: 46.1097, lon: 7.9286, minZoom: 11 },
-    { name: "Verbier", lat: 46.0968, lon: 7.2286, minZoom: 11 },
-    { name: "Champéry", lat: 46.1764, lon: 6.8708, minZoom: 11 },
-    { name: "Aigle", lat: 46.3174, lon: 6.9686, minZoom: 11 },
-    { name: "Saint-Maurice", lat: 46.2189, lon: 7.0028, minZoom: 11 },
-    { name: "Disentis", lat: 46.7056, lon: 8.8556, minZoom: 11 },
-    { name: "Ilanz", lat: 46.7744, lon: 9.2044, minZoom: 11 },
-    { name: "Flims", lat: 46.8375, lon: 9.2842, minZoom: 11 },
-    { name: "Thusis", lat: 46.6975, lon: 9.4406, minZoom: 11 },
-    { name: "Tiefencastel", lat: 46.6622, lon: 9.5761, minZoom: 11 },
-    { name: "Klosters", lat: 46.8697, lon: 9.8797, minZoom: 11 },
-    { name: "Arosa", lat: 46.7789, lon: 9.6806, minZoom: 11 },
-    { name: "Pontresina", lat: 46.4917, lon: 9.9042, minZoom: 11 },
-    { name: "Zernez", lat: 46.6997, lon: 10.0939, minZoom: 11 },
-    { name: "Scuol", lat: 46.7972, lon: 10.2989, minZoom: 11 },
-    { name: "Samnaun", lat: 46.9536, lon: 10.3639, minZoom: 11 },
-    { name: "Poschiavo", lat: 46.3267, lon: 10.0578, minZoom: 11 },
-    { name: "Herisau", lat: 47.3858, lon: 9.2789, minZoom: 11 },
-    { name: "Wattwil", lat: 47.3006, lon: 9.0864, minZoom: 11 },
-    { name: "Wildhaus", lat: 47.2028, lon: 9.3514, minZoom: 11 },
-    { name: "Murten", lat: 46.9281, lon: 7.1172, minZoom: 11 },
-    { name: "Payerne", lat: 46.8211, lon: 6.9367, minZoom: 11 },
-    { name: "Estavayer", lat: 46.8500, lon: 6.8481, minZoom: 11 },
-    { name: "Le Locle", lat: 47.0583, lon: 6.7497, minZoom: 11 },
-    { name: "Saint-Imier", lat: 47.1528, lon: 7.0003, minZoom: 11 },
-    { name: "Moutier", lat: 47.2803, lon: 7.3711, minZoom: 11 },
-    { name: "Laufen", lat: 47.4222, lon: 7.5008, minZoom: 11 },
-    { name: "Rheinfelden", lat: 47.5542, lon: 7.7942, minZoom: 11 },
-    { name: "Brugg", lat: 47.4853, lon: 8.2078, minZoom: 11 },
-    { name: "Wohlen", lat: 47.3514, lon: 8.2781, minZoom: 11 },
-    { name: "Zofingen", lat: 47.2881, lon: 7.9458, minZoom: 11 },
-    { name: "Sursee", lat: 47.1722, lon: 8.1097, minZoom: 11 },
-    { name: "Willisau", lat: 47.1206, lon: 7.9908, minZoom: 11 },
-    { name: "Langnau i.E.", lat: 46.9389, lon: 7.7872, minZoom: 11 },
-    { name: "Frutigen", lat: 46.5886, lon: 7.6492, minZoom: 11 },
-    { name: "Brienz", lat: 46.7558, lon: 8.0375, minZoom: 11 }
+    { name: "Glarus", lat: 47.0406, lon: 9.0678, minZoom: 10 }
 ];
 
 function updateCityLabels() {
@@ -213,14 +146,19 @@ function getDayNameForStep(stepIdx) {
     return weekdays[dateObj.getDay()];
 }
 
+function setPopupsDimmed(dimmed) {
+    var p = document.getElementById("memberPanel");
+    var l = document.getElementById("legendBox");
+    if (p) p.classList.toggle("panel-dimmed", dimmed);
+    if (l) l.classList.toggle("panel-dimmed", dimmed);
+}
+
 function closeAllPopups() {
     document.getElementById("runDropdown-icon-ch1").style.display = "none";
     document.getElementById("runDropdown-icon-ch2").style.display = "none";
     document.getElementById("layer2Dropdown").style.display = "none";
     document.getElementById("settingsPopup").style.display = "none";
-    
-    var p = document.getElementById("memberPanel");
-    if (p) p.classList.remove("panel-dimmed");
+    setPopupsDimmed(false);
 }
 
 // ================= HINTERGRUNDKARTE: TRANSPARENZ & STIL =================
@@ -358,8 +296,7 @@ function toggleRunDropdown(modelName) {
     el.style.transform = "none";
     el.style.display = "flex";
 
-    var p = document.getElementById("memberPanel");
-    if (p) p.classList.add("panel-dimmed");
+    setPopupsDimmed(true);
 }
 
 async function selectRun(modelName, runId) {
@@ -378,7 +315,16 @@ async function switchModel(newModel) {
     await loadModelAndRun(currentModel, runId);
 }
 
-// ================= ENSEMBLE-AKKORDEON MIT PERSISTENZ =================
+// ================= ENSEMBLE-AKKORDEON =================
+function updateEnsembleToggleState() {
+    var btn = document.getElementById("btnToggleEnsemble");
+    if (!btn || !config) return;
+    var statOffset = config.member_names.length - 6;
+    var isMemberActive = (currentMemberIdx >= 1 && currentMemberIdx < statOffset);
+    // Leuchtet blau mit Glow, wenn ein Member aktiv ist, aber die Liste eingeklappt ist
+    btn.classList.toggle("active-indicator", isMemberActive && !isEnsembleOpen);
+}
+
 function toggleEnsembleAccordion(forceOpen) {
     if (forceOpen === true) isEnsembleOpen = true;
     else if (forceOpen === false) isEnsembleOpen = false;
@@ -390,6 +336,8 @@ function toggleEnsembleAccordion(forceOpen) {
     var btn = document.getElementById("btnToggleEnsemble");
     if (cont) cont.style.display = isEnsembleOpen ? "block" : "none";
     if (btn) btn.classList.toggle("open", isEnsembleOpen);
+
+    updateEnsembleToggleState();
 }
 
 // ================= KERN-LADEN =================
@@ -504,6 +452,7 @@ function toggleSettings(e) {
     if (isAlreadyOpen) return;
 
     el.style.display = "block";
+    setPopupsDimmed(true);
 }
 
 function setLayerMode(layerNum, mode) {
@@ -728,21 +677,17 @@ function navUp() {
 
     var statOffset = config.member_names.length - 6;
 
-    // INTELLIGENTES SPRINGEN WENN ENSEMBLE ZUGEKLAPPT IST
     if (!isEnsembleOpen) {
         if (currentMemberIdx >= statOffset) {
-            // Befindet man sich auf der ersten Statistik (Median), springt man direkt zum Hauptlauf
             if (currentMemberIdx === statOffset) {
                 updateForecast(0, currentStepIdx);
             } else {
                 updateForecast(currentMemberIdx - 1, currentStepIdx);
             }
         } else {
-            // Bleibt auf Hauptlauf (0)
             updateForecast(0, currentStepIdx);
         }
     } else {
-        // Normaler schrittweiser Wechsel wenn ausgeklappt
         updateForecast(Math.max(0, currentMemberIdx - 1), currentStepIdx);
     }
 }
@@ -759,19 +704,15 @@ function navDown() {
     var maxIdx = config.member_names.length - 1;
     var statOffset = config.member_names.length - 6;
 
-    // INTELLIGENTES SPRINGEN WENN ENSEMBLE ZUGEKLAPPT IST
     if (!isEnsembleOpen) {
         if (currentMemberIdx === 0) {
-            // Vom Hauptlauf direkt zur ersten Statistik (Median)
             updateForecast(statOffset, currentStepIdx);
         } else if (currentMemberIdx >= statOffset) {
             updateForecast(Math.min(maxIdx, currentMemberIdx + 1), currentStepIdx);
         } else {
-            // Befand man sich noch auf einem Member, springt man zur ersten Statistik
             updateForecast(statOffset, currentStepIdx);
         }
     } else {
-        // Normaler schrittweiser Wechsel wenn ausgeklappt
         updateForecast(Math.min(maxIdx, currentMemberIdx + 1), currentStepIdx);
     }
 }
@@ -856,6 +797,8 @@ function initMemberPanel() {
     var tBtn = document.getElementById("btnToggleEnsemble");
     if (cont) cont.style.display = isEnsembleOpen ? "block" : "none";
     if (tBtn) tBtn.classList.toggle("open", isEnsembleOpen);
+
+    updateEnsembleToggleState();
 }
 
 function renderSingleLegendCol(varName, isIQR) {
@@ -1193,17 +1136,12 @@ async function updateForecast(newMemberIdx, newStepIdx) {
         if (btn) btn.classList.toggle("active", d === currentDayName);
     });
 
-    // Wenn ein einzelner Member direkt per Klick gewählt wird, öffnen
-    var statOffset = config.member_names.length - 6;
-    if (currentMemberIdx >= 1 && currentMemberIdx < statOffset && !isEnsembleOpen) {
-        toggleEnsembleAccordion(true);
-    }
-
     for (var i = 0; i < config.member_names.length; i++) {
         var btn = document.getElementById("member-btn-" + i);
         if (btn) btn.classList.toggle("active", i === currentMemberIdx);
     }
 
+    updateEnsembleToggleState();
     updateLegend();
     renderContours();
     drawVisibleArrows();
