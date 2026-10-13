@@ -45,10 +45,10 @@ MODELS_CONFIG = {
         "name": "ICON-CH2 (2.1km)",
         "collection": "ogd-forecasting-icon-ch2",
         "hhl_asset": "vertical_constants_icon-ch2-eps.grib2",
-        "hours": 120,
+        "hours": 2,
         "max_members": 21,
         "max_runs": 4,  # Volle 24 Stunden (4 Läufe à 6 Stunden)
-        "active_variables": [],
+        "active_variables": ["wind"],
         #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"
         "ensemble_variables": [],
         #"wind", "sun"
