@@ -7,7 +7,7 @@ var selectedRuns = { "icon-ch1": null, "icon-ch2": null };
 
 var verticalNavMode = 'member'; // 'member' oder 'run'
 
-var baseMapOpacity = 0.80; // Standard 80% Deckkraft
+var baseMapOpacity = 0.80; // Standardmäßig 80%
 var baseMapStyle = 'relief'; // 'relief' oder 'simple'
 
 var layer1Var = null;
@@ -802,6 +802,7 @@ function renderSingleLegendCol(varName, isIQR) {
     var paletteType = isIQR ? ("iqr_" + (vCfg.palette || "wind")) : (vCfg.palette || "wind");
     var p = config.palettes[paletteType] || config.palettes["wind"];
     var colors = p.colors;
+    var levels = p.levels;
 
     var title = "";
     if (isIQR) {
@@ -820,7 +821,9 @@ function renderSingleLegendCol(varName, isIQR) {
         var c = colors[i];
         var isTrans = (c === 'transparent' || c === '#ffffff00' || (c.length === 9 && c.endsWith('00')));
         var bg = isTrans ? 'transparent' : c;
-        var border = ((paletteType === "dbz" || paletteType === "cloud") && !isTrans) ? "border-bottom: 1px solid rgba(255,255,255,0.4);" : "";
+        var border = ((paletteType === "dbz" || paletteType === "cloud") && !isTrans) 
+            ? "border-bottom: 1px solid rgba(255,255,255,0.4);" 
+            : (c.toLowerCase() === "#ffffff" ? "border-top: 1px solid rgba(0,0,0,0.3); border-bottom: 1px solid rgba(0,0,0,0.3);" : "");
         barHtml += `<div style="background-color: ${bg}; flex: 1; ${border}"></div>`;
     }
 
@@ -838,7 +841,12 @@ function renderSingleLegendCol(varName, isIQR) {
     } else if (paletteType === "iqr_wind") {
         labelsHtml = `<div>+</div><div>30</div><div>24</div><div>18</div><div>14</div><div>10</div><div>8</div><div>6</div><div>4</div><div>2</div><div>0</div>`;
     } else {
-        labelsHtml = `<div>+</div><div>45</div><div>36</div><div>27</div><div>23</div><div>18</div><div>14</div><div>11</div><div>7</div><div>4</div><div>0</div>`;
+        // Skala dynamisch: bis 125+ km/h falls erweitert, sonst klassisch bis 45+ km/h
+        if (levels && levels.length > 15) {
+            labelsHtml = `<div>+</div><div>125</div><div>115</div><div>105</div><div>95</div><div>85</div><div>75</div><div>65</div><div>55</div><div>45</div><div>36</div><div>27</div><div>23</div><div>18</div><div>14</div><div>11</div><div>7</div><div>4</div><div>0</div>`;
+        } else {
+            labelsHtml = `<div>+</div><div>45</div><div>36</div><div>27</div><div>23</div><div>18</div><div>14</div><div>11</div><div>7</div><div>4</div><div>0</div>`;
+        }
     }
 
     return `
@@ -949,11 +957,10 @@ async function init() {
         var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
         var swisstopo_cantons_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-kanton-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
 
-        // Leaflet-Karte ohne die standardmäßigen Zoom-Buttons initialisieren
         map = L.map('map', {
             center: [46.8182, 8.2275],
             zoom: 9, minZoom: 7, maxZoom: 15,
-            zoomControl: false, // <-- Schaltet Leaflet Plus/Minus komplett ab!
+            zoomControl: false,
             preferCanvas: true
         });
 
