@@ -1189,6 +1189,7 @@ function renderContours() {
     }
 }
 
+// ================= OPTIMIERTE, FEINERE & DICHTERE WINDPFEILE =================
 function drawVisibleArrows() {
     if (!map || !config) return;
     if (!activeMarkers) { activeMarkers = L.layerGroup().addTo(map); } else { activeMarkers.clearLayers(); }
@@ -1217,11 +1218,13 @@ function drawVisibleArrows() {
 
     var bounds = map.getBounds();
     var zoom = map.getZoom();
-    var step = 32;
-    if (zoom > 8 && zoom <= 10) step = 16;
-    else if (zoom > 10 && zoom <= 11) step = 8;
-    else if (zoom == 12) step = 4;
-    else if (zoom == 13) step = 2;
+
+    // Dichteres Gitter beim Rauszoomen (mehr Pfeile)
+    var step = 16;
+    if (zoom >= 9 && zoom <= 10) step = 10;
+    else if (zoom === 11) step = 6;
+    else if (zoom === 12) step = 4;
+    else if (zoom === 13) step = 2;
     else if (zoom >= 14) step = 1;
 
     var speeds = gridData.s;
@@ -1230,7 +1233,7 @@ function drawVisibleArrows() {
 
     for (var i = 0; i < speeds.length; i++) {
         var sVal = speeds[i];
-        if (sVal < 30) continue;
+        if (sVal < 25) continue; // Zeigt Pfeile ab 2.5 km/h
 
         var r = Math.floor(i / config.nx);
         var c = i % config.nx;
@@ -1243,15 +1246,18 @@ function drawVisibleArrows() {
         if (bounds.contains(latlng)) {
             var speed = sVal / 10.0;
             var dir = dirs[i];
-            var arrow_w = Math.min(35, Math.max(8, 6 + Math.pow(speed, 1.15) * 0.55));
-            var arrow_h = Math.min(100, Math.max(16, 12 + Math.pow(speed, 1.4) * 1.0));
 
-            var svg = '<div style="transform: rotate(' + dir + 'deg); width: 110px; height: 110px; display: flex; align-items: center; justify-content: center;">' +
+            // Flachere Skalierung: wächst sanft mit, wird nie riesig/klobig
+            var arrow_w = Math.min(22, Math.max(6, 4.5 + Math.pow(speed, 0.45) * 2.2));
+            var arrow_h = Math.min(50, Math.max(13, 9.0 + Math.pow(speed, 0.60) * 3.8));
+
+            // Schlankerer Pfeilkopf & filigraner 0.5px Rand
+            var svg = '<div style="transform: rotate(' + dir + 'deg); width: 60px; height: 60px; display: flex; align-items: center; justify-content: center;">' +
                       '<svg viewBox="0 0 24 24" width="' + arrow_w.toFixed(1) + 'px" height="' + arrow_h.toFixed(1) + 'px">' +
-                      '<path d="M11 22 H13 V10 H17 L12 2 L7 10 H11 Z" fill="black" stroke="white" stroke-width="0.8"/>' +
+                      '<path d="M11.2 23 H12.8 V9 H16.2 L12 1.5 L7.8 9 H11.2 Z" fill="#111111" stroke="#ffffff" stroke-width="0.5"/>' +
                       '</svg></div>';
 
-            var icon = L.divIcon({ html: svg, iconSize: [110, 110], iconAnchor: [55, 55], className: 'wind-arrow-icon' });
+            var icon = L.divIcon({ html: svg, iconSize: [60, 60], iconAnchor: [30, 30], className: 'wind-arrow-icon' });
             var modLabel = (currentModel === "icon-ch2") ? "ICON-CH2" : "ICON-CH1";
             L.marker(latlng, { icon: icon }).bindPopup(`<b>${labelType} (${modLabel}):</b><br>Stärke: ${speed.toFixed(1)} km/h<br>Richtung: ${dir.toFixed(0)}°`).addTo(activeMarkers);
         }
