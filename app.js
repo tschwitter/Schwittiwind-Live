@@ -277,7 +277,6 @@ function toggleRunDropdown(modelName) {
         runs.forEach((r) => {
             var item = document.createElement("button");
             item.className = "run-item" + (r.id === currentRunId ? " active" : "");
-            // "Neu"-Tag komplett entfernt
             item.innerHTML = `<span>${r.label}</span>`;
             item.onclick = function(e) {
                 e.stopPropagation();
