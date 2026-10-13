@@ -256,11 +256,14 @@ def run_chunk(model_name, run_id, start_step, end_step, ref_time_str):
 
     tasks = [(model_name, run_id, local_idx, start_step + local_idx) for local_idx in range(num_chunk_steps)]
 
+    # Nutzt auf GitHub Actions Runners alle verfügbaren vCPUs (bis zu 4)
+    num_procs = min(4, os.cpu_count() or 2)
     ctx = get_context("fork")
-    with ctx.Pool(processes=2) as pool:
+    with ctx.Pool(processes=num_procs) as pool:
         pool.map(process_single_local_step, tasks)
 
     print(f"=== [{model_name} / {run_id}] CHUNK {start_step} bis {end_step} BEENDET ===", flush=True)
+
 
 def main():
     parser = argparse.ArgumentParser()
