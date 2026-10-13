@@ -274,12 +274,11 @@ function toggleRunDropdown(modelName) {
     if (runs.length === 0) {
         el.innerHTML = `<div style="font-size:11px; padding:4px 8px; color:#aaa;">Keine alten Läufe</div>`;
     } else {
-        runs.forEach((r, idx) => {
+        runs.forEach((r) => {
             var item = document.createElement("button");
             item.className = "run-item" + (r.id === currentRunId ? " active" : "");
-            var labelHtml = `<span>${r.label}</span>`;
-            if (idx === 0) labelHtml += `<span class="run-tag-latest">Neu</span>`;
-            item.innerHTML = labelHtml;
+            // "Neu"-Tag komplett entfernt
+            item.innerHTML = `<span>${r.label}</span>`;
             item.onclick = function(e) {
                 e.stopPropagation();
                 selectRun(modelName, r.id);
@@ -321,7 +320,6 @@ function updateEnsembleToggleState() {
     if (!btn || !config) return;
     var statOffset = config.member_names.length - 6;
     var isMemberActive = (currentMemberIdx >= 1 && currentMemberIdx < statOffset);
-    // Leuchtet blau mit Glow, wenn ein Member aktiv ist, aber die Liste eingeklappt ist
     btn.classList.toggle("active-indicator", isMemberActive && !isEnsembleOpen);
 }
 
@@ -1135,6 +1133,11 @@ async function updateForecast(newMemberIdx, newStepIdx) {
         var btn = document.getElementById("day-btn-" + d);
         if (btn) btn.classList.toggle("active", d === currentDayName);
     });
+
+    var statOffset = config.member_names.length - 6;
+    if (currentMemberIdx >= 1 && currentMemberIdx < statOffset && !isEnsembleOpen) {
+        toggleEnsembleAccordion(true);
+    }
 
     for (var i = 0; i < config.member_names.length; i++) {
         var btn = document.getElementById("member-btn-" + i);
