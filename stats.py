@@ -34,45 +34,51 @@ def init_regrid_weights(source_lons, source_lats):
         "grid_lon": grid_lon, "grid_lat": grid_lat
     }
 
-def remap_fast(field, weights):
-    if field is None:
+def remap_batch(batch_data, weights):
+    """
+    Interpoliert ein oder mehrere 1D-Felder in einer einzigen Vektoroperation.
+    batch_data: Shape (M, N_cells) oder (N_cells,)
+    Rückgabe: Shape (M, NY, NX) bzw. (NY, NX)
+    """
+    if batch_data is None:
         return np.full((config.NY, config.NX), np.nan, dtype=np.float32)
 
-    raw_vals = field.values if hasattr(field, "values") else field
-    vals = np.asarray(raw_vals).squeeze()
-    if vals.ndim > 1:
-        vals = vals.ravel()
+    is_1d = (batch_data.ndim == 1)
+    if is_1d:
+        data_2d = batch_data[np.newaxis, :]
+    else:
+        data_2d = batch_data
 
-    out = np.full(config.NY * config.NX, np.nan, dtype=np.float32)
-    val_v0 = vals[weights["v0"]]
-    val_v1 = vals[weights["v1"]]
-    val_v2 = vals[weights["v2"]]
+    m_count = data_2d.shape[0]
+    total_grid = config.NY * config.NX
+    out = np.full((m_count, total_grid), np.nan, dtype=np.float32)
 
-    valid_mask = ~(np.isnan(val_v0) | np.isnan(val_v1) | np.isnan(val_v2))
-    target_idx = weights["valid_indices"][valid_mask]
+    # Vektorisierte Interpolation über alle M Member gleichzeitig
+    v0 = data_2d[:, weights["v0"]]
+    v1 = data_2d[:, weights["v1"]]
+    v2 = data_2d[:, weights["v2"]]
 
-    out[target_idx] = (
-        weights["b0"][valid_mask] * val_v0[valid_mask] +
-        weights["b1"][valid_mask] * val_v1[valid_mask] +
-        weights["b2"][valid_mask] * val_v2[valid_mask]
-    )
-    return out.reshape(config.NY, config.NX)
+    interp = v0 * weights["b0"] + v1 * weights["b1"] + v2 * weights["b2"]
+    out[:, weights["valid_indices"]] = interp
+
+    res = out.reshape(m_count, config.NY, config.NX)
+    return res[0] if is_1d else res
 
 def compute_statistics_for_array(all_values, threshold=None):
     """Berechnet Statistiken dynamisch für jede Ensemble-Größe (CH1: 11..16, CH2: 21..26)."""
     s_min = np.nanmin(all_values, axis=0)
     s_max = np.nanmax(all_values, axis=0)
-    q25, median, q75 = np.nanpercentile(all_values, [25, 50, 75], axis=0)
+    q25, median, q75 = np.nanpercentile(all_values, (25, 50, 75), axis=0)
     iqr = q75 - q25
 
     if threshold is not None:
         no_signal = (s_max < threshold) | np.isnan(s_max)
-        iqr = np.where(no_signal, np.nan, iqr)
-        s_min = np.where(s_min < threshold, np.nan, s_min)
-        s_max = np.where(s_max < threshold, np.nan, s_max)
-        median = np.where(median < threshold, np.nan, median)
-        q25 = np.where(q25 < threshold, np.nan, q25)
-        q75 = np.where(q75 < threshold, np.nan, q75)
+        iqr[no_signal] = np.nan
+        s_min[s_min < threshold] = np.nan
+        s_max[s_max < threshold] = np.nan
+        median[median < threshold] = np.nan
+        q25[q25 < threshold] = np.nan
+        q75[q75 < threshold] = np.nan
 
     offset = len(all_values)
     return {
@@ -93,6 +99,30 @@ def get_step_slice(da, step_idx):
         return None
     return da
 
+def _extract_values_2d(hl_da, ens_da, step_idx):
+    """Kombiniert Hauptlauf und alle Ensemble-Member in ein 2D-Array (M, N_cells)."""
+    hl_s = get_step_slice(hl_da, step_idx)
+    if hl_s is None:
+        return None, False
+
+    hl_vals = np.asarray(hl_s.values).squeeze()
+    if ens_da is None:
+        return hl_vals[np.newaxis, :], False
+
+    ens_s = get_step_slice(ens_da, step_idx)
+    if ens_s is None:
+        return hl_vals[np.newaxis, :], False
+
+    if "eps" in ens_s.dims and ens_s.dims[0] != "eps":
+        ens_s = ens_s.transpose("eps", ...)
+
+    ens_vals = np.asarray(ens_s.values)
+    if ens_vals.ndim == 1:
+        ens_vals = ens_vals[np.newaxis, :]
+
+    all_vals = np.vstack([hl_vals[np.newaxis, :], ens_vals])
+    return all_vals, True
+
 def compute_timestep(model_name, weather_data, step_idx, weights):
     model_cfg = config.MODELS_CONFIG[model_name]
     active_vars = model_cfg["active_variables"]
@@ -104,129 +134,110 @@ def compute_timestep(model_name, weather_data, step_idx, weights):
 
     step_results = {}
 
-    # 1. 10m Wind & Böen
-    if "wind" in active_vars and "u_h" in surface:
+    # 1. 10m Wind
+    if "wind" in active_vars and "u_h" in surface and surface["u_h"] is not None:
         has_ens = "wind" in ens_vars
-        u_h, v_h = surface["u_h"], surface["v_h"]
-        u_s = get_step_slice(u_h, step_idx)
-        v_s = get_step_slice(v_h, step_idx)
-        gu = remap_fast(u_s, weights)
-        gv = remap_fast(v_s, weights)
-        sp = np.sqrt(gu**2 + gv**2) * 3.6
-        dr = (np.arctan2(gu, gv) * 180 / np.pi) % 360
-        wind_data = {0: {"speed": sp, "dir": dr, "has_arrows": True}}
+        u_ens = surface.get("u_e") if has_ens else None
+        v_ens = surface.get("v_e") if has_ens else None
 
-        if has_ens and "u_e" in surface and surface["u_e"] is not None:
-            u_e, v_e = surface["u_e"], surface["v_e"]
-            members = u_e.coords['eps'].values
-            all_sp = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
-            all_sp[0, :, :] = sp
-            for m_i, eps_val in enumerate(members, start=1):
-                us_e = get_step_slice(u_e.sel(eps=eps_val), step_idx)
-                vs_e = get_step_slice(v_e.sel(eps=eps_val), step_idx)
-                gue = remap_fast(us_e, weights)
-                gve = remap_fast(vs_e, weights)
-                spe = np.sqrt(gue**2 + gve**2) * 3.6
-                dre = (np.arctan2(gue, gve) * 180 / np.pi) % 360
-                all_sp[m_i, :, :] = spe
-                wind_data[m_i] = {"speed": spe, "dir": dre, "has_arrows": True}
-            wind_data.update(compute_statistics_for_array(all_sp))
-        step_results["wind"] = wind_data
+        all_u, has_e = _extract_values_2d(surface["u_h"], u_ens, step_idx)
+        all_v, _ = _extract_values_2d(surface["v_h"], v_ens, step_idx)
 
-    if "gust" in active_vars and "g_h" in surface:
+        if all_u is not None and all_v is not None:
+            gu_all = remap_batch(all_u, weights)
+            gv_all = remap_batch(all_v, weights)
+
+            sp_all = np.sqrt(gu_all**2 + gv_all**2) * 3.6
+            dr_all = (np.arctan2(gu_all, gv_all) * (180.0 / np.pi)) % 360
+
+            wind_data = {}
+            for m in range(len(sp_all)):
+                wind_data[m] = {"speed": sp_all[m], "dir": dr_all[m], "has_arrows": True}
+
+            if has_e and len(sp_all) > 1:
+                wind_data.update(compute_statistics_for_array(sp_all))
+            step_results["wind"] = wind_data
+
+    # 2. Böen (Gust)
+    if "gust" in active_vars and "g_h" in surface and surface["g_h"] is not None:
         has_ens = "gust" in ens_vars
-        g_h = surface["g_h"]
-        gs_h = get_step_slice(g_h, step_idx)
-        sp_g = remap_fast(gs_h, weights) * 3.6
-        gust_data = {0: {"speed": sp_g, "has_arrows": False}}
+        g_ens = surface.get("g_e") if has_ens else None
+        all_g, has_e = _extract_values_2d(surface["g_h"], g_ens, step_idx)
 
-        if has_ens and "g_e" in surface and surface["g_e"] is not None:
-            g_e = surface["g_e"]
-            members = g_e.coords['eps'].values
-            all_g = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
-            all_g[0, :, :] = sp_g
-            for m_i, eps_val in enumerate(members, start=1):
-                ge_s = get_step_slice(g_e.sel(eps=eps_val), step_idx)
-                spe_g = remap_fast(ge_s, weights) * 3.6
-                all_g[m_i, :, :] = spe_g
-                gust_data[m_i] = {"speed": spe_g, "has_arrows": False}
-            gust_data.update(compute_statistics_for_array(all_g))
-        step_results["gust"] = gust_data
+        if all_g is not None:
+            all_g_remap = remap_batch(all_g, weights) * 3.6
+            gust_data = {}
+            for m in range(len(all_g_remap)):
+                gust_data[m] = {"speed": all_g_remap[m], "has_arrows": False}
 
-    # 2. Radar (dBZ)
-    if "dbz" in active_vars and "dbz_h" in surface:
+            if has_e and len(all_g_remap) > 1:
+                gust_data.update(compute_statistics_for_array(all_g_remap))
+            step_results["gust"] = gust_data
+
+    # 3. Radar (dBZ)
+    if "dbz" in active_vars and "dbz_h" in surface and surface["dbz_h"] is not None:
         has_ens = "dbz" in ens_vars
-        dbz_h = surface["dbz_h"]
-        dbz_s = get_step_slice(dbz_h, step_idx)
-        g_dbz = remap_fast(dbz_s, weights)
-        g_dbz = np.where(np.isnan(g_dbz), np.nan, np.maximum(0.0, g_dbz))
-        dbz_data = {0: {"speed": np.where(g_dbz < 7.0, np.nan, g_dbz), "has_arrows": False}}
+        dbz_ens = surface.get("dbz_e") if has_ens else None
+        all_dbz, has_e = _extract_values_2d(surface["dbz_h"], dbz_ens, step_idx)
 
-        if has_ens and "dbz_e" in surface and surface["dbz_e"] is not None:
-            dbz_e = surface["dbz_e"]
-            members = dbz_e.coords['eps'].values
-            all_dbz = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
-            all_dbz[0, :, :] = g_dbz
-            for m_i, eps_val in enumerate(members, start=1):
-                d_s = get_step_slice(dbz_e.sel(eps=eps_val), step_idx)
-                gd = remap_fast(d_s, weights)
-                gd = np.where(np.isnan(gd), np.nan, np.maximum(0.0, gd))
-                all_dbz[m_i, :, :] = gd
-                dbz_data[m_i] = {"speed": np.where(gd < 7.0, np.nan, gd), "has_arrows": False}
-            dbz_data.update(compute_statistics_for_array(all_dbz, threshold=7.0))
-        step_results["dbz"] = dbz_data
+        if all_dbz is not None:
+            g_dbz = remap_batch(all_dbz, weights)
+            np.maximum(0.0, g_dbz, out=g_dbz, where=~np.isnan(g_dbz))
 
-    # 3. Sonnenschein (%)
-    if "sun" in active_vars and "sun_h" in surface:
+            dbz_data = {}
+            for m in range(len(g_dbz)):
+                val = g_dbz[m].copy()
+                val[val < 7.0] = np.nan
+                dbz_data[m] = {"speed": val, "has_arrows": False}
+
+            if has_e and len(g_dbz) > 1:
+                dbz_data.update(compute_statistics_for_array(g_dbz, threshold=7.0))
+            step_results["dbz"] = dbz_data
+
+    # 4. Sonnenschein (%)
+    if "sun" in active_vars and "sun_h" in surface and surface["sun_h"] is not None:
         has_ens = "sun" in ens_vars
-        sun_h = surface["sun_h"]
-        sun_s = get_step_slice(sun_h, step_idx)
-        g_sun_sec = remap_fast(sun_s, weights)
-        g_sun_sec = np.where(np.isnan(g_sun_sec), np.nan, np.maximum(0.0, g_sun_sec))
-        sun_pct = np.clip((g_sun_sec / 3600.0) * 100.0, 0.0, 100.0)
-        sun_data = {0: {"speed": np.where(sun_pct < 10.0, np.nan, sun_pct), "has_arrows": False}}
+        sun_ens = surface.get("sun_e") if has_ens else None
+        all_sun, has_e = _extract_values_2d(surface["sun_h"], sun_ens, step_idx)
 
-        if has_ens and "sun_e" in surface and surface["sun_e"] is not None:
-            sun_e = surface["sun_e"]
-            members = sun_e.coords['eps'].values
-            all_sun = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
-            all_sun[0, :, :] = sun_pct
-            for m_i, eps_val in enumerate(members, start=1):
-                se_s = get_step_slice(sun_e.sel(eps=eps_val), step_idx)
-                gs_sec = remap_fast(se_s, weights)
-                gs_sec = np.where(np.isnan(gs_sec), np.nan, np.maximum(0.0, gs_sec))
-                spct = np.clip((gs_sec / 3600.0) * 100.0, 0.0, 100.0)
-                all_sun[m_i, :, :] = spct
-                sun_data[m_i] = {"speed": np.where(spct < 10.0, np.nan, spct), "has_arrows": False}
-            sun_data.update(compute_statistics_for_array(all_sun, threshold=10.0))
-        step_results["sun"] = sun_data
+        if all_sun is not None:
+            g_sun = remap_batch(all_sun, weights)
+            np.maximum(0.0, g_sun, out=g_sun, where=~np.isnan(g_sun))
+            sun_pct = np.clip((g_sun / 3600.0) * 100.0, 0.0, 100.0)
 
-    # 4. Wolken
+            sun_data = {}
+            for m in range(len(sun_pct)):
+                val = sun_pct[m].copy()
+                val[val < 10.0] = np.nan
+                sun_data[m] = {"speed": val, "has_arrows": False}
+
+            if has_e and len(sun_pct) > 1:
+                sun_data.update(compute_statistics_for_array(sun_pct, threshold=10.0))
+            step_results["sun"] = sun_data
+
+    # 5. Wolken
     CLOUD_KEYS = ["clct", "clch", "clcm", "clcl"]
     for c_key in CLOUD_KEYS:
-        if c_key in active_vars and f"{c_key}_h" in surface:
+        if c_key in active_vars and f"{c_key}_h" in surface and surface[f"{c_key}_h"] is not None:
             has_ens = c_key in ens_vars
-            c_h = surface[f"{c_key}_h"]
-            c_s = get_step_slice(c_h, step_idx)
-            g_c = remap_fast(c_s, weights)
-            c_pct = np.clip(g_c, 0.0, 100.0)
-            c_data = {0: {"speed": np.where(c_pct < 10.0, np.nan, c_pct), "has_arrows": False}}
+            c_ens = surface.get(f"{c_key}_e") if has_ens else None
+            all_c, has_e = _extract_values_2d(surface[f"{c_key}_h"], c_ens, step_idx)
 
-            if has_ens and f"{c_key}_e" in surface and surface[f"{c_key}_e"] is not None:
-                c_e = surface[f"{c_key}_e"]
-                members = c_e.coords['eps'].values
-                all_c = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
-                all_c[0, :, :] = c_pct
-                for m_i, eps_val in enumerate(members, start=1):
-                    cs_e = get_step_slice(c_e.sel(eps=eps_val), step_idx)
-                    gc_e = remap_fast(cs_e, weights)
-                    cp_e = np.clip(gc_e, 0.0, 100.0)
-                    all_c[m_i, :, :] = cp_e
-                    c_data[m_i] = {"speed": np.where(cp_e < 10.0, np.nan, cp_e), "has_arrows": False}
-                c_data.update(compute_statistics_for_array(all_c, threshold=10.0))
-            step_results[c_key] = c_data
+            if all_c is not None:
+                g_c = remap_batch(all_c, weights)
+                c_pct = np.clip(g_c, 0.0, 100.0)
 
-    # 5. Höhen-Winde
+                c_data = {}
+                for m in range(len(c_pct)):
+                    val = c_pct[m].copy()
+                    val[val < 10.0] = np.nan
+                    c_data[m] = {"speed": val, "has_arrows": False}
+
+                if has_e and len(c_pct) > 1:
+                    c_data.update(compute_statistics_for_array(c_pct, threshold=10.0))
+                step_results[c_key] = c_data
+
+    # 6. Höhen-Winde
     for var_name, var_cfg in config.VARIABLES_CONFIG.items():
         if var_cfg.get("type") != "altitude" or var_name not in active_vars:
             continue
@@ -237,29 +248,24 @@ def compute_timestep(model_name, weather_data, step_idx, weights):
             continue
 
         u_hl, v_hl = altitude_hl[alt]
-        u_s = get_step_slice(u_hl, step_idx)
-        v_s = get_step_slice(v_hl, step_idx)
-        gu = remap_fast(u_s, weights)
-        gv = remap_fast(v_s, weights)
-        sp = np.sqrt(gu**2 + gv**2) * 3.6
-        dr = (np.arctan2(gu, gv) * 180 / np.pi) % 360
-        alt_data = {0: {"speed": sp, "dir": dr, "has_arrows": True}}
+        u_ens, v_ens = (altitude_ens.get(alt, (None, None))) if has_ens else (None, None)
 
-        if has_ens and alt in altitude_ens and altitude_ens[alt][0] is not None:
-            u_ens, v_ens = altitude_ens[alt]
-            members = u_ens.coords['eps'].values
-            all_sp = np.zeros((1 + len(members), config.NY, config.NX), dtype=np.float32)
-            all_sp[0, :, :] = sp
-            for m_i, eps_val in enumerate(members, start=1):
-                ue_s = get_step_slice(u_ens.sel(eps=eps_val), step_idx)
-                ve_s = get_step_slice(v_ens.sel(eps=eps_val), step_idx)
-                gue = remap_fast(ue_s, weights)
-                gve = remap_fast(ve_s, weights)
-                spe = np.sqrt(gue**2 + gve**2) * 3.6
-                dre = (np.arctan2(gue, gve) * 180 / np.pi) % 360
-                all_sp[m_i, :, :] = spe
-                alt_data[m_i] = {"speed": spe, "dir": dre, "has_arrows": True}
-            alt_data.update(compute_statistics_for_array(all_sp))
-        step_results[var_name] = alt_data
+        all_u, has_e = _extract_values_2d(u_hl, u_ens, step_idx)
+        all_v, _ = _extract_values_2d(v_hl, v_ens, step_idx)
+
+        if all_u is not None and all_v is not None:
+            gu_all = remap_batch(all_u, weights)
+            gv_all = remap_batch(all_v, weights)
+
+            sp_all = np.sqrt(gu_all**2 + gv_all**2) * 3.6
+            dr_all = (np.arctan2(gu_all, gv_all) * (180.0 / np.pi)) % 360
+
+            alt_data = {}
+            for m in range(len(sp_all)):
+                alt_data[m] = {"speed": sp_all[m], "dir": dr_all[m], "has_arrows": True}
+
+            if has_e and len(sp_all) > 1:
+                alt_data.update(compute_statistics_for_array(sp_all))
+            step_results[var_name] = alt_data
 
     return step_results
