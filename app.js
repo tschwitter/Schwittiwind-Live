@@ -841,9 +841,9 @@ function renderSingleLegendCol(varName, isIQR) {
     } else if (paletteType === "iqr_wind") {
         labelsHtml = `<div>+</div><div>30</div><div>24</div><div>18</div><div>14</div><div>10</div><div>8</div><div>6</div><div>4</div><div>2</div><div>0</div>`;
     } else {
-        // Skala dynamisch: bis 125+ km/h falls erweitert, sonst klassisch bis 45+ km/h
+        // Skala dynamisch bis 135+ km/h (inklusive Übergang ins knallige Rot)
         if (levels && levels.length > 15) {
-            labelsHtml = `<div>+</div><div>125</div><div>115</div><div>105</div><div>95</div><div>85</div><div>75</div><div>65</div><div>55</div><div>45</div><div>36</div><div>27</div><div>23</div><div>18</div><div>14</div><div>11</div><div>7</div><div>4</div><div>0</div>`;
+            labelsHtml = `<div>+</div><div>135</div><div>125</div><div>115</div><div>105</div><div>95</div><div>85</div><div>75</div><div>65</div><div>55</div><div>45</div><div>36</div><div>27</div><div>23</div><div>18</div><div>14</div><div>11</div><div>7</div><div>4</div><div>0</div>`;
         } else {
             labelsHtml = `<div>+</div><div>45</div><div>36</div><div>27</div><div>23</div><div>18</div><div>14</div><div>11</div><div>7</div><div>4</div><div>0</div>`;
         }
