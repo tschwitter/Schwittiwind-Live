@@ -574,14 +574,13 @@ function setSecondaryVar(newVar) {
     closeAllPopups();
     
     var btn = document.getElementById("layer2Btn");
-    var labelEl = btn ? btn.querySelector(".notch-label") : null;
     var cfgSec = document.getElementById("cfgSectionL2");
     var titleSec = document.getElementById("cfgTitleL2");
 
     if (layer2Var) {
         var vCfg = config.variables_config[layer2Var] || {};
         var lbl = vCfg.label || layer2Var;
-        if (labelEl) labelEl.innerText = "2. Ebene: " + lbl + " ✕";
+        if (btn) btn.innerText = "2. Ebene: " + lbl + " ✕";
         btn.classList.add("active");
         cfgSec.style.opacity = "1";
         titleSec.innerText = "2. Ebene: " + lbl;
@@ -589,7 +588,7 @@ function setSecondaryVar(newVar) {
         var targetOp = (vCfg.palette === "cloud") ? 95 : 60;
         setLayerOpacity(2, targetOp);
     } else {
-        if (labelEl) labelEl.innerText = "+ 2. Ebene";
+        if (btn) btn.innerText = "+ 2. Ebene";
         btn.classList.remove("active");
         cfgSec.style.opacity = "0.5";
         titleSec.innerText = "2. Ebene: Keine";
