@@ -208,7 +208,6 @@ def _fetch_and_slice_single_hour(args):
 
 def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times, valid_cells, alt_prep, target_alts):
     label = f"{var_name} Höhen {[int(a) for a in target_alts]}m ({'Ensemble' if perturbed else 'Hauptlauf'})"
-    total = len(lead_times)
     num_workers = 2 if perturbed else 3
     print(f"-> Verarbeite {label} ({num_workers} Worker)...", flush=True)
 
@@ -273,37 +272,49 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
     gc.collect()
 
     surface_results = {}
+    print(f"2. Lade 2D-Felder für [{model_name}] ({active_vars}) parallel...", flush=True)
 
-    print(f"2. Lade 2D-Felder für [{model_name}] ({active_vars})...", flush=True)
-    
+    def _fetch_2d_task(key, grib_name, perturbed):
+        return key, fetch_single_2d(collection, grib_name, perturbed, ref_time_str, lead_times, valid_cells)
+
+    def _fetch_sun_task(key, perturbed):
+        return key, fetch_dursun_hourly(collection, perturbed, ref_time_str, start_step, end_step, valid_cells)
+
+    tasks_2d = []
     if "wind" in active_vars:
-        surface_results["u_h"] = fetch_single_2d(collection, "U_10M", False, ref_time_str, lead_times, valid_cells)
-        surface_results["v_h"] = fetch_single_2d(collection, "V_10M", False, ref_time_str, lead_times, valid_cells)
+        tasks_2d.append(("u_h", "U_10M", False))
+        tasks_2d.append(("v_h", "V_10M", False))
         if "wind" in ens_vars:
-            surface_results["u_e"] = fetch_single_2d(collection, "U_10M", True, ref_time_str, lead_times, valid_cells)
-            surface_results["v_e"] = fetch_single_2d(collection, "V_10M", True, ref_time_str, lead_times, valid_cells)
+            tasks_2d.append(("u_e", "U_10M", True))
+            tasks_2d.append(("v_e", "V_10M", True))
 
     if "gust" in active_vars:
-        surface_results["g_h"] = fetch_single_2d(collection, "VMAX_10M", False, ref_time_str, lead_times, valid_cells)
+        tasks_2d.append(("g_h", "VMAX_10M", False))
         if "gust" in ens_vars:
-            surface_results["g_e"] = fetch_single_2d(collection, "VMAX_10M", True, ref_time_str, lead_times, valid_cells)
+            tasks_2d.append(("g_e", "VMAX_10M", True))
 
     if "dbz" in active_vars:
-        surface_results["dbz_h"] = fetch_single_2d(collection, "DBZ_CMAX", False, ref_time_str, lead_times, valid_cells)
+        tasks_2d.append(("dbz_h", "DBZ_CMAX", False))
         if "dbz" in ens_vars:
-            surface_results["dbz_e"] = fetch_single_2d(collection, "DBZ_CMAX", True, ref_time_str, lead_times, valid_cells)
-
-    if "sun" in active_vars:
-        surface_results["sun_h"] = fetch_dursun_hourly(collection, False, ref_time_str, start_step, end_step, valid_cells)
-        if "sun" in ens_vars:
-            surface_results["sun_e"] = fetch_dursun_hourly(collection, True, ref_time_str, start_step, end_step, valid_cells)
+            tasks_2d.append(("dbz_e", "DBZ_CMAX", True))
 
     CLOUD_VAR_MAP = {"clct": "CLCT", "clch": "CLCH", "clcm": "CLCM", "clcl": "CLCL"}
     for key, grib_name in CLOUD_VAR_MAP.items():
         if key in active_vars:
-            surface_results[f"{key}_h"] = fetch_single_2d(collection, grib_name, False, ref_time_str, lead_times, valid_cells)
+            tasks_2d.append((f"{key}_h", grib_name, False))
             if key in ens_vars:
-                surface_results[f"{key}_e"] = fetch_single_2d(collection, grib_name, True, ref_time_str, lead_times, valid_cells)
+                tasks_2d.append((f"{key}_e", grib_name, True))
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(_fetch_2d_task, k, g, p) for k, g, p in tasks_2d]
+        if "sun" in active_vars:
+            futures.append(pool.submit(_fetch_sun_task, "sun_h", False))
+            if "sun" in ens_vars:
+                futures.append(pool.submit(_fetch_sun_task, "sun_e", True))
+
+        for f in futures:
+            key, ds = f.result()
+            surface_results[key] = ds
 
     # 3D-Höhenwinde
     hl_altitudes = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and k in active_vars]
