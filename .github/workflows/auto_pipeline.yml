@@ -2,7 +2,8 @@ name: Wetterdaten berechnen und veröffentlichen
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    # Krumme Minuten: verhindert Staus und Überspringen durch GitHub
+    - cron: '3,11,19,27,36,44,53 * * * *'
   workflow_dispatch:
     inputs:
       force:
