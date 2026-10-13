@@ -574,13 +574,14 @@ function setSecondaryVar(newVar) {
     closeAllPopups();
     
     var btn = document.getElementById("layer2Btn");
+    var labelEl = btn ? btn.querySelector(".notch-label") : null;
     var cfgSec = document.getElementById("cfgSectionL2");
     var titleSec = document.getElementById("cfgTitleL2");
 
     if (layer2Var) {
         var vCfg = config.variables_config[layer2Var] || {};
         var lbl = vCfg.label || layer2Var;
-        if (btn) btn.innerText = "2. Ebene: " + lbl + " ✕";
+        if (labelEl) labelEl.innerText = "2. Ebene: " + lbl + " ✕";
         btn.classList.add("active");
         cfgSec.style.opacity = "1";
         titleSec.innerText = "2. Ebene: " + lbl;
@@ -588,7 +589,7 @@ function setSecondaryVar(newVar) {
         var targetOp = (vCfg.palette === "cloud") ? 95 : 60;
         setLayerOpacity(2, targetOp);
     } else {
-        if (btn) btn.innerText = "+ 2. Ebene";
+        if (labelEl) labelEl.innerText = "+ 2. Ebene";
         btn.classList.remove("active");
         cfgSec.style.opacity = "0.5";
         titleSec.innerText = "2. Ebene: Keine";
@@ -1189,7 +1190,7 @@ function renderContours() {
     }
 }
 
-// ================= OPTIMIERTE, FEINERE & DICHTERE WINDPFEILE =================
+// ================= OPTIMIERTE WINDPFEILE: DICHTER IN MITTLEREN ZOOMS & DYNAMISCHERE SKALIERUNG =================
 function drawVisibleArrows() {
     if (!map || !config) return;
     if (!activeMarkers) { activeMarkers = L.layerGroup().addTo(map); } else { activeMarkers.clearLayers(); }
@@ -1219,11 +1220,11 @@ function drawVisibleArrows() {
     var bounds = map.getBounds();
     var zoom = map.getZoom();
 
-    // Dichteres Gitter beim Rauszoomen (mehr Pfeile)
+    // Dichteres Raster auf den mittleren Zoomstufen
     var step = 16;
-    if (zoom >= 9 && zoom <= 10) step = 10;
-    else if (zoom === 11) step = 6;
-    else if (zoom === 12) step = 4;
+    if (zoom >= 9 && zoom <= 10) step = 7;   // Vorher 10 -> deutlich mehr Pfeile auf Landesübersicht
+    else if (zoom === 11) step = 4;          // Vorher 6 -> dichteres Netz im Regionalschnitt
+    else if (zoom === 12) step = 3;          // Vorher 4
     else if (zoom === 13) step = 2;
     else if (zoom >= 14) step = 1;
 
@@ -1247,17 +1248,16 @@ function drawVisibleArrows() {
             var speed = sVal / 10.0;
             var dir = dirs[i];
 
-            // Flachere Skalierung: wächst sanft mit, wird nie riesig/klobig
-            var arrow_w = Math.min(22, Math.max(6, 4.5 + Math.pow(speed, 0.45) * 2.2));
-            var arrow_h = Math.min(50, Math.max(13, 9.0 + Math.pow(speed, 0.60) * 3.8));
+            // Dynamischere Skalierung: spürbarer Größenunterschied zwischen sanfter Brise und Sturm
+            var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
+            var arrow_h = Math.min(62, Math.max(13, 8.5 + Math.pow(speed, 0.80) * 1.6));
 
-            // Schlankerer Pfeilkopf & filigraner 0.5px Rand
-            var svg = '<div style="transform: rotate(' + dir + 'deg); width: 60px; height: 60px; display: flex; align-items: center; justify-content: center;">' +
+            var svg = '<div style="transform: rotate(' + dir + 'deg); width: 70px; height: 70px; display: flex; align-items: center; justify-content: center;">' +
                       '<svg viewBox="0 0 24 24" width="' + arrow_w.toFixed(1) + 'px" height="' + arrow_h.toFixed(1) + 'px">' +
                       '<path d="M11.2 23 H12.8 V9 H16.2 L12 1.5 L7.8 9 H11.2 Z" fill="#111111" stroke="#ffffff" stroke-width="0.5"/>' +
                       '</svg></div>';
 
-            var icon = L.divIcon({ html: svg, iconSize: [60, 60], iconAnchor: [30, 30], className: 'wind-arrow-icon' });
+            var icon = L.divIcon({ html: svg, iconSize: [70, 70], iconAnchor: [35, 35], className: 'wind-arrow-icon' });
             var modLabel = (currentModel === "icon-ch2") ? "ICON-CH2" : "ICON-CH1";
             L.marker(latlng, { icon: icon }).bindPopup(`<b>${labelType} (${modLabel}):</b><br>Stärke: ${speed.toFixed(1)} km/h<br>Richtung: ${dir.toFixed(0)}°`).addTo(activeMarkers);
         }
