@@ -157,7 +157,6 @@ html, body {
     z-index: 2;
 }
 
-/* SUB-LEISTEN: MEHRZEILIG */
 .sub-nav-row {
     background-color: rgba(25, 34, 44, 0.95);
     border-color: rgba(0, 122, 183, 0.4);
@@ -218,7 +217,7 @@ html, body {
     box-shadow: 0 0 8px rgba(0, 122, 183, 0.4);
 }
 
-/* --- 2. EBENE: SCHLANKE DROP-NOTCH --- */
+/* --- 2. EBENE: DYNAMISCH MITWACHSENDE DROP-NOTCH --- */
 .layer2-anchor-wrap {
     display: flex;
     justify-content: center;
@@ -236,14 +235,17 @@ html, body {
     color: #cbd5e1;
     font-family: Arial, sans-serif;
     font-size: 10px; font-weight: bold;
-    width: 118px;
+    width: auto;             /* Wächst flexibel mit dem Text mit */
+    min-width: 96px;         /* Kompakt im Standardzustand */
+    max-width: 90vw;
     height: 22px;
-    padding: 0;
+    padding: 0 16px;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     user-select: none;
+    transition: all 0.2s ease;
 }
 
 .notch-bg-svg {
@@ -260,6 +262,7 @@ html, body {
     fill: rgba(33, 43, 54, 0.96);
     stroke: rgba(255, 255, 255, 0.18);
     stroke-width: 1;
+    vector-effect: non-scaling-stroke; /* Hält die Rahmenlinie immer gleich dünn */
     transition: fill 0.2s ease, stroke 0.2s ease;
 }
 
@@ -268,6 +271,7 @@ html, body {
     z-index: 2;
     margin-top: 2px;
     letter-spacing: 0.1px;
+    white-space: nowrap;
     transition: color 0.2s ease;
 }
 
@@ -279,13 +283,17 @@ html, body {
     color: #ffffff;
 }
 
+/* AKTIV: BLAU MIT GLOW */
 .layer2-btn.active .notch-path {
-    fill: #2e7d32;
-    stroke: #81c784;
+    fill: #007ab7;
+    stroke: #70c4ff;
+}
+.layer2-btn.active {
+    filter: drop-shadow(0 0 8px rgba(0, 122, 183, 0.65));
 }
 .layer2-btn.active .notch-label {
     color: #ffffff;
-    text-shadow: 0 0 6px rgba(129, 199, 132, 0.7);
+    text-shadow: 0 0 6px rgba(112, 196, 255, 0.8);
 }
 
 /* --- MODELL-AUSWAHL RECHTS ÜBER DEM PANEL --- */
@@ -366,6 +374,26 @@ html, body {
     color: white;
     font-family: Arial, sans-serif;
     box-sizing: border-box;
+}
+
+/* DUNKELE, DEZENTE SCROLLBAR IN ALLEN DROPDOWNS */
+.runs-dropdown-popup,
+.layer2-dropdown-popup {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+.runs-dropdown-popup::-webkit-scrollbar,
+.layer2-dropdown-popup::-webkit-scrollbar {
+    width: 4px;
+}
+.runs-dropdown-popup::-webkit-scrollbar-track,
+.layer2-dropdown-popup::-webkit-scrollbar-track {
+    background: transparent;
+}
+.runs-dropdown-popup::-webkit-scrollbar-thumb,
+.layer2-dropdown-popup::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
 }
 
 .runs-dropdown-popup {
@@ -478,6 +506,8 @@ html, body {
     display: flex; flex-direction: column;
     overflow-y: auto; box-sizing: border-box;
     transition: opacity 0.25s ease, filter 0.25s ease, max-height 0.25s ease;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 
 .member-panel.panel-dimmed,
@@ -494,7 +524,7 @@ html, body {
     background: transparent;
 }
 .member-panel::-webkit-scrollbar-thumb {
-    background: rgba(255,255,255,0.2);
+    background: rgba(255, 255, 255, 0.2);
     border-radius: 4px;
 }
 
@@ -712,7 +742,7 @@ html, body {
     .top-control-panel { top: 6px; }
     .top-row { padding: 2px 4px; gap: 2px; border-radius: 14px; }
     .var-btn, .nav-toggle-btn { font-size: 10px; padding: 4px 6px; border-radius: 10px; }
-    .layer2-btn { width: 102px; height: 20px; font-size: 8.5px; }
+    .layer2-btn { min-width: 86px; height: 20px; font-size: 8.5px; padding: 0 12px; }
     
     .model-select-header { top: 8px; right: 6px; width: 58px; }
     .model-title { font-size: 9px; }
@@ -720,7 +750,6 @@ html, body {
 
     .control-panel { bottom: 8px; left: 8px; right: 8px; width: auto; transform: none; padding: 8px 10px; border-radius: 12px; }
     
-    /* Panel auf Smartphones: Stoppt garantiert vor dem Zeitslider */
     .member-panel { 
         top: 66px; 
         right: 6px; 
