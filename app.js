@@ -7,7 +7,7 @@ var selectedRuns = { "icon-ch1": null, "icon-ch2": null };
 
 var verticalNavMode = 'member'; // 'member' oder 'run'
 
-var baseMapOpacity = 0.80;
+var baseMapOpacity = 0.80; // Standard 80% Deckkraft
 var baseMapStyle = 'relief'; // 'relief' oder 'simple'
 
 var layer1Var = null;
@@ -574,14 +574,13 @@ function setSecondaryVar(newVar) {
     closeAllPopups();
     
     var btn = document.getElementById("layer2Btn");
-    var labelEl = btn ? btn.querySelector(".notch-label") : null;
     var cfgSec = document.getElementById("cfgSectionL2");
     var titleSec = document.getElementById("cfgTitleL2");
 
     if (layer2Var) {
         var vCfg = config.variables_config[layer2Var] || {};
         var lbl = vCfg.label || layer2Var;
-        if (labelEl) labelEl.innerText = "2. Ebene: " + lbl + " ✕";
+        if (btn) btn.innerText = "2. Ebene: " + lbl + " ✕";
         btn.classList.add("active");
         cfgSec.style.opacity = "1";
         titleSec.innerText = "2. Ebene: " + lbl;
@@ -589,7 +588,7 @@ function setSecondaryVar(newVar) {
         var targetOp = (vCfg.palette === "cloud") ? 95 : 60;
         setLayerOpacity(2, targetOp);
     } else {
-        if (labelEl) labelEl.innerText = "+ 2. Ebene";
+        if (btn) btn.innerText = "+ 2. Ebene";
         btn.classList.remove("active");
         cfgSec.style.opacity = "0.5";
         titleSec.innerText = "2. Ebene: Keine";
@@ -950,9 +949,11 @@ async function init() {
         var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
         var swisstopo_cantons_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-kanton-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
 
+        // Leaflet-Karte ohne die standardmäßigen Zoom-Buttons initialisieren
         map = L.map('map', {
             center: [46.8182, 8.2275],
             zoom: 9, minZoom: 7, maxZoom: 15,
+            zoomControl: false, // <-- Schaltet Leaflet Plus/Minus komplett ab!
             preferCanvas: true
         });
 
@@ -1190,7 +1191,7 @@ function renderContours() {
     }
 }
 
-// ================= OPTIMIERTE WINDPFEILE: DICHTER IN MITTLEREN ZOOMS & DYNAMISCHERE SKALIERUNG =================
+// ================= OPTIMIERTE WINDPFEILE =================
 function drawVisibleArrows() {
     if (!map || !config) return;
     if (!activeMarkers) { activeMarkers = L.layerGroup().addTo(map); } else { activeMarkers.clearLayers(); }
@@ -1220,11 +1221,10 @@ function drawVisibleArrows() {
     var bounds = map.getBounds();
     var zoom = map.getZoom();
 
-    // Dichteres Raster auf den mittleren Zoomstufen
     var step = 16;
-    if (zoom >= 9 && zoom <= 10) step = 7;   // Vorher 10 -> deutlich mehr Pfeile auf Landesübersicht
-    else if (zoom === 11) step = 4;          // Vorher 6 -> dichteres Netz im Regionalschnitt
-    else if (zoom === 12) step = 3;          // Vorher 4
+    if (zoom >= 9 && zoom <= 10) step = 7;
+    else if (zoom === 11) step = 4;
+    else if (zoom === 12) step = 3;
     else if (zoom === 13) step = 2;
     else if (zoom >= 14) step = 1;
 
@@ -1234,7 +1234,7 @@ function drawVisibleArrows() {
 
     for (var i = 0; i < speeds.length; i++) {
         var sVal = speeds[i];
-        if (sVal < 25) continue; // Zeigt Pfeile ab 2.5 km/h
+        if (sVal < 25) continue;
 
         var r = Math.floor(i / config.nx);
         var c = i % config.nx;
@@ -1248,7 +1248,6 @@ function drawVisibleArrows() {
             var speed = sVal / 10.0;
             var dir = dirs[i];
 
-            // Dynamischere Skalierung: spürbarer Größenunterschied zwischen sanfter Brise und Sturm
             var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
             var arrow_h = Math.min(62, Math.max(13, 8.5 + Math.pow(speed, 0.80) * 1.6));
 
