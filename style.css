@@ -121,18 +121,20 @@ html, body {
     box-shadow: 0 4px 12px rgba(0,0,0,0.45);
     pointer-events: auto;
     max-width: 95vw;
-    overflow-x: auto;
     box-sizing: border-box;
     position: relative;
     z-index: 2;
 }
 
+/* SUB-LEISTEN: MEHRZEILIG MIT WEICHEM UMBRUCH */
 .sub-nav-row {
     background-color: rgba(25, 34, 44, 0.95);
     border-color: rgba(0, 122, 183, 0.4);
-    padding: 2px 8px;
+    padding: 3px 8px;
     gap: 3px;
     margin-top: 4px;
+    flex-wrap: wrap; /* Mehrzeilig wenn zu breit */
+    border-radius: 16px;
     animation: fadeIn 0.15s ease-out;
 }
 
@@ -185,7 +187,7 @@ html, body {
     box-shadow: 0 0 8px rgba(0, 122, 183, 0.4);
 }
 
-/* --- 2. EBENE: SCHLANKE, FLIEHENDE DROP NOTCH --- */
+/* --- 2. EBENE: SCHLANKE DROP-NOTCH --- */
 .layer2-anchor-wrap {
     display: flex;
     justify-content: center;
@@ -203,8 +205,8 @@ html, body {
     color: #cbd5e1;
     font-family: Arial, sans-serif;
     font-size: 10px; font-weight: bold;
-    width: 118px; /* Schmaler & kompakter */
-    height: 22px; /* Dünner */
+    width: 118px;
+    height: 22px;
     padding: 0;
     cursor: pointer;
     display: inline-flex;
@@ -346,10 +348,10 @@ html, body {
     background: rgba(255,255,255,0.05);
     border: 1px solid transparent;
     border-radius: 6px;
-    color: #ddd; padding: 6px 9px;
+    color: #ddd; padding: 7px 10px;
     text-align: left; font-size: 11px; font-weight: bold;
     cursor: pointer; transition: all 0.15s;
-    display: flex; justify-content: space-between; align-items: center;
+    display: flex; justify-content: flex-start; align-items: center;
 }
 .run-item:hover { background: #007ab7; color: white; }
 
@@ -359,7 +361,6 @@ html, body {
     border-color: #70c4ff;
     box-shadow: 0 0 10px rgba(0, 122, 183, 0.65);
 }
-.run-tag-latest { font-size: 8.5px; background: rgba(255,255,255,0.22); padding: 1px 4px; border-radius: 4px; }
 
 .layer2-dropdown-popup {
     min-width: 175px;
@@ -428,11 +429,13 @@ html, body {
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
 }
 
-/* --- VERTICAL PANEL (RECHTS) --- */
+/* --- VERTICAL PANEL (RECHTS) MIT DYNAMISCHER HÖHE --- */
 .member-panel {
     position: fixed;
-    top: 68px; right: 20px; bottom: 150px;
+    top: 68px; right: 20px;
     width: 155px;
+    height: auto; /* Passt sich automatisch dem Inhalt an */
+    max-height: calc(100vh - 120px); /* Stoppt vor dem unteren Rand */
     background-color: rgba(24, 33, 42, 0.94);
     backdrop-filter: blur(8px);
     border: 1px solid rgba(255,255,255,0.18);
@@ -443,10 +446,9 @@ html, body {
     font-family: Arial, sans-serif; color: white;
     display: flex; flex-direction: column;
     overflow-y: auto; box-sizing: border-box;
-    transition: opacity 0.25s ease, filter 0.25s ease;
+    transition: opacity 0.25s ease, filter 0.25s ease, max-height 0.25s ease;
 }
 
-/* Abdunklung für Member-Panel UND Farbskalen */
 .member-panel.panel-dimmed,
 .legend-box.panel-dimmed {
     opacity: 0.22 !important;
@@ -507,7 +509,6 @@ html, body {
     transform: rotate(180deg);
 }
 
-/* MEMBERS-BUTTON LEUCHTET BLAU WENN EIN MEMBER AKTIV, ABER EINGEKLAPPT IST */
 .member-section-toggle.active-indicator {
     background-color: #007ab7 !important;
     border-color: #70c4ff !important;
@@ -544,68 +545,98 @@ html, body {
     text-align: center; padding: 12px 4px; font-style: italic; 
 }
 
-/* --- KONTROLLZENTRUM (UNTEN MITTE) --- */
+/* --- KONTROLLZENTRUM (UNTEN MITTE) - DARK-GLASS LOOK --- */
 .control-panel {
     position: fixed;
-    bottom: 30px; left: 50%;
+    bottom: 24px; left: 50%;
     transform: translateX(-50%);
     width: 90%; max-width: 500px;
-    background-color: rgba(33, 43, 54, 0.9);
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 10px;
+    background-color: rgba(24, 33, 42, 0.94);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 14px;
     padding: 12px 16px;
     z-index: 9999;
-    box-shadow: 4px 4px 15px rgba(0,0,0,0.5);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.65);
     font-family: Arial, sans-serif; color: white;
     box-sizing: border-box;
 }
-.day-buttons-row { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 12px; }
-.day-btn {
-    flex: 1; background: white; border: 1px solid transparent; border-radius: 6px;
-    color: black; font-weight: bold; font-size: 13px;
-    padding: 6px 0; cursor: pointer; text-align: center;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: all 0.2s;
-}
 
+.day-buttons-row { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 12px; }
+
+.day-btn {
+    flex: 1; 
+    background: rgba(255,255,255,0.06); 
+    border: 1px solid rgba(255,255,255,0.12); 
+    border-radius: 8px;
+    color: #e0e0e0; font-weight: bold; font-size: 12px;
+    padding: 6px 0; cursor: pointer; text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2); 
+    transition: all 0.15s ease-in-out;
+}
+.day-btn:hover {
+    background: rgba(255,255,255,0.14);
+    color: #ffffff;
+}
 .day-btn.active { 
     background: #007ab7; 
     color: white; 
     border-color: #70c4ff;
-    box-shadow: 0 0 10px rgba(0, 122, 183, 0.65), 0 2px 4px rgba(0,0,0,0.2);
+    box-shadow: 0 0 10px rgba(0, 122, 183, 0.65), 0 2px 4px rgba(0,0,0,0.3);
 }
 
 .main-controls-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+
 .nav-btn {
-    width: 36px; height: 36px; background: white; border: none; border-radius: 6px;
-    color: black; display: flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; 
+    background: rgba(255,255,255,0.08); 
+    border: 1px solid rgba(255,255,255,0.14); 
+    border-radius: 8px;
+    color: #ffffff; display: flex; align-items: center; justify-content: center;
     cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); font-size: 16px; font-weight: bold;
+    transition: all 0.15s;
 }
+.nav-btn:hover {
+    background: rgba(255,255,255,0.18);
+}
+
 #timeSlider {
     -webkit-appearance: none; appearance: none;
-    background: #007ab7; height: 6px; border-radius: 3px; outline: none;
+    background: rgba(0, 122, 183, 0.4); 
+    height: 6px; border-radius: 3px; outline: none;
     flex-grow: 1; margin: 0 12px; cursor: pointer;
+    border: 1px solid rgba(255,255,255,0.1);
 }
 #timeSlider::-webkit-slider-thumb {
     -webkit-appearance: none; appearance: none;
-    width: 14px; height: 24px; border-radius: 4px; background: white; border: 1px solid #333; cursor: pointer;
+    width: 14px; height: 24px; border-radius: 4px; 
+    background: #ffffff; border: 1px solid #007ab7; cursor: pointer;
+    box-shadow: 0 0 8px rgba(0, 122, 183, 0.6);
 }
 
 .member-nav-stack { display: flex; flex-direction: column; gap: 2px; margin-left: 8px; }
 .member-stack-btn {
-    width: 28px; height: 18px; background: white; border: 1px solid #ccc;
-    border-radius: 3px; color: black; font-size: 9px; font-weight: bold;
+    width: 28px; height: 18px; 
+    background: rgba(255,255,255,0.08); 
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 4px; color: #ffffff; font-size: 9px; font-weight: bold;
     display: flex; align-items: center; justify-content: center; cursor: pointer;
+    transition: all 0.15s;
 }
+.member-stack-btn:hover { background: rgba(255,255,255,0.18); }
 
 .nav-mode-btn {
     width: 34px; height: 38px; margin-left: 5px;
-    background: white; border: 1px solid #ccc; border-radius: 5px;
-    color: black; font-size: 10px; font-weight: bold;
+    background: rgba(255,255,255,0.08); 
+    border: 1px solid rgba(255,255,255,0.14); 
+    border-radius: 8px;
+    color: #e0e0e0; font-size: 10px; font-weight: bold;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.25);
     transition: all 0.2s;
     user-select: none;
 }
+.nav-mode-btn:hover { background: rgba(255,255,255,0.16); color: #ffffff; }
 .nav-mode-btn.mode-run {
     background: #007ab7;
     color: white;
@@ -613,30 +644,31 @@ html, body {
     box-shadow: 0 0 8px rgba(0, 122, 183, 0.55);
 }
 
-.bottom-labels-row { display: flex; justify-content: space-between; font-size: 12px; font-weight: bold; color: white; padding: 0 4px; }
+.bottom-labels-row { display: flex; justify-content: space-between; font-size: 12px; font-weight: bold; color: #cbd5e1; padding: 0 4px; }
 
 /* --- DYNAMISCHE LEGENDE --- */
 .legend-box { 
     position: fixed; 
-    bottom: 30px; left: 20px; 
+    bottom: 24px; left: 20px; 
     z-index: 9999; 
-    background-color: rgba(33, 43, 54, 0.9); 
-    border: 1px solid rgba(255,255,255,0.15); 
-    border-radius: 8px; 
+    background-color: rgba(24, 33, 42, 0.94); 
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.18); 
+    border-radius: 12px; 
     padding: 8px; 
     font-family: Arial, sans-serif; color: white; 
-    box-shadow: 4px 4px 12px rgba(0,0,0,0.5); 
+    box-shadow: 0 8px 25px rgba(0,0,0,0.65); 
     display: flex; gap: 8px; box-sizing: border-box; font-size: 10px; 
     transition: opacity 0.25s ease, filter 0.25s ease;
 }
 .legend-column { display: flex; flex-direction: column; align-items: center; width: 68px; }
-.legend-title { font-weight: bold; font-size: 11px; text-align: center; margin-bottom: 4px; }
+.legend-title { font-weight: bold; font-size: 11px; text-align: center; margin-bottom: 4px; color: #ffffff; }
 .legend-scale { position: relative; height: 240px; display: flex; width: 100%; }
 .legend-bar { 
     width: 18px; height: 240px; 
     display: flex; flex-direction: column; 
     border-radius: 2px; overflow: hidden; 
-    border: 1px solid #000; 
+    border: 1px solid rgba(0,0,0,0.8); 
 }
 .legend-labels { 
     position: absolute; left: 24px; top: -5px; 
@@ -655,8 +687,13 @@ html, body {
     .model-title { font-size: 9px; }
     .model-time { font-size: 7.5px; }
 
-    .control-panel { bottom: 8px; left: 8px; right: 8px; width: auto; transform: none; padding: 8px 10px; }
-    .member-panel { top: 66px; right: 6px; width: 58px; padding: 6px 2px; border-radius: 10px; }
+    .control-panel { bottom: 8px; left: 8px; right: 8px; width: auto; transform: none; padding: 8px 10px; border-radius: 12px; }
+    
+    /* Panel auf Smartphones: Stoppt vor dem Zeitslider */
+    .member-panel { 
+        top: 66px; right: 6px; width: 58px; padding: 6px 2px; border-radius: 10px; 
+        max-height: calc(100vh - 210px); 
+    }
     .member-panel-title, .member-section-title { display: none; }
     .member-section-toggle { font-size: 8.5px; padding: 4px 2px; }
     .member-btn { font-size: 9.5px; padding: 5px 1px; border-radius: 8px; }
