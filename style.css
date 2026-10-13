@@ -8,10 +8,41 @@ html, body {
 #map { width: 100%; height: 100%; z-index: 1; }
 .wind-arrow-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
 
-/* --- EINSTELLUNGS-BUTTON OBEN LINKS (UNTER ZOOM +/-) --- */
+/* --- LEAFLET ZOOM-BUTTONS (+ / -) IM COOLEN DUNKLEN DESIGN --- */
+.leaflet-bar {
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    border-radius: 6px !important;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.65) !important;
+    overflow: hidden;
+    background: transparent !important;
+}
+
+.leaflet-bar a {
+    background-color: rgba(33, 43, 54, 0.95) !important;
+    color: #e0e0e0 !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15) !important;
+    width: 32px !important;
+    height: 32px !important;
+    line-height: 30px !important;
+    font-size: 18px !important;
+    font-weight: bold !important;
+    transition: all 0.2s !important;
+    user-select: none;
+}
+
+.leaflet-bar a:hover {
+    background-color: #007ab7 !important;
+    color: #ffffff !important;
+}
+
+.leaflet-bar a:last-child {
+    border-bottom: none !important;
+}
+
+/* --- EINSTELLUNGS-BUTTON OBEN LINKS (DIREKT UNTER ZOOM +/-) --- */
 .custom-settings-control {
     position: fixed;
-    top: 82px;
+    top: 84px;
     left: 10px;
     z-index: 1000;
     pointer-events: auto;
@@ -29,7 +60,7 @@ html, body {
     background-color: rgba(33, 43, 54, 0.95) !important;
     color: #e0e0e0 !important;
     border: 1px solid rgba(255,255,255,0.2) !important;
-    border-radius: 4px !important;
+    border-radius: 6px !important;
     box-shadow: 0 1px 5px rgba(0,0,0,0.65) !important;
     cursor: pointer !important;
     transition: all 0.2s;
@@ -126,14 +157,14 @@ html, body {
     z-index: 2;
 }
 
-/* SUB-LEISTEN: MEHRZEILIG MIT WEICHEM UMBRUCH */
+/* SUB-LEISTEN: MEHRZEILIG */
 .sub-nav-row {
     background-color: rgba(25, 34, 44, 0.95);
     border-color: rgba(0, 122, 183, 0.4);
     padding: 3px 8px;
     gap: 3px;
     margin-top: 4px;
-    flex-wrap: wrap; /* Mehrzeilig wenn zu breit */
+    flex-wrap: wrap;
     border-radius: 16px;
     animation: fadeIn 0.15s ease-out;
 }
@@ -434,8 +465,8 @@ html, body {
     position: fixed;
     top: 68px; right: 20px;
     width: 155px;
-    height: auto; /* Passt sich automatisch dem Inhalt an */
-    max-height: calc(100vh - 120px); /* Stoppt vor dem unteren Rand */
+    height: auto;
+    max-height: calc(100vh - 120px);
     background-color: rgba(24, 33, 42, 0.94);
     backdrop-filter: blur(8px);
     border: 1px solid rgba(255,255,255,0.18);
@@ -677,7 +708,7 @@ html, body {
 }
 
 @media (max-width: 768px) {
-    .custom-settings-control { top: 78px; left: 8px; }
+    .custom-settings-control { top: 82px; left: 8px; }
     .top-control-panel { top: 6px; }
     .top-row { padding: 2px 4px; gap: 2px; border-radius: 14px; }
     .var-btn, .nav-toggle-btn { font-size: 10px; padding: 4px 6px; border-radius: 10px; }
@@ -689,10 +720,15 @@ html, body {
 
     .control-panel { bottom: 8px; left: 8px; right: 8px; width: auto; transform: none; padding: 8px 10px; border-radius: 12px; }
     
-    /* Panel auf Smartphones: Stoppt vor dem Zeitslider */
+    /* Panel auf Smartphones: Stoppt garantiert vor dem Zeitslider */
     .member-panel { 
-        top: 66px; right: 6px; width: 58px; padding: 6px 2px; border-radius: 10px; 
-        max-height: calc(100vh - 210px); 
+        top: 66px; 
+        right: 6px; 
+        width: 58px; 
+        padding: 6px 2px; 
+        border-radius: 10px; 
+        max-height: calc(100dvh - 245px);
+        max-height: calc(100vh - 245px);
     }
     .member-panel-title, .member-section-title { display: none; }
     .member-section-toggle { font-size: 8.5px; padding: 4px 2px; }
