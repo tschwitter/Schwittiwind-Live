@@ -7,7 +7,7 @@ var selectedRuns = { "icon-ch1": null, "icon-ch2": null };
 
 var verticalNavMode = 'member'; // 'member' oder 'run'
 
-var baseMapOpacity = 0.60;
+var baseMapOpacity = 0.80;
 var baseMapStyle = 'relief'; // 'relief' oder 'simple'
 
 var layer1Var = null;
