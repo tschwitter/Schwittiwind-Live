@@ -8,7 +8,12 @@ html, body {
 #map { width: 100%; height: 100%; z-index: 1; }
 .wind-arrow-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
 
-/* --- LEAFLET ZOOM-BUTTONS (+ / -) IM COOLEN DUNKLEN DESIGN --- */
+/* --- LEAFLET ZOOM-BUTTONS (+ / -) --- */
+.leaflet-top.leaflet-left {
+    top: 8px;
+    left: 8px;
+}
+
 .leaflet-bar {
     border: 1px solid rgba(255, 255, 255, 0.2) !important;
     border-radius: 6px !important;
@@ -21,10 +26,10 @@ html, body {
     background-color: rgba(33, 43, 54, 0.95) !important;
     color: #e0e0e0 !important;
     border-bottom: 1px solid rgba(255, 255, 255, 0.15) !important;
-    width: 32px !important;
-    height: 32px !important;
-    line-height: 30px !important;
-    font-size: 18px !important;
+    width: 30px !important;
+    height: 30px !important;
+    line-height: 28px !important;
+    font-size: 17px !important;
     font-weight: bold !important;
     transition: all 0.2s !important;
     user-select: none;
@@ -39,11 +44,11 @@ html, body {
     border-bottom: none !important;
 }
 
-/* --- EINSTELLUNGS-BUTTON OBEN LINKS (DIREKT UNTER ZOOM +/-) --- */
+/* --- EINSTELLUNGS-BUTTON OBEN LINKS (NÄHER AM RAND) --- */
 .custom-settings-control {
     position: fixed;
-    top: 84px;
-    left: 10px;
+    top: 76px;
+    left: 8px;
     z-index: 1000;
     pointer-events: auto;
 }
@@ -52,10 +57,10 @@ html, body {
     display: flex !important;
     align-items: center;
     justify-content: center;
-    width: 32px !important;
-    height: 32px !important;
-    line-height: 32px !important;
-    font-size: 16px !important;
+    width: 30px !important;
+    height: 30px !important;
+    line-height: 30px !important;
+    font-size: 15px !important;
     text-decoration: none !important;
     background-color: rgba(33, 43, 54, 0.95) !important;
     color: #e0e0e0 !important;
@@ -130,7 +135,7 @@ html, body {
 /* --- OBERES KONTROLL-PANEL (MITTE) --- */
 .top-control-panel {
     position: fixed;
-    top: 10px; left: 50%;
+    top: 6px; left: 50%;
     transform: translateX(-50%);
     z-index: 9999;
     display: flex;
@@ -157,7 +162,6 @@ html, body {
     z-index: 2;
 }
 
-/* SUB-LEISTEN: MEHRZEILIG */
 .sub-nav-row {
     background-color: rgba(25, 34, 44, 0.95);
     border-color: rgba(0, 122, 183, 0.4);
@@ -218,12 +222,12 @@ html, body {
     box-shadow: 0 0 8px rgba(0, 122, 183, 0.4);
 }
 
-/* --- 2. EBENE: EIN EINZIGES, FUGENLOS GERUNDETES FELD (DROP-NOTCH AUS EINEM GUSS) --- */
+/* --- 2. EBENE: SPALTFREIE, NAHTLOS MITWACHSENDE DROP-NOTCH --- */
 .layer2-anchor-wrap {
     display: flex;
     justify-content: center;
     position: relative;
-    margin-top: -1px; /* Fugenlos an der Außenleiste */
+    margin-top: -1px;
     z-index: 1;
     pointer-events: auto;
 }
@@ -231,44 +235,89 @@ html, body {
 .layer2-btn {
     position: relative;
     background-color: rgba(33, 43, 54, 0.94);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-top: none; /* Verschmilzt oben nahtlos mit der Leiste */
-    border-radius: 0 0 16px 16px; /* Glatte, weiche Rundung unten */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    border-radius: 0 0 14px 14px;
     color: #cbd5e1;
     font-family: Arial, sans-serif;
     font-size: 10.5px; 
     font-weight: bold;
-    padding: 4px 22px 5px 22px; /* Passt sich exakt jedem Text an */
+    padding: 3px 18px 4px 18px;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     white-space: nowrap;
-    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5);
-    transition: all 0.2s ease;
+    box-shadow: 0 5px 10px rgba(0, 0, 0, 0.45);
+    transition: background-color 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.2s;
     user-select: none;
 }
 
-.layer2-btn:hover {
-    background-color: rgba(42, 54, 68, 0.98);
-    color: #ffffff;
-    border-color: rgba(255, 255, 255, 0.28);
+.notch-wing {
+    position: absolute;
+    top: 0;
+    width: 14px;
+    height: 14px;
+    z-index: 3;
+    pointer-events: none;
+    overflow: visible;
 }
 
-/* AKTIV: BLAU MIT GLOW */
+.notch-wing-left {
+    left: -12.5px;
+}
+.notch-wing-right {
+    right: -12.5px;
+}
+
+.notch-fill {
+    fill: rgba(33, 43, 54, 0.94);
+    transition: fill 0.2s;
+}
+
+.notch-stroke {
+    stroke: rgba(255, 255, 255, 0.18);
+    stroke-width: 1.1px;
+    transition: stroke 0.2s;
+}
+
+.notch-label {
+    position: relative;
+    z-index: 2;
+    white-space: nowrap;
+}
+
+.layer2-btn:hover {
+    background-color: rgba(40, 52, 65, 0.98);
+    color: #ffffff;
+}
+.layer2-btn:hover .notch-fill {
+    fill: rgba(40, 52, 65, 0.98);
+}
+.layer2-btn:hover .notch-stroke {
+    stroke: rgba(255, 255, 255, 0.3);
+}
+
 .layer2-btn.active {
     background-color: #007ab7 !important;
     border-color: #70c4ff !important;
-    border-top: none !important;
     color: #ffffff !important;
-    box-shadow: 0 0 12px rgba(0, 122, 183, 0.75), 0 4px 10px rgba(0, 0, 0, 0.4) !important;
+    box-shadow: 0 0 12px rgba(0, 122, 183, 0.7), 0 3px 8px rgba(0,0,0,0.4) !important;
+}
+.layer2-btn.active .notch-fill {
+    fill: #007ab7 !important;
+}
+.layer2-btn.active .notch-stroke {
+    stroke: #70c4ff !important;
 }
 
-/* --- MODELL-AUSWAHL RECHTS ÜBER DEM PANEL --- */
+/* --- MODELL-AUSWAHL RECHTS ÜBER DEM PANEL (NÄHER AM RAND) --- */
 .model-select-header {
     position: fixed;
-    top: 15px;
-    right: 20px;
+    top: 10px;
+    right: 10px;
     width: 155px;
     z-index: 10000;
     box-sizing: border-box;
@@ -408,8 +457,8 @@ html, body {
 
 /* Einstellungs-Popup */
 .settings-popup {
-    top: 82px;
-    left: 50px;
+    top: 76px;
+    left: 45px;
     width: 260px;
 }
 .settings-title {
@@ -443,7 +492,7 @@ html, body {
 #loadingIndicator {
     display: none;
     position: fixed;
-    top: 135px; left: 50%;
+    top: 125px; left: 50%;
     transform: translateX(-50%);
     z-index: 100000;
     background-color: rgba(33, 43, 54, 0.95);
@@ -455,13 +504,13 @@ html, body {
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
 }
 
-/* --- VERTICAL PANEL (RECHTS) MIT DYNAMISCHER HÖHE --- */
+/* --- VERTICAL PANEL (RECHTS) - NÄHER AM RAND & DYNAMISCHE HÖHE --- */
 .member-panel {
     position: fixed;
-    top: 68px; right: 20px;
+    top: 60px; right: 10px;
     width: 155px;
     height: auto;
-    max-height: calc(100vh - 120px);
+    max-height: calc(100vh - 100px);
     background-color: rgba(24, 33, 42, 0.94);
     backdrop-filter: blur(8px);
     border: 1px solid rgba(255,255,255,0.18);
@@ -573,32 +622,32 @@ html, body {
     text-align: center; padding: 12px 4px; font-style: italic; 
 }
 
-/* --- KONTROLLZENTRUM (UNTEN MITTE) - DARK-GLASS LOOK --- */
+/* --- KONTROLLZENTRUM (UNTEN MITTE) - NÄHER AM RAND & KOMPAKTER --- */
 .control-panel {
     position: fixed;
-    bottom: 24px; left: 50%;
+    bottom: 12px; left: 50%;
     transform: translateX(-50%);
-    width: 90%; max-width: 500px;
+    width: 86%; max-width: 460px;
     background-color: rgba(24, 33, 42, 0.94);
     backdrop-filter: blur(8px);
     border: 1px solid rgba(255,255,255,0.18);
-    border-radius: 14px;
-    padding: 12px 16px;
+    border-radius: 12px;
+    padding: 8px 12px; /* Spürbar kompakter */
     z-index: 9999;
-    box-shadow: 0 8px 25px rgba(0,0,0,0.65);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.65);
     font-family: Arial, sans-serif; color: white;
     box-sizing: border-box;
 }
 
-.day-buttons-row { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 12px; }
+.day-buttons-row { display: flex; justify-content: space-between; gap: 4px; margin-bottom: 6px; }
 
 .day-btn {
     flex: 1; 
     background: rgba(255,255,255,0.06); 
     border: 1px solid rgba(255,255,255,0.12); 
-    border-radius: 8px;
-    color: #e0e0e0; font-weight: bold; font-size: 12px;
-    padding: 6px 0; cursor: pointer; text-align: center;
+    border-radius: 6px;
+    color: #e0e0e0; font-weight: bold; font-size: 11.5px;
+    padding: 4px 0; cursor: pointer; text-align: center;
     box-shadow: 0 1px 3px rgba(0,0,0,0.2); 
     transition: all 0.15s ease-in-out;
 }
@@ -613,15 +662,15 @@ html, body {
     box-shadow: 0 0 10px rgba(0, 122, 183, 0.65), 0 2px 4px rgba(0,0,0,0.3);
 }
 
-.main-controls-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.main-controls-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
 
 .nav-btn {
-    width: 36px; height: 36px; 
+    width: 30px; height: 30px; 
     background: rgba(255,255,255,0.08); 
     border: 1px solid rgba(255,255,255,0.14); 
-    border-radius: 8px;
+    border-radius: 6px;
     color: #ffffff; display: flex; align-items: center; justify-content: center;
-    cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); font-size: 16px; font-weight: bold;
+    cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); font-size: 14px; font-weight: bold;
     transition: all 0.15s;
 }
 .nav-btn:hover {
@@ -631,34 +680,34 @@ html, body {
 #timeSlider {
     -webkit-appearance: none; appearance: none;
     background: rgba(0, 122, 183, 0.4); 
-    height: 6px; border-radius: 3px; outline: none;
-    flex-grow: 1; margin: 0 12px; cursor: pointer;
+    height: 5px; border-radius: 3px; outline: none;
+    flex-grow: 1; margin: 0 8px; cursor: pointer;
     border: 1px solid rgba(255,255,255,0.1);
 }
 #timeSlider::-webkit-slider-thumb {
     -webkit-appearance: none; appearance: none;
-    width: 14px; height: 24px; border-radius: 4px; 
+    width: 12px; height: 20px; border-radius: 3px; 
     background: #ffffff; border: 1px solid #007ab7; cursor: pointer;
-    box-shadow: 0 0 8px rgba(0, 122, 183, 0.6);
+    box-shadow: 0 0 6px rgba(0, 122, 183, 0.6);
 }
 
-.member-nav-stack { display: flex; flex-direction: column; gap: 2px; margin-left: 8px; }
+.member-nav-stack { display: flex; flex-direction: column; gap: 2px; margin-left: 6px; }
 .member-stack-btn {
-    width: 28px; height: 18px; 
+    width: 24px; height: 14px; 
     background: rgba(255,255,255,0.08); 
     border: 1px solid rgba(255,255,255,0.14);
-    border-radius: 4px; color: #ffffff; font-size: 9px; font-weight: bold;
+    border-radius: 3px; color: #ffffff; font-size: 8px; font-weight: bold;
     display: flex; align-items: center; justify-content: center; cursor: pointer;
     transition: all 0.15s;
 }
 .member-stack-btn:hover { background: rgba(255,255,255,0.18); }
 
 .nav-mode-btn {
-    width: 34px; height: 38px; margin-left: 5px;
+    width: 30px; height: 30px; margin-left: 4px;
     background: rgba(255,255,255,0.08); 
     border: 1px solid rgba(255,255,255,0.14); 
-    border-radius: 8px;
-    color: #e0e0e0; font-size: 10px; font-weight: bold;
+    border-radius: 6px;
+    color: #e0e0e0; font-size: 9.5px; font-weight: bold;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.25);
     transition: all 0.2s;
@@ -672,70 +721,81 @@ html, body {
     box-shadow: 0 0 8px rgba(0, 122, 183, 0.55);
 }
 
-.bottom-labels-row { display: flex; justify-content: space-between; font-size: 12px; font-weight: bold; color: #cbd5e1; padding: 0 4px; }
+.bottom-labels-row { display: flex; justify-content: space-between; font-size: 11px; font-weight: bold; color: #cbd5e1; padding: 0 2px; }
 
-/* --- DYNAMISCHE LEGENDE --- */
+/* --- DYNAMISCHE LEGENDE (NÄHER AM RAND) --- */
 .legend-box { 
     position: fixed; 
-    bottom: 24px; left: 20px; 
+    bottom: 12px; left: 10px; 
     z-index: 9999; 
     background-color: rgba(24, 33, 42, 0.94); 
     backdrop-filter: blur(8px);
     border: 1px solid rgba(255,255,255,0.18); 
     border-radius: 12px; 
-    padding: 8px; 
+    padding: 6px; 
     font-family: Arial, sans-serif; color: white; 
     box-shadow: 0 8px 25px rgba(0,0,0,0.65); 
-    display: flex; gap: 8px; box-sizing: border-box; font-size: 10px; 
+    display: flex; gap: 6px; box-sizing: border-box; font-size: 9.5px; 
     transition: opacity 0.25s ease, filter 0.25s ease;
 }
-.legend-column { display: flex; flex-direction: column; align-items: center; width: 68px; }
-.legend-title { font-weight: bold; font-size: 11px; text-align: center; margin-bottom: 4px; color: #ffffff; }
-.legend-scale { position: relative; height: 240px; display: flex; width: 100%; }
+.legend-column { display: flex; flex-direction: column; align-items: center; width: 62px; }
+.legend-title { font-weight: bold; font-size: 10.5px; text-align: center; margin-bottom: 3px; color: #ffffff; }
+.legend-scale { position: relative; height: 230px; display: flex; width: 100%; }
 .legend-bar { 
-    width: 18px; height: 240px; 
+    width: 16px; height: 230px; 
     display: flex; flex-direction: column; 
     border-radius: 2px; overflow: hidden; 
     border: 1px solid rgba(0,0,0,0.8); 
 }
 .legend-labels { 
-    position: absolute; left: 24px; top: -5px; 
-    height: 250px; font-size: 9px; font-weight: bold; 
+    position: absolute; left: 22px; top: -5px; 
+    height: 240px; font-size: 8.5px; font-weight: bold; 
     display: flex; flex-direction: column; justify-content: space-between; 
 }
 
 @media (max-width: 768px) {
-    .custom-settings-control { top: 82px; left: 8px; }
-    .top-control-panel { top: 6px; }
+    .leaflet-top.leaflet-left { top: 6px; left: 6px; }
+    .custom-settings-control { top: 76px; left: 6px; }
+    .top-control-panel { top: 4px; }
     .top-row { padding: 2px 4px; gap: 2px; border-radius: 14px; }
     .var-btn, .nav-toggle-btn { font-size: 10px; padding: 4px 6px; border-radius: 10px; }
     
-    .layer2-btn { font-size: 9px; padding: 3px 14px 4px 14px; border-radius: 0 0 12px 12px; }
+    .layer2-btn { font-size: 9px; padding: 2px 14px 3px 14px; }
+    .notch-wing { width: 12px; height: 12px; }
+    .notch-wing-left { left: -10.5px; }
+    .notch-wing-right { right: -10.5px; }
     
-    .model-select-header { top: 8px; right: 6px; width: 58px; }
+    .model-select-header { top: 6px; right: 6px; width: 58px; }
     .model-title { font-size: 9px; }
     .model-time { font-size: 7.5px; }
 
-    .control-panel { bottom: 8px; left: 8px; right: 8px; width: auto; transform: none; padding: 8px 10px; border-radius: 12px; }
+    .control-panel { 
+        bottom: 6px; 
+        left: 6px; 
+        right: 6px; 
+        width: auto; 
+        transform: none; 
+        padding: 6px 8px; 
+        border-radius: 10px; 
+    }
     
     .member-panel { 
-        top: 66px; 
+        top: 60px; 
         right: 6px; 
         width: 58px; 
         padding: 6px 2px; 
         border-radius: 10px; 
-        max-height: calc(100dvh - 245px);
-        max-height: calc(100vh - 245px);
+        max-height: calc(100dvh - 200px);
+        max-height: calc(100vh - 200px);
     }
     .member-panel-title, .member-section-title { display: none; }
     .member-section-toggle { font-size: 8.5px; padding: 4px 2px; }
     .member-btn { font-size: 9.5px; padding: 5px 1px; border-radius: 8px; }
-    .nav-mode-btn { width: 30px; height: 38px; font-size: 9px; margin-left: 3px; }
-    .legend-box { bottom: 135px; left: 8px; padding: 5px; }
-    .legend-column { width: 52px; }
-    .legend-scale { height: 160px; }
-    .legend-bar { width: 14px; height: 160px; }
-    .legend-labels { left: 18px; height: 168px; font-size: 7.5px; }
-    .settings-popup { left: 8px; top: 115px; width: 235px; }
-    .dropdown-menu { top: 105px; }
+    .nav-mode-btn { width: 28px; height: 28px; font-size: 9px; margin-left: 2px; }
+    .legend-box { bottom: 105px; left: 6px; padding: 4px; }
+    .legend-column { width: 50px; }
+    .legend-scale { height: 150px; }
+    .legend-bar { width: 13px; height: 150px; }
+    .legend-labels { left: 16px; height: 158px; font-size: 7.5px; }
+    .settings-popup { left: 6px; top: 110px; width: 235px; }
 }
