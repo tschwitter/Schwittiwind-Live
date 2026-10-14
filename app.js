@@ -161,7 +161,7 @@ function closeAllPopups() {
     setPopupsDimmed(false);
 }
 
-// ================= HINTERGRUNDKARTE: TRANSPARENZ & STIL =================
+// ================= HINTERGRUNDKARTE =================
 function setBaseMapOpacity(val) {
     var op = val / 100.0;
     baseMapOpacity = op;
@@ -196,7 +196,7 @@ function setBaseMapStyle(style) {
     }
 }
 
-// ================= VERTIKAL-MODUS (MEMBER VS. LÄUFE) =================
+// ================= VERTIKAL-MODUS =================
 function toggleNavMode() {
     verticalNavMode = (verticalNavMode === 'member') ? 'run' : 'member';
     updateNavModeButton();
@@ -226,7 +226,6 @@ function navRun(dir) {
     }
 }
 
-// ================= MODELL-BUTTON KLICK =================
 async function handleModelButtonClick(modelName) {
     if (currentModel !== modelName) {
         closeAllPopups();
@@ -623,7 +622,7 @@ function updateMemberPanelVisibility(hasEns) {
     if (notice) notice.style.display = hasEns ? "none" : "block";
 }
 
-// ================= INTELLIGENTE VERTIKAL- & HORIZONTAL-NAVIGATION =================
+// ================= NAVIGATION =================
 function navLeft() {
     var curDay = getDayNameForStep(currentStepIdx);
     var steps = dayTimesteps[curDay] || [];
@@ -841,7 +840,6 @@ function renderSingleLegendCol(varName, isIQR) {
     } else if (paletteType === "iqr_wind") {
         labelsHtml = `<div>+</div><div>30</div><div>24</div><div>18</div><div>14</div><div>10</div><div>8</div><div>6</div><div>4</div><div>2</div><div>0</div>`;
     } else {
-        // Skala dynamisch bis 135+ km/h (inklusive Übergang ins knallige Rot)
         if (levels && levels.length > 15) {
             labelsHtml = `<div>+</div><div>135</div><div>125</div><div>115</div><div>105</div><div>95</div><div>85</div><div>75</div><div>65</div><div>55</div><div>45</div><div>36</div><div>27</div><div>23</div><div>18</div><div>14</div><div>11</div><div>7</div><div>4</div><div>0</div>`;
         } else {
@@ -874,14 +872,28 @@ function updateLegend() {
     box.innerHTML = html;
 }
 
-async function fetchAndDecompress(url) {
+// ================= ULTRA-SCHNELLES BINÄR-LADEN =================
+async function fetchAndDecompressBinary(url, hasArrows) {
     const response = await fetch(url);
     if (!response.ok) throw new Error("Fehler beim Laden von: " + url);
     const ds = new DecompressionStream('gzip');
     const decompressedStream = response.body.pipeThrough(ds);
-    const decompressedResponse = new Response(decompressedStream);
-    const text = await decompressedResponse.text();
-    return JSON.parse(text);
+    const buffer = await new Response(decompressedStream).arrayBuffer();
+    
+    const int16 = new Int16Array(buffer);
+    const totalPoints = config.nx * config.ny; // 96'000
+    
+    if (hasArrows && int16.length >= totalPoints * 2) {
+        return {
+            s: int16.subarray(0, totalPoints),
+            d: int16.subarray(totalPoints, totalPoints * 2)
+        };
+    } else {
+        return {
+            s: int16.subarray(0, totalPoints),
+            d: null
+        };
+    }
 }
 
 function generateContoursClient(s_flat, paletteType) {
@@ -891,10 +903,12 @@ function generateContoursClient(s_flat, paletteType) {
     
     const values = new Float32Array(s_flat.length);
     for (let i = 0; i < s_flat.length; i++) {
-        values[i] = (s_flat[i] < 0) ? NaN : (s_flat[i] / 10.0);
+        const v = s_flat[i];
+        values[i] = (v < 0) ? NaN : (v / 10.0);
     }
     
     const thresholds = levels.slice(0, levels.length - 1);
+    // 100% Original-Qualität mit glatten Kurven
     const contourGen = d3.contours()
         .size([config.nx, config.ny])
         .smooth(true)
@@ -941,7 +955,10 @@ async function ensureDataLoaded(varName, memberIdx, stepIdx) {
         const runBuster = encodeURIComponent(config.ref_time_utc);
         const basePath = currentRunId ? `data/${currentModel}/${currentRunId}` : `data/${currentModel}`;
         if (!cacheGrid[cacheKey]) {
-            cacheGrid[cacheKey] = await fetchAndDecompress(`${basePath}/grid_${varName}_m${memberIdx}_s${stepIdx}.json.gz?v=${runBuster}`);
+            cacheGrid[cacheKey] = await fetchAndDecompressBinary(
+                `${basePath}/grid_${varName}_m${memberIdx}_s${stepIdx}.bin.gz?v=${runBuster}`,
+                !!vCfg.has_arrows
+            );
         }
         cacheContours[cacheKey] = generateContoursClient(cacheGrid[cacheKey].s, paletteType);
     }
@@ -1198,7 +1215,7 @@ function renderContours() {
     }
 }
 
-// ================= OPTIMIERTE WINDPFEILE =================
+// ================= ORIGINAL-WINDPFEILE (GESTOCHEN SCHARF & INTERAKTIV) =================
 function drawVisibleArrows() {
     if (!map || !config) return;
     if (!activeMarkers) { activeMarkers = L.layerGroup().addTo(map); } else { activeMarkers.clearLayers(); }
