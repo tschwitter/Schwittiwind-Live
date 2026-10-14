@@ -880,7 +880,7 @@ function updateLegend() {
     box.innerHTML = html;
 }
 
-// ================= HEBEL 1: BINÄR-LADEN MIT 24-BIT LAYOUT =================
+// ================= ULTRA-SCHNELLES DELTA-DEKODIEREN =================
 async function fetchAndDecompressBinary(url, hasArrows) {
     const response = await fetch(url);
     if (!response.ok) throw new Error("Fehler beim Laden von: " + url);
@@ -888,14 +888,40 @@ async function fetchAndDecompressBinary(url, hasArrows) {
     const decompressedStream = response.body.pipeThrough(ds);
     const buffer = await new Response(decompressedStream).arrayBuffer();
     
-    const totalPoints = config.nx * config.ny; // 96'000
-    // s liegt immer als Int16 in den ersten 192'000 Bytes
-    const s = new Int16Array(buffer, 0, totalPoints);
+    const nx = config.nx;
+    const ny = config.ny;
+    const totalPoints = nx * ny; // 96'000
+    
+    // 1. Geschwindigkeits-Deltas rekonstruieren
+    const deltaS = new Int16Array(buffer, 0, totalPoints);
+    const s = new Int16Array(totalPoints);
+    
+    for (let r = 0; r < ny; r++) {
+        let rOffset = r * nx;
+        s[rOffset] = deltaS[rOffset]; // Erster Spaltenwert ist absolut
+        for (let c = 1; c < nx; c++) {
+            let idx = rOffset + c;
+            s[idx] = s[idx - 1] + deltaS[idx];
+        }
+    }
     
     let d = null;
-    // Hebel 1: Bei Feldern mit Windrichtung folgt direkt das kompakte Uint8-Array
+    // 2. Richtungs-Deltas rekonstruieren (falls vorhanden)
     if (hasArrows && buffer.byteLength >= totalPoints * 3) {
-        d = new Uint8Array(buffer, totalPoints * 2, totalPoints);
+        const deltaD = new Int8Array(buffer, totalPoints * 2, totalPoints);
+        d = new Uint8Array(totalPoints);
+        
+        for (let r = 0; r < ny; r++) {
+            let rOffset = r * nx;
+            d[rOffset] = deltaD[rOffset] & 0xFF;
+            for (let c = 1; c < nx; c++) {
+                let idx = rOffset + c;
+                // Modulo 180 für sauberen 360-Grad-Rundum-Schluss
+                let val = (d[idx - 1] + deltaD[idx]) % 180;
+                if (val < 0) val += 180;
+                d[idx] = val;
+            }
+        }
     }
     
     return { s: s, d: d };
@@ -1220,7 +1246,7 @@ function renderContours() {
     }
 }
 
-// ================= GESTOCHEN SCHARFE WINDPFEILE (HEBEL 1) =================
+// ================= GESTOCHEN SCHARFE WINDPFEILE =================
 function drawVisibleArrows() {
     if (!map || !config) return;
     if (!activeMarkers) { activeMarkers = L.layerGroup().addTo(map); } else { activeMarkers.clearLayers(); }
@@ -1275,7 +1301,7 @@ function drawVisibleArrows() {
 
         if (bounds.contains(latlng)) {
             var speed = sVal / 10.0;
-            // Hebel 1: Uint8 (0..180) wieder auf 0..360 Grad zurückskalieren
+            // Uint8 (0..180) wieder auf 0..360 Grad zurückskalieren
             var dir = dirs[i] * 2.0;
 
             var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
