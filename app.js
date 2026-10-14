@@ -7,8 +7,8 @@ var selectedRuns = { "icon-ch1": null, "icon-ch2": null };
 
 var verticalNavMode = 'member'; // 'member' oder 'run'
 
-var baseMapOpacity = 0.80;
-var baseMapStyle = 'relief';
+var baseMapOpacity = 0.80; // Standardmäßig 80%
+var baseMapStyle = 'relief'; // 'relief' oder 'simple'
 
 var layer1Var = null;
 var layer2Var = null;
@@ -20,6 +20,7 @@ var layer2Opacity = 0.60;
 
 var isWetterOpen = false;
 var isHoehenOpen = false;
+
 var isEnsembleOpen = (localStorage.getItem("icon_ensemble_open") === "true");
 
 var currentMemberIdx = 0;
@@ -33,16 +34,8 @@ var cantonalBoundaryLayer = null;
 
 var contourLayer1 = null;
 var contourLayer2 = null;
+var activeMarkers = null;
 var cityLayerGroup = null;
-
-// Canvas-Renderer für weiche Vektorkonturen ohne DOM-Überlastung
-var canvasRenderer1 = null;
-var canvasRenderer2 = null;
-
-// Canvas für High-Performance Windpfeile
-var arrowCanvasLayer = null;
-var arrowCanvas = null;
-var arrowCtx = null;
 
 var cacheGrid = {};
 var cacheContours = {};
@@ -50,9 +43,6 @@ var cacheContours = {};
 var uniqueDays = [];
 var dayTimesteps = {};
 var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
-
-// Debounce Timer für flüssiges Zoomen
-var moveEndTimer = null;
 
 // ================= ERWEITERTES ORTSNETZ DER SCHWEIZ =================
 var CITIES = [
@@ -171,7 +161,7 @@ function closeAllPopups() {
     setPopupsDimmed(false);
 }
 
-// ================= HINTERGRUNDKARTE =================
+// ================= HINTERGRUNDKARTE: TRANSPARENZ & STIL =================
 function setBaseMapOpacity(val) {
     var op = val / 100.0;
     baseMapOpacity = op;
@@ -206,6 +196,7 @@ function setBaseMapStyle(style) {
     }
 }
 
+// ================= VERTIKAL-MODUS (MEMBER VS. LÄUFE) =================
 function toggleNavMode() {
     verticalNavMode = (verticalNavMode === 'member') ? 'run' : 'member';
     updateNavModeButton();
@@ -235,6 +226,7 @@ function navRun(dir) {
     }
 }
 
+// ================= MODELL-BUTTON KLICK =================
 async function handleModelButtonClick(modelName) {
     if (currentModel !== modelName) {
         closeAllPopups();
@@ -265,6 +257,7 @@ function updateModelButtonLabels() {
         var activeObj = runs.find(r => r.id === activeRun) || runs[0];
         var modName = (m === "icon-ch1") ? "CH1" : "CH2";
         var timeTxt = activeObj ? activeObj.label : "--";
+        
         btn.innerHTML = `<span class="model-title">${modName} ▾</span><span class="model-time">${timeTxt}</span>`;
     });
 }
@@ -300,6 +293,7 @@ function toggleRunDropdown(modelName) {
     el.style.left = "auto";
     el.style.transform = "none";
     el.style.display = "flex";
+
     setPopupsDimmed(true);
 }
 
@@ -319,6 +313,7 @@ async function switchModel(newModel) {
     await loadModelAndRun(currentModel, runId);
 }
 
+// ================= ENSEMBLE-AKKORDEON =================
 function updateEnsembleToggleState() {
     var btn = document.getElementById("btnToggleEnsemble");
     if (!btn || !config) return;
@@ -338,6 +333,7 @@ function toggleEnsembleAccordion(forceOpen) {
     var btn = document.getElementById("btnToggleEnsemble");
     if (cont) cont.style.display = isEnsembleOpen ? "block" : "none";
     if (btn) btn.classList.toggle("open", isEnsembleOpen);
+
     updateEnsembleToggleState();
 }
 
@@ -469,30 +465,20 @@ function setLayerMode(layerNum, mode) {
     renderContours();
 }
 
-// 1. TRANSPARENZ-SLIDER REPARATUR
 function setLayerOpacity(layerNum, val) {
     var op = val / 100.0;
     if (layerNum === 1) {
         layer1Opacity = op;
-        var lbl = document.getElementById("opacityLabelL1");
-        var sld = document.getElementById("opacitySliderL1");
-        if (lbl) lbl.innerText = val + "%";
-        if (sld) sld.value = val;
-        if (map && map.getPane('contourPane1')) {
-            map.getPane('contourPane1').style.opacity = op;
-        }
+        document.getElementById("opacityLabelL1").innerText = val + "%";
+        document.getElementById("opacitySliderL1").value = val;
+        if (map && map.getPane('contourPane1')) map.getPane('contourPane1').style.opacity = op;
     } else {
         layer2Opacity = op;
-        var lbl2 = document.getElementById("opacityLabelL2");
-        var sld2 = document.getElementById("opacitySliderL2");
-        if (lbl2) lbl2.innerText = val + "%";
-        if (sld2) sld2.value = val;
-        if (map && map.getPane('contourPane2')) {
-            map.getPane('contourPane2').style.opacity = op;
-        }
+        document.getElementById("opacityLabelL2").innerText = val + "%";
+        document.getElementById("opacitySliderL2").value = val;
+        if (map && map.getPane('contourPane2')) map.getPane('contourPane2').style.opacity = op;
     }
 }
-
 
 function initNavigationBars() {
     var wetterContainer = document.getElementById("wetterSubRow");
@@ -637,7 +623,7 @@ function updateMemberPanelVisibility(hasEns) {
     if (notice) notice.style.display = hasEns ? "none" : "block";
 }
 
-// ================= NAVIGATION =================
+// ================= INTELLIGENTE VERTIKAL- & HORIZONTAL-NAVIGATION =================
 function navLeft() {
     var curDay = getDayNameForStep(currentStepIdx);
     var steps = dayTimesteps[curDay] || [];
@@ -855,6 +841,7 @@ function renderSingleLegendCol(varName, isIQR) {
     } else if (paletteType === "iqr_wind") {
         labelsHtml = `<div>+</div><div>30</div><div>24</div><div>18</div><div>14</div><div>10</div><div>8</div><div>6</div><div>4</div><div>2</div><div>0</div>`;
     } else {
+        // Skala dynamisch bis 135+ km/h (inklusive Übergang ins knallige Rot)
         if (levels && levels.length > 15) {
             labelsHtml = `<div>+</div><div>135</div><div>125</div><div>115</div><div>105</div><div>95</div><div>85</div><div>75</div><div>65</div><div>55</div><div>45</div><div>36</div><div>27</div><div>23</div><div>18</div><div>14</div><div>11</div><div>7</div><div>4</div><div>0</div>`;
         } else {
@@ -887,31 +874,14 @@ function updateLegend() {
     box.innerHTML = html;
 }
 
-// ================= ULTRA-SCHNELLES BINÄR-LADEN =================
-async function fetchAndDecompressBinary(url, hasArrows) {
+async function fetchAndDecompress(url) {
     const response = await fetch(url);
     if (!response.ok) throw new Error("Fehler beim Laden von: " + url);
-    
-    // Gzip direkt im Browser nativ via DecompressionStream entpacken
     const ds = new DecompressionStream('gzip');
     const decompressedStream = response.body.pipeThrough(ds);
-    const buffer = await new Response(decompressedStream).arrayBuffer();
-    
-    // Direktes Mapping auf Int16Array (KEIN JSON-Parsing-Overhead mehr!)
-    const int16 = new Int16Array(buffer);
-    const totalPoints = config.nx * config.ny; // 96'000 Punkte
-    
-    if (hasArrows && int16.length >= totalPoints * 2) {
-        return {
-            s: int16.subarray(0, totalPoints),
-            d: int16.subarray(totalPoints, totalPoints * 2)
-        };
-    } else {
-        return {
-            s: int16.subarray(0, totalPoints),
-            d: null
-        };
-    }
+    const decompressedResponse = new Response(decompressedStream);
+    const text = await decompressedResponse.text();
+    return JSON.parse(text);
 }
 
 function generateContoursClient(s_flat, paletteType) {
@@ -921,13 +891,10 @@ function generateContoursClient(s_flat, paletteType) {
     
     const values = new Float32Array(s_flat.length);
     for (let i = 0; i < s_flat.length; i++) {
-        const v = s_flat[i];
-        values[i] = (v < 0) ? NaN : (v / 10.0);
+        values[i] = (s_flat[i] < 0) ? NaN : (s_flat[i] / 10.0);
     }
     
     const thresholds = levels.slice(0, levels.length - 1);
-
-    // WIEDER VOLLSTÄNDIG GEGLÄTTET (Originalqualität ohne Pixelraster)
     const contourGen = d3.contours()
         .size([config.nx, config.ny])
         .smooth(true)
@@ -974,55 +941,12 @@ async function ensureDataLoaded(varName, memberIdx, stepIdx) {
         const runBuster = encodeURIComponent(config.ref_time_utc);
         const basePath = currentRunId ? `data/${currentModel}/${currentRunId}` : `data/${currentModel}`;
         if (!cacheGrid[cacheKey]) {
-            // Lädt .bin.gz statt .json.gz
-            cacheGrid[cacheKey] = await fetchAndDecompressBinary(
-                `${basePath}/grid_${varName}_m${memberIdx}_s${stepIdx}.bin.gz?v=${runBuster}`,
-                !!vCfg.has_arrows
-            );
+            cacheGrid[cacheKey] = await fetchAndDecompress(`${basePath}/grid_${varName}_m${memberIdx}_s${stepIdx}.json.gz?v=${runBuster}`);
         }
         cacheContours[cacheKey] = generateContoursClient(cacheGrid[cacheKey].s, paletteType);
     }
     return cacheKey;
 }
-
-// 2. RETINA-READY GESTOCHEN SCHARFE WINDPFEILE (HiDPI)
-function initArrowCanvas() {
-    var CanvasOverlay = L.Layer.extend({
-        onAdd: function(m) {
-            this._map = m;
-            if (!arrowCanvas) {
-                arrowCanvas = L.DomUtil.create('canvas', 'leaflet-arrow-canvas');
-                arrowCanvas.style.pointerEvents = 'none'; // Klicks gehen durch zur Karte
-                arrowCtx = arrowCanvas.getContext('2d');
-            }
-            m.getPane('markerPane').appendChild(arrowCanvas);
-            m.on('move resize', this._reset, this);
-            this._reset();
-        },
-        onRemove: function(m) {
-            L.DomUtil.remove(arrowCanvas);
-            m.off('move resize', this._reset, this);
-        },
-        _reset: function() {
-            var size = this._map.getSize();
-            var topLeft = this._map.containerPointToLayerPoint([0, 0]);
-            L.DomUtil.setPosition(arrowCanvas, topLeft);
-
-            // Retina / HiDPI Support: Multiplizieren mit Geräteskalierung
-            var dpr = window.devicePixelRatio || 1;
-            arrowCanvas.width = size.x * dpr;
-            arrowCanvas.height = size.y * dpr;
-            arrowCanvas.style.width = size.x + 'px';
-            arrowCanvas.style.height = size.y + 'px';
-
-            arrowCtx.scale(dpr, dpr);
-            drawVisibleArrows();
-        }
-    });
-    arrowCanvasLayer = new CanvasOverlay();
-    map.addLayer(arrowCanvasLayer);
-}
-
 
 async function init() {
     try {
@@ -1039,10 +963,6 @@ async function init() {
             zoomControl: false,
             preferCanvas: true
         });
-
-        // Vorbereitung der dedizierten Canvas-Renderer für Vektorkonturen
-        canvasRenderer1 = L.canvas({ padding: 0.5, tolerance: 2 });
-        canvasRenderer2 = L.canvas({ padding: 0.5, tolerance: 2 });
 
         map.createPane('reliefPane');
         map.getPane('reliefPane').style.zIndex = '200';
@@ -1117,21 +1037,13 @@ async function init() {
                 }).addTo(cantonalBoundaryLayer);
             });
 
-        initArrowCanvas();
-
-        // DEBOUNCING: Während des schnellen Zoomens / Bewegens kein Ruckeln!
-        map.on('move', function() {
-            if (arrowCtx && arrowCanvas) {
-                arrowCtx.clearRect(0, 0, arrowCanvas.width, arrowCanvas.height);
-            }
-        });
-
         map.on('moveend', function() {
-            clearTimeout(moveEndTimer);
-            moveEndTimer = setTimeout(() => {
-                drawVisibleArrows();
-                updateCityLabels();
-            }, 60);
+            drawVisibleArrows();
+            updateCityLabels();
+        });
+        map.on('zoomend', function() {
+            drawVisibleArrows();
+            updateCityLabels();
         });
 
         map.on('click', function() {
@@ -1252,7 +1164,6 @@ function renderContours() {
     
     contourLayer1 = L.geoJson(cacheContours[key1], {
         pane: 'contourPane1',
-        renderer: canvasRenderer1,
         style: function(feature) {
             var fill = feature.properties.fill;
             var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
@@ -1273,7 +1184,6 @@ function renderContours() {
 
         contourLayer2 = L.geoJson(cacheContours[key2], {
             pane: 'contourPane2',
-            renderer: canvasRenderer2,
             style: function(feature) {
                 var fill = feature.properties.fill;
                 var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
@@ -1288,14 +1198,10 @@ function renderContours() {
     }
 }
 
-// 3. WINDPFEILE OHNE FLACKERN & MIT VOLLER SCHÄRFE
+// ================= OPTIMIERTE WINDPFEILE =================
 function drawVisibleArrows() {
-    if (!map || !config || !arrowCtx || !arrowCanvas) return;
-    var dpr = window.devicePixelRatio || 1;
-    arrowCtx.save();
-    arrowCtx.setTransform(1, 0, 0, 1, 0, 0);
-    arrowCtx.clearRect(0, 0, arrowCanvas.width, arrowCanvas.height);
-    arrowCtx.restore();
+    if (!map || !config) return;
+    if (!activeMarkers) { activeMarkers = L.layerGroup().addTo(map); } else { activeMarkers.clearLayers(); }
 
     var arrowVar = null;
     var arrowMember = 0;
@@ -1331,56 +1237,35 @@ function drawVisibleArrows() {
 
     var speeds = gridData.s;
     var dirs = gridData.d;
+    var labelType = config.variables_config[arrowVar].label || "Wind";
 
-    const radConv = Math.PI / 180.0;
-    const nx = config.nx, ny = config.ny;
-    const ymin = config.ymin, ydiff = config.ymax - config.ymin;
-    const xmin = config.xmin, xdiff = config.xmax - config.xmin;
+    for (var i = 0; i < speeds.length; i++) {
+        var sVal = speeds[i];
+        if (sVal < 25) continue;
 
-    arrowCtx.fillStyle = "#111111";
-    arrowCtx.strokeStyle = "#ffffff";
-    arrowCtx.lineWidth = 0.8; // Klarere Konturlinie
+        var r = Math.floor(i / config.nx);
+        var c = i % config.nx;
+        if (r % step !== 0 || c % step !== 0) continue;
 
-    for (var r = 0; r < ny; r += step) {
-        var lat = ymin + r * ydiff / (ny - 1);
-        if (lat < bounds.getSouth() || lat > bounds.getNorth()) continue;
+        var lat = config.ymin + r * (config.ymax - config.ymin) / (config.ny - 1);
+        var lon = config.xmin + c * (config.xmax - config.xmin) / (config.nx - 1);
+        var latlng = L.latLng(lat, lon);
 
-        var rOffset = r * nx;
-        for (var c = 0; c < nx; c += step) {
-            var lon = xmin + c * xdiff / (nx - 1);
-            if (lon < bounds.getWest() || lon > bounds.getEast()) continue;
-
-            var i = rOffset + c;
-            var sVal = speeds[i];
-            if (sVal < 25) continue;
-
-            var pt = map.latLngToContainerPoint([lat, lon]);
+        if (bounds.contains(latlng)) {
             var speed = sVal / 10.0;
             var dir = dirs[i];
 
-            var arrow_w = Math.min(26, Math.max(6.0, 4.0 + Math.pow(speed, 0.60) * 1.5));
-            var arrow_h = Math.min(62, Math.max(14.0, 8.5 + Math.pow(speed, 0.80) * 1.6));
+            var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
+            var arrow_h = Math.min(62, Math.max(13, 8.5 + Math.pow(speed, 0.80) * 1.6));
 
-            arrowCtx.save();
-            arrowCtx.translate(pt.x, pt.y);
-            arrowCtx.rotate(dir * radConv);
+            var svg = '<div style="transform: rotate(' + dir + 'deg); width: 70px; height: 70px; display: flex; align-items: center; justify-content: center;">' +
+                      '<svg viewBox="0 0 24 24" width="' + arrow_w.toFixed(1) + 'px" height="' + arrow_h.toFixed(1) + 'px">' +
+                      '<path d="M11.2 23 H12.8 V9 H16.2 L12 1.5 L7.8 9 H11.2 Z" fill="#111111" stroke="#ffffff" stroke-width="0.5"/>' +
+                      '</svg></div>';
 
-            arrowCtx.beginPath();
-            var scaleX = arrow_w / 24.0;
-            var scaleY = arrow_h / 24.0;
-
-            arrowCtx.moveTo(-0.8 * scaleX, 11.0 * scaleY);
-            arrowCtx.lineTo(0.8 * scaleX, 11.0 * scaleY);
-            arrowCtx.lineTo(0.8 * scaleX, -3.0 * scaleY);
-            arrowCtx.lineTo(4.2 * scaleX, -3.0 * scaleY);
-            arrowCtx.lineTo(0.0, -10.5 * scaleY);
-            arrowCtx.lineTo(-4.2 * scaleX, -3.0 * scaleY);
-            arrowCtx.lineTo(-0.8 * scaleX, -3.0 * scaleY);
-            arrowCtx.closePath();
-
-            arrowCtx.fill();
-            arrowCtx.stroke();
-            arrowCtx.restore();
+            var icon = L.divIcon({ html: svg, iconSize: [70, 70], iconAnchor: [35, 35], className: 'wind-arrow-icon' });
+            var modLabel = (currentModel === "icon-ch2") ? "ICON-CH2" : "ICON-CH1";
+            L.marker(latlng, { icon: icon }).bindPopup(`<b>${labelType} (${modLabel}):</b><br>Stärke: ${speed.toFixed(1)} km/h<br>Richtung: ${dir.toFixed(0)}°`).addTo(activeMarkers);
         }
     }
 }
