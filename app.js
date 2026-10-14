@@ -37,6 +37,10 @@ var contourLayer2 = null;
 var activeMarkers = null;
 var cityLayerGroup = null;
 
+// Unsichtbares Hilfs-Canvas zum blitzschnellen Auslesen der Data-PNGs
+var dataCanvas = null;
+var dataCtx = null;
+
 var cacheGrid = {};
 var cacheContours = {};
 
@@ -362,6 +366,14 @@ async function loadModelAndRun(modelName, runId) {
         const configRes = await fetch(`${runPath}/config.json?t=${cacheBuster}`);
         if (!configRes.ok) throw new Error("Konnte config.json nicht laden: " + configRes.status);
         config = await configRes.json();
+
+        // Canvas für Pixel-Extraktion initialisieren
+        if (!dataCanvas) {
+            dataCanvas = document.createElement('canvas');
+            dataCanvas.width = config.nx;
+            dataCanvas.height = config.ny;
+            dataCtx = dataCanvas.getContext('2d', { willReadFrequently: true });
+        }
 
         const timesRes = await fetch(`${runPath}/times.json?t=${cacheBuster}`);
         if (!timesRes.ok) throw new Error("Konnte times.json nicht laden: " + timesRes.status);
@@ -880,72 +892,63 @@ function updateLegend() {
     box.innerHTML = html;
 }
 
-// ================= ULTRA-SCHNELLES DELTA-DEKODIEREN =================
-async function fetchAndDecompressBinary(url, hasArrows) {
+// ================= WINDY-TRICK: DATA-PNG LADEN & DEKODIEREN =================
+async function fetchAndDecodeDataPNG(url, hasArrows) {
     const response = await fetch(url);
     if (!response.ok) throw new Error("Fehler beim Laden von: " + url);
-    const ds = new DecompressionStream('gzip');
-    const decompressedStream = response.body.pipeThrough(ds);
-    const buffer = await new Response(decompressedStream).arrayBuffer();
+    const blob = await response.blob();
+    
+    // Hardware-beschleunigtes Dekodieren des PNGs im Browser
+    const imgBitmap = await createImageBitmap(blob);
     
     const nx = config.nx;
     const ny = config.ny;
     const totalPoints = nx * ny; // 96'000
-    
-    // 1. Geschwindigkeits-Deltas rekonstruieren
-    const deltaS = new Int16Array(buffer, 0, totalPoints);
-    const s = new Int16Array(totalPoints);
-    
-    for (let r = 0; r < ny; r++) {
-        let rOffset = r * nx;
-        s[rOffset] = deltaS[rOffset]; // Erster Spaltenwert ist absolut
-        for (let c = 1; c < nx; c++) {
-            let idx = rOffset + c;
-            s[idx] = s[idx - 1] + deltaS[idx];
-        }
-    }
-    
-    let d = null;
-    // 2. Richtungs-Deltas rekonstruieren (falls vorhanden)
-    if (hasArrows && buffer.byteLength >= totalPoints * 3) {
-        const deltaD = new Int8Array(buffer, totalPoints * 2, totalPoints);
-        d = new Uint8Array(totalPoints);
+
+    // Zeichne auf Offscreen-Canvas zum Auslesen der Pixelwerte
+    dataCtx.clearRect(0, 0, nx, ny);
+    dataCtx.drawImage(imgBitmap, 0, 0);
+    const imgData = dataCtx.getImageData(0, 0, nx, ny).data; // RGBA Array
+
+    const s = new Float32Array(totalPoints);
+    const d = hasArrows ? new Uint8Array(totalPoints) : null;
+
+    for (let i = 0; i < totalPoints; i++) {
+        const pxIdx = i * 4;
+        const r = imgData[pxIdx];
+        const g = imgData[pxIdx + 1];
         
-        for (let r = 0; r < ny; r++) {
-            let rOffset = r * nx;
-            d[rOffset] = deltaD[rOffset] & 0xFF;
-            for (let c = 1; c < nx; c++) {
-                let idx = rOffset + c;
-                // Modulo 180 für sauberen 360-Grad-Rundum-Schluss
-                let val = (d[idx - 1] + deltaD[idx]) % 180;
-                if (val < 0) val += 180;
-                d[idx] = val;
-            }
+        // R=255 und G=255 bedeutet NaN
+        if (r === 255 && g === 255) {
+            s[i] = NaN;
+        } else {
+            // Geschwindigkeit = (R * 256 + G) / 10.0
+            s[i] = (r * 256 + g) / 10.0;
+        }
+
+        if (hasArrows) {
+            // Richtung = B (0..180)
+            d[i] = imgData[pxIdx + 2];
         }
     }
-    
+
     return { s: s, d: d };
 }
 
-function generateContoursClient(s_flat, paletteType) {
+function generateContoursClient(s_values, paletteType) {
     const p = config.palettes[paletteType] || config.palettes["wind"];
     const levels = p.levels;
     const colors = p.colors;
     
-    const values = new Float32Array(s_flat.length);
-    for (let i = 0; i < s_flat.length; i++) {
-        const v = s_flat[i];
-        values[i] = (v < 0) ? NaN : (v / 10.0);
-    }
-    
     const thresholds = levels.slice(0, levels.length - 1);
-    // 100% Original-Qualität mit perfekt geglätteten Konturen
+    
+    // 100% Original-Qualität mit sauberen Kurvenverläufen
     const contourGen = d3.contours()
         .size([config.nx, config.ny])
         .smooth(true)
         .thresholds(thresholds);
                 
-    const rawContours = contourGen(values);
+    const rawContours = contourGen(s_values);
     const xMin = config.xmin, xMax = config.xmax;
     const yMin = config.ymin, yMax = config.ymax;
     const dx = (xMax - xMin) / (config.nx - 1);
@@ -986,8 +989,9 @@ async function ensureDataLoaded(varName, memberIdx, stepIdx) {
         const runBuster = encodeURIComponent(config.ref_time_utc);
         const basePath = currentRunId ? `data/${currentModel}/${currentRunId}` : `data/${currentModel}`;
         if (!cacheGrid[cacheKey]) {
-            cacheGrid[cacheKey] = await fetchAndDecompressBinary(
-                `${basePath}/grid_${varName}_m${memberIdx}_s${stepIdx}.bin.gz?v=${runBuster}`,
+            // Lädt .png statt .bin.gz
+            cacheGrid[cacheKey] = await fetchAndDecodeDataPNG(
+                `${basePath}/grid_${varName}_m${memberIdx}_s${stepIdx}.png?v=${runBuster}`,
                 !!vCfg.has_arrows
             );
         }
@@ -1288,8 +1292,8 @@ function drawVisibleArrows() {
     var labelType = config.variables_config[arrowVar].label || "Wind";
 
     for (var i = 0; i < speeds.length; i++) {
-        var sVal = speeds[i];
-        if (sVal < 25) continue;
+        var speed = speeds[i];
+        if (isNaN(speed) || speed < 2.5) continue;
 
         var r = Math.floor(i / config.nx);
         var c = i % config.nx;
@@ -1300,8 +1304,7 @@ function drawVisibleArrows() {
         var latlng = L.latLng(lat, lon);
 
         if (bounds.contains(latlng)) {
-            var speed = sVal / 10.0;
-            // Uint8 (0..180) wieder auf 0..360 Grad zurückskalieren
+            // Richtung = Kanal B (0..180) * 2 -> (0..360 Grad)
             var dir = dirs[i] * 2.0;
 
             var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
