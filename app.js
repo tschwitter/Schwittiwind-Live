@@ -469,20 +469,30 @@ function setLayerMode(layerNum, mode) {
     renderContours();
 }
 
+// 1. TRANSPARENZ-SLIDER REPARATUR
 function setLayerOpacity(layerNum, val) {
     var op = val / 100.0;
     if (layerNum === 1) {
         layer1Opacity = op;
-        document.getElementById("opacityLabelL1").innerText = val + "%";
-        document.getElementById("opacitySliderL1").value = val;
-        if (map && map.getPane('contourPane1')) map.getPane('contourPane1').style.opacity = op;
+        var lbl = document.getElementById("opacityLabelL1");
+        var sld = document.getElementById("opacitySliderL1");
+        if (lbl) lbl.innerText = val + "%";
+        if (sld) sld.value = val;
+        if (map && map.getPane('contourPane1')) {
+            map.getPane('contourPane1').style.opacity = op;
+        }
     } else {
         layer2Opacity = op;
-        document.getElementById("opacityLabelL2").innerText = val + "%";
-        document.getElementById("opacitySliderL2").value = val;
-        if (map && map.getPane('contourPane2')) map.getPane('contourPane2').style.opacity = op;
+        var lbl2 = document.getElementById("opacityLabelL2");
+        var sld2 = document.getElementById("opacitySliderL2");
+        if (lbl2) lbl2.innerText = val + "%";
+        if (sld2) sld2.value = val;
+        if (map && map.getPane('contourPane2')) {
+            map.getPane('contourPane2').style.opacity = op;
+        }
     }
 }
+
 
 function initNavigationBars() {
     var wetterContainer = document.getElementById("wetterSubRow");
@@ -975,13 +985,14 @@ async function ensureDataLoaded(varName, memberIdx, stepIdx) {
     return cacheKey;
 }
 
-// ================= SETUP DER LEAFLET CANVAS OVERLAYS =================
+// 2. RETINA-READY GESTOCHEN SCHARFE WINDPFEILE (HiDPI)
 function initArrowCanvas() {
     var CanvasOverlay = L.Layer.extend({
         onAdd: function(m) {
             this._map = m;
             if (!arrowCanvas) {
                 arrowCanvas = L.DomUtil.create('canvas', 'leaflet-arrow-canvas');
+                arrowCanvas.style.pointerEvents = 'none'; // Klicks gehen durch zur Karte
                 arrowCtx = arrowCanvas.getContext('2d');
             }
             m.getPane('markerPane').appendChild(arrowCanvas);
@@ -996,14 +1007,22 @@ function initArrowCanvas() {
             var size = this._map.getSize();
             var topLeft = this._map.containerPointToLayerPoint([0, 0]);
             L.DomUtil.setPosition(arrowCanvas, topLeft);
-            arrowCanvas.width = size.x;
-            arrowCanvas.height = size.y;
+
+            // Retina / HiDPI Support: Multiplizieren mit Geräteskalierung
+            var dpr = window.devicePixelRatio || 1;
+            arrowCanvas.width = size.x * dpr;
+            arrowCanvas.height = size.y * dpr;
+            arrowCanvas.style.width = size.x + 'px';
+            arrowCanvas.style.height = size.y + 'px';
+
+            arrowCtx.scale(dpr, dpr);
             drawVisibleArrows();
         }
     });
     arrowCanvasLayer = new CanvasOverlay();
     map.addLayer(arrowCanvasLayer);
 }
+
 
 async function init() {
     try {
@@ -1269,10 +1288,14 @@ function renderContours() {
     }
 }
 
-// ================= ULTRA-PERFORMANTE CANVAS WINDPFEILE =================
+// 3. WINDPFEILE OHNE FLACKERN & MIT VOLLER SCHÄRFE
 function drawVisibleArrows() {
     if (!map || !config || !arrowCtx || !arrowCanvas) return;
+    var dpr = window.devicePixelRatio || 1;
+    arrowCtx.save();
+    arrowCtx.setTransform(1, 0, 0, 1, 0, 0);
     arrowCtx.clearRect(0, 0, arrowCanvas.width, arrowCanvas.height);
+    arrowCtx.restore();
 
     var arrowVar = null;
     var arrowMember = 0;
@@ -1316,7 +1339,7 @@ function drawVisibleArrows() {
 
     arrowCtx.fillStyle = "#111111";
     arrowCtx.strokeStyle = "#ffffff";
-    arrowCtx.lineWidth = 0.5;
+    arrowCtx.lineWidth = 0.8; // Klarere Konturlinie
 
     for (var r = 0; r < ny; r += step) {
         var lat = ymin + r * ydiff / (ny - 1);
@@ -1329,16 +1352,15 @@ function drawVisibleArrows() {
 
             var i = rOffset + c;
             var sVal = speeds[i];
-            if (sVal < 25) continue; // erst ab 2.5 km/h
+            if (sVal < 25) continue;
 
             var pt = map.latLngToContainerPoint([lat, lon]);
             var speed = sVal / 10.0;
             var dir = dirs[i];
 
-            var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
-            var arrow_h = Math.min(62, Math.max(13, 8.5 + Math.pow(speed, 0.80) * 1.6));
+            var arrow_w = Math.min(26, Math.max(6.0, 4.0 + Math.pow(speed, 0.60) * 1.5));
+            var arrow_h = Math.min(62, Math.max(14.0, 8.5 + Math.pow(speed, 0.80) * 1.6));
 
-            // Direktes Vektor-Zeichnen auf GPU/Canvas
             arrowCtx.save();
             arrowCtx.translate(pt.x, pt.y);
             arrowCtx.rotate(dir * radConv);
@@ -1346,9 +1368,7 @@ function drawVisibleArrows() {
             arrowCtx.beginPath();
             var scaleX = arrow_w / 24.0;
             var scaleY = arrow_h / 24.0;
-            
-            // Exakter Pfad des Original-SVGs: M11.2 23 H12.8 V9 H16.2 L12 1.5 L7.8 9 H11.2 Z
-            // Zentriert um (0, 0)
+
             arrowCtx.moveTo(-0.8 * scaleX, 11.0 * scaleY);
             arrowCtx.lineTo(0.8 * scaleX, 11.0 * scaleY);
             arrowCtx.lineTo(0.8 * scaleX, -3.0 * scaleY);
