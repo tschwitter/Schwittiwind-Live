@@ -35,6 +35,10 @@ var contourLayer1 = null;
 var contourLayer2 = null;
 var cityLayerGroup = null;
 
+// Canvas-Renderer für weiche Vektorkonturen ohne DOM-Überlastung
+var canvasRenderer1 = null;
+var canvasRenderer2 = null;
+
 // Canvas für High-Performance Windpfeile
 var arrowCanvasLayer = null;
 var arrowCanvas = null;
@@ -883,7 +887,7 @@ async function fetchAndDecompressBinary(url, hasArrows) {
     const decompressedStream = response.body.pipeThrough(ds);
     const buffer = await new Response(decompressedStream).arrayBuffer();
     
-    // Direktes Mapping auf Int16Array (KEIN JSON Parsing overhead mehr!)
+    // Direktes Mapping auf Int16Array (KEIN JSON-Parsing-Overhead mehr!)
     const int16 = new Int16Array(buffer);
     const totalPoints = config.nx * config.ny; // 96'000 Punkte
     
@@ -912,10 +916,11 @@ function generateContoursClient(s_flat, paletteType) {
     }
     
     const thresholds = levels.slice(0, levels.length - 1);
-    // smooth(false) spart massiv CPU-Zeit, bei 400x240 optisch absolut identisch!
+
+    // WIEDER VOLLSTÄNDIG GEGLÄTTET (Originalqualität ohne Pixelraster)
     const contourGen = d3.contours()
         .size([config.nx, config.ny])
-        .smooth(false)
+        .smooth(true)
         .thresholds(thresholds);
                 
     const rawContours = contourGen(values);
@@ -1015,6 +1020,10 @@ async function init() {
             zoomControl: false,
             preferCanvas: true
         });
+
+        // Vorbereitung der dedizierten Canvas-Renderer für Vektorkonturen
+        canvasRenderer1 = L.canvas({ padding: 0.5, tolerance: 2 });
+        canvasRenderer2 = L.canvas({ padding: 0.5, tolerance: 2 });
 
         map.createPane('reliefPane');
         map.getPane('reliefPane').style.zIndex = '200';
@@ -1224,6 +1233,7 @@ function renderContours() {
     
     contourLayer1 = L.geoJson(cacheContours[key1], {
         pane: 'contourPane1',
+        renderer: canvasRenderer1,
         style: function(feature) {
             var fill = feature.properties.fill;
             var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
@@ -1244,6 +1254,7 @@ function renderContours() {
 
         contourLayer2 = L.geoJson(cacheContours[key2], {
             pane: 'contourPane2',
+            renderer: canvasRenderer2,
             style: function(feature) {
                 var fill = feature.properties.fill;
                 var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
