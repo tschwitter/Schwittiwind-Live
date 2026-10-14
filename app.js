@@ -468,14 +468,22 @@ function setLayerOpacity(layerNum, val) {
     var op = val / 100.0;
     if (layerNum === 1) {
         layer1Opacity = op;
-        document.getElementById("opacityLabelL1").innerText = val + "%";
-        document.getElementById("opacitySliderL1").value = val;
-        if (map && map.getPane('contourPane1')) map.getPane('contourPane1').style.opacity = op;
+        var lbl = document.getElementById("opacityLabelL1");
+        var sld = document.getElementById("opacitySliderL1");
+        if (lbl) lbl.innerText = val + "%";
+        if (sld) sld.value = val;
+        if (map && map.getPane('contourPane1')) {
+            map.getPane('contourPane1').style.opacity = op;
+        }
     } else {
         layer2Opacity = op;
-        document.getElementById("opacityLabelL2").innerText = val + "%";
-        document.getElementById("opacitySliderL2").value = val;
-        if (map && map.getPane('contourPane2')) map.getPane('contourPane2').style.opacity = op;
+        var lbl2 = document.getElementById("opacityLabelL2");
+        var sld2 = document.getElementById("opacitySliderL2");
+        if (lbl2) lbl2.innerText = val + "%";
+        if (sld2) sld2.value = val;
+        if (map && map.getPane('contourPane2')) {
+            map.getPane('contourPane2').style.opacity = op;
+        }
     }
 }
 
@@ -872,7 +880,7 @@ function updateLegend() {
     box.innerHTML = html;
 }
 
-// ================= ULTRA-SCHNELLES BINÄR-LADEN =================
+// ================= HEBEL 1: BINÄR-LADEN MIT 24-BIT LAYOUT =================
 async function fetchAndDecompressBinary(url, hasArrows) {
     const response = await fetch(url);
     if (!response.ok) throw new Error("Fehler beim Laden von: " + url);
@@ -880,20 +888,17 @@ async function fetchAndDecompressBinary(url, hasArrows) {
     const decompressedStream = response.body.pipeThrough(ds);
     const buffer = await new Response(decompressedStream).arrayBuffer();
     
-    const int16 = new Int16Array(buffer);
     const totalPoints = config.nx * config.ny; // 96'000
+    // s liegt immer als Int16 in den ersten 192'000 Bytes
+    const s = new Int16Array(buffer, 0, totalPoints);
     
-    if (hasArrows && int16.length >= totalPoints * 2) {
-        return {
-            s: int16.subarray(0, totalPoints),
-            d: int16.subarray(totalPoints, totalPoints * 2)
-        };
-    } else {
-        return {
-            s: int16.subarray(0, totalPoints),
-            d: null
-        };
+    let d = null;
+    // Hebel 1: Bei Feldern mit Windrichtung folgt direkt das kompakte Uint8-Array
+    if (hasArrows && buffer.byteLength >= totalPoints * 3) {
+        d = new Uint8Array(buffer, totalPoints * 2, totalPoints);
     }
+    
+    return { s: s, d: d };
 }
 
 function generateContoursClient(s_flat, paletteType) {
@@ -908,7 +913,7 @@ function generateContoursClient(s_flat, paletteType) {
     }
     
     const thresholds = levels.slice(0, levels.length - 1);
-    // 100% Original-Qualität mit glatten Kurven
+    // 100% Original-Qualität mit perfekt geglätteten Konturen
     const contourGen = d3.contours()
         .size([config.nx, config.ny])
         .smooth(true)
@@ -1215,7 +1220,7 @@ function renderContours() {
     }
 }
 
-// ================= ORIGINAL-WINDPFEILE (GESTOCHEN SCHARF & INTERAKTIV) =================
+// ================= GESTOCHEN SCHARFE WINDPFEILE (HEBEL 1) =================
 function drawVisibleArrows() {
     if (!map || !config) return;
     if (!activeMarkers) { activeMarkers = L.layerGroup().addTo(map); } else { activeMarkers.clearLayers(); }
@@ -1270,7 +1275,8 @@ function drawVisibleArrows() {
 
         if (bounds.contains(latlng)) {
             var speed = sVal / 10.0;
-            var dir = dirs[i];
+            // Hebel 1: Uint8 (0..180) wieder auf 0..360 Grad zurückskalieren
+            var dir = dirs[i] * 2.0;
 
             var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
             var arrow_h = Math.min(62, Math.max(13, 8.5 + Math.pow(speed, 0.80) * 1.6));
