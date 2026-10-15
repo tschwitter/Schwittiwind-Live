@@ -399,7 +399,6 @@ async function loadModelAndRun(modelName, runId) {
         if (!hasEns) {
             currentMemberIdx = 0;
         } else if (isOldRun && prevMember >= 1 && prevMember < statOffset) {
-            // Bei älteren Läufen existieren keine Einzel-Member -> auf Hauptlauf zurückstellen
             currentMemberIdx = 0;
         } else {
             currentMemberIdx = Math.min(prevMember, config.member_names.length - 1);
@@ -682,7 +681,6 @@ function navUp() {
     var statOffset = config.member_names.length - 6;
 
     if (isOldRun) {
-        // Bei alten Läufen nur zwischen HL (0) und Statistiken springen
         if (currentMemberIdx >= statOffset) {
             if (currentMemberIdx === statOffset) updateForecast(0, currentStepIdx);
             else updateForecast(currentMemberIdx - 1, currentStepIdx);
@@ -928,7 +926,7 @@ function updateLegend() {
     box.innerHTML = html;
 }
 
-// ================= BINÄRES LADEN & DEKOMPRIMIEREN =================
+// ================= BYTE-SHUFFLING LADEN & DEKOMPRIMIEREN =================
 async function fetchAndDecompress(url) {
     const response = await fetch(url);
     if (!response.ok) throw new Error("Fehler beim Laden von: " + url);
@@ -940,12 +938,19 @@ async function fetchAndDecompress(url) {
 function decodeBinaryGrid(buffer) {
     const totalPoints = config.nx * config.ny;
 
-    // Alle Messwerte liegen als int16 vor (skaliert mit 10, -1 = NaN)
-    const s = new Int16Array(buffer, 0, totalPoints);
-    let d = null;
+    // 1. Geshuffelte Blöcke: Erst alle Low-Bytes, dann alle High-Bytes
+    const lowBytes = new Uint8Array(buffer, 0, totalPoints);
+    const highBytes = new Uint8Array(buffer, totalPoints, totalPoints);
 
-    // Falls Windpfeile enthalten sind: Richtungen (uint8, Winkel / 2) liegen danach
-    if (buffer.byteLength >= (totalPoints * 2 + totalPoints)) {
+    // 2. Wieder zu 16-Bit-Integers (int16) mit Vorzeichen zusammensetzen
+    const s = new Int16Array(totalPoints);
+    for (let i = 0; i < totalPoints; i++) {
+        s[i] = (highBytes[i] << 8) | lowBytes[i];
+    }
+
+    // 3. Windrichtung (falls vorhanden, liegt ab Byte 2 * totalPoints)
+    let d = null;
+    if (buffer.byteLength >= (totalPoints * 3)) {
         d = new Uint8Array(buffer, totalPoints * 2, totalPoints);
     }
 
@@ -960,7 +965,7 @@ function generateContoursClient(gridObj, paletteType) {
     const s = gridObj.s;
     const values = new Float32Array(s.length);
 
-    // Echte Fließkommazahlen mit Zehntel-Genauigkeit (kein Treppeneffekt)
+    // Volle 0.1-Präzision: -1 = NaN, sonst geteilt durch 10.0 (butterweiche Konturen)
     for (let i = 0; i < s.length; i++) {
         values[i] = (s[i] < 0) ? NaN : (s[i] / 10.0);
     }
@@ -1134,9 +1139,9 @@ async function init() {
             steps.forEach(idx => {
                 var h = parseInt(times[idx].local_str.split(" ")[1].split(":")[0]);
                 var diff = Math.abs(h - targetHour);
-                if (diff < minDiff) {
-                    minDiff = diff;
-                    bestIdx = idx;
+                if (diff < minDiff) { 
+                    minDiff = diff; 
+                    bestIdx = idx; 
                 }
             });
             updateForecast(currentMemberIdx, bestIdx);
