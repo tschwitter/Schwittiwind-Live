@@ -5,11 +5,19 @@ import numpy as np
 def export_variable_step(model_name, run_id, var_name, m_idx, step_idx, data):
     speed = data["speed"]
 
-    # Volle 0.1-Präzision für ALLE Parameter: int16, skaliert * 10 (-1 = NaN)
-    s_arr = np.where(np.isnan(speed), -1, np.round(speed * 10.0)).astype(np.int16).ravel()
-    payload_bytes = bytearray(s_arr.tobytes())
+    # 1. Volle 0.1-Präzision für ALLE Parameter: int16 (Little-Endian '<i2'), -1 = NaN
+    s_arr = np.where(np.isnan(speed), -1, np.round(speed * 10.0)).astype("<i2").ravel()
 
-    # Windrichtung nur anhängen, wenn Pfeile aktiv sind (niemals bei Statistiken!)
+    # 2. BYTE-SHUFFLING: Trennung in Low-Bytes und High-Bytes
+    raw_u8 = s_arr.view(np.uint8)
+    low_bytes = raw_u8[0::2]   # Alle Low-Bytes (Feinabstufung)
+    high_bytes = raw_u8[1::2]  # Alle High-Bytes (fast nur Nullen und 0xFF bei NaN)
+
+    # 3. Payload zusammenstellen: [Alle Low-Bytes] + [Alle High-Bytes]
+    payload_bytes = bytearray(low_bytes.tobytes())
+    payload_bytes.extend(high_bytes.tobytes())
+
+    # 4. Windrichtung (nur wenn Windpfeile aktiv sind, als uint8 hinten anhängen)
     if data.get("has_arrows", False) and "dir" in data:
         direction = data["dir"]
         d_arr = np.where(
