@@ -8,20 +8,20 @@ LAT_MIN, LAT_MAX = 45.5, 48.0
 LON_MIN, LON_MAX = 5.7, 10.8
 
 VARIABLES_CONFIG = {
-    "wind":     {"label": "10m Wind",     "type": "surface",  "has_arrows": True,  "palette": "wind"},
-    "gust":     {"label": "Böen",         "type": "surface",  "has_arrows": False, "palette": "wind"},
-    "dbz":      {"label": "Radar (dBZ)",  "type": "surface",  "has_arrows": False, "palette": "dbz"},
-    "sun":      {"label": "Sonne %",      "type": "surface",  "has_arrows": False, "palette": "sun"},
-    "clct":     {"label": "Wolken",       "type": "surface",  "has_arrows": False, "palette": "cloud"},
-    "clch":     {"label": "Hohe Wolken",  "type": "surface",  "has_arrows": False, "palette": "cloud"},
-    "clcm":     {"label": "Mittl. Wolken","type": "surface",  "has_arrows": False, "palette": "cloud"},
-    "clcl":     {"label": "Tiefe Wolken", "type": "surface",  "has_arrows": False, "palette": "cloud"},
-    "wind1000": {"label": "1000m Wind",   "type": "altitude", "altitude": 1000.0, "has_arrows": True,  "palette": "wind"},
-    "wind1500": {"label": "1500m Wind",   "type": "altitude", "altitude": 1500.0, "has_arrows": True,  "palette": "wind"},
-    "wind2000": {"label": "2000m Wind",   "type": "altitude", "altitude": 2000.0, "has_arrows": True,  "palette": "wind"},
-    "wind2500": {"label": "2500m Wind",   "type": "altitude", "altitude": 2500.0, "has_arrows": True,  "palette": "wind"},
-    "wind3000": {"label": "3000m Wind",   "type": "altitude", "altitude": 3000.0, "has_arrows": True,  "palette": "wind"},
-    "wind3500": {"label": "3500m Wind",   "type": "altitude", "altitude": 3500.0, "has_arrows": True,  "palette": "wind"},
+    "wind":     {"label": "10m Wind",     "type": "surface",  "has_arrows": True,  "palette": "wind",  "dtype": "int16"},
+    "gust":     {"label": "Böen",         "type": "surface",  "has_arrows": False, "palette": "wind",  "dtype": "int16"},
+    "dbz":      {"label": "Radar (dBZ)",  "type": "surface",  "has_arrows": False, "palette": "dbz",   "dtype": "int16"},
+    "sun":      {"label": "Sonne %",      "type": "surface",  "has_arrows": False, "palette": "sun",   "dtype": "uint8"},
+    "clct":     {"label": "Wolken",       "type": "surface",  "has_arrows": False, "palette": "cloud", "dtype": "uint8"},
+    "clch":     {"label": "Hohe Wolken",  "type": "surface",  "has_arrows": False, "palette": "cloud", "dtype": "uint8"},
+    "clcm":     {"label": "Mittl. Wolken","type": "surface",  "has_arrows": False, "palette": "cloud", "dtype": "uint8"},
+    "clcl":     {"label": "Tiefe Wolken", "type": "surface",  "has_arrows": False, "palette": "cloud", "dtype": "uint8"},
+    "wind1000": {"label": "1000m Wind",   "type": "altitude", "altitude": 1000.0, "has_arrows": True,  "palette": "wind", "dtype": "int16"},
+    "wind1500": {"label": "1500m Wind",   "type": "altitude", "altitude": 1500.0, "has_arrows": True,  "palette": "wind", "dtype": "int16"},
+    "wind2000": {"label": "2000m Wind",   "type": "altitude", "altitude": 2000.0, "has_arrows": True,  "palette": "wind", "dtype": "int16"},
+    "wind2500": {"label": "2500m Wind",   "type": "altitude", "altitude": 2500.0, "has_arrows": True,  "palette": "wind", "dtype": "int16"},
+    "wind3000": {"label": "3000m Wind",   "type": "altitude", "altitude": 3000.0, "has_arrows": True,  "palette": "wind", "dtype": "int16"},
+    "wind3500": {"label": "3500m Wind",   "type": "altitude", "altitude": 3500.0, "has_arrows": True,  "palette": "wind", "dtype": "int16"},
 }
 
 VARIABLES = list(VARIABLES_CONFIG.keys())
@@ -36,9 +36,7 @@ MODELS_CONFIG = {
         "max_members": 11,
         "max_runs": 8,  # Volle 24 Stunden (8 Läufe à 3 Stunden)
         "active_variables": ["wind"],
-#, "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
         "ensemble_variables": ["wind"],
-        # "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl",  "wind1500"
         "max_chunks": 4
     },
     "icon-ch2": {
@@ -49,9 +47,7 @@ MODELS_CONFIG = {
         "max_members": 21,
         "max_runs": 4,  # Volle 24 Stunden (4 Läufe à 6 Stunden)
         "active_variables": ["wind"],
-        #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"
         "ensemble_variables": ["wind"],
-        #"wind", "gust", "sun", "dbz"
         "max_chunks": 4
     }
 }
