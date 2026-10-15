@@ -2,12 +2,16 @@ import numpy as np
 from scipy.spatial import Delaunay
 import config
 
-def init_regrid_weights(source_lons, source_lats):
-    print("-> Berechne geometrische Regridding-Gewichte...", flush=True)
+def init_regrid_weights(model_name, source_lons, source_lats):
+    m_cfg = config.MODELS_CONFIG.get(model_name, {})
+    nx = m_cfg.get("nx", config.NX)
+    ny = m_cfg.get("ny", config.NY)
+
+    print(f"-> Berechne geometrische Regridding-Gewichte [{model_name}: {nx}x{ny}]...", flush=True)
     source_points = np.column_stack([source_lons, source_lats])
     
-    target_lons = np.linspace(config.XMIN, config.XMAX, config.NX)
-    target_lats = np.linspace(config.YMIN, config.YMAX, config.NY)
+    target_lons = np.linspace(config.XMIN, config.XMAX, nx)
+    target_lats = np.linspace(config.YMIN, config.YMAX, ny)
     grid_lon, grid_lat = np.meshgrid(target_lons, target_lats)
     target_points = np.column_stack([grid_lon.ravel(), grid_lat.ravel()])
 
@@ -25,9 +29,10 @@ def init_regrid_weights(source_lons, source_lats):
     b2 = 1.0 - b0 - b1
 
     vertices = tri.simplices[s]
-    print("✓ Geometrische Gewichte erfolgreich im RAM vorbereitet!", flush=True)
+    print(f"✓ Geometrische Gewichte für [{model_name}] erfolgreich im RAM vorbereitet!", flush=True)
 
     return {
+        "nx": nx, "ny": ny,
         "v0": vertices[:, 0], "v1": vertices[:, 1], "v2": vertices[:, 2],
         "b0": b0.astype(np.float32), "b1": b1.astype(np.float32), "b2": b2.astype(np.float32),
         "valid": valid, "valid_indices": np.where(valid)[0],
@@ -40,8 +45,11 @@ def remap_batch(batch_data, weights):
     batch_data: Shape (M, N_cells) oder (N_cells,)
     Rückgabe: Shape (M, NY, NX) bzw. (NY, NX)
     """
+    nx = weights["nx"]
+    ny = weights["ny"]
+
     if batch_data is None:
-        return np.full((config.NY, config.NX), np.nan, dtype=np.float32)
+        return np.full((ny, nx), np.nan, dtype=np.float32)
 
     is_1d = (batch_data.ndim == 1)
     if is_1d:
@@ -50,10 +58,9 @@ def remap_batch(batch_data, weights):
         data_2d = batch_data
 
     m_count = data_2d.shape[0]
-    total_grid = config.NY * config.NX
+    total_grid = ny * nx
     out = np.full((m_count, total_grid), np.nan, dtype=np.float32)
 
-    # Vektorisierte Interpolation über alle M Member gleichzeitig
     v0 = data_2d[:, weights["v0"]]
     v1 = data_2d[:, weights["v1"]]
     v2 = data_2d[:, weights["v2"]]
@@ -61,7 +68,7 @@ def remap_batch(batch_data, weights):
     interp = v0 * weights["b0"] + v1 * weights["b1"] + v2 * weights["b2"]
     out[:, weights["valid_indices"]] = interp
 
-    res = out.reshape(m_count, config.NY, config.NX)
+    res = out.reshape(m_count, ny, nx)
     return res[0] if is_1d else res
 
 def compute_statistics_for_array(all_values, threshold=None):
