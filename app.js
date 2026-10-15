@@ -885,7 +885,7 @@ async function fetchAndDecompress(url) {
 function decodeBinaryGrid(buffer) {
     const totalPoints = config.nx * config.ny;
 
-    // 1. Alle Messwerte sind jetzt einheitlich 1 Byte groß (uint8)
+    // 1. Alle Messwerte sind einheitlich 1 Byte groß (uint8)
     const s = new Uint8Array(buffer, 0, totalPoints);
     let d = null;
 
@@ -897,19 +897,63 @@ function decodeBinaryGrid(buffer) {
     return { s: s, d: d };
 }
 
+// Subtiler 3x3 Glättungsfilter, um Rundungs-Zickzack aufzulösen
+function smoothGridValues(rawValues, nx, ny) {
+    const smoothed = new Float32Array(rawValues.length);
+
+    for (let r = 0; r < ny; r++) {
+        for (let c = 0; c < nx; c++) {
+            const idx = r * nx + c;
+            const centerVal = rawValues[idx];
+
+            if (isNaN(centerVal)) {
+                smoothed[idx] = NaN;
+                continue;
+            }
+
+            let sum = 0;
+            let weightSum = 0;
+
+            for (let dr = -1; dr <= 1; dr++) {
+                const nr = r + dr;
+                if (nr < 0 || nr >= ny) continue;
+
+                for (let dc = -1; dc <= 1; dc++) {
+                    const nc = c + dc;
+                    if (nc < 0 || nc >= nx) continue;
+
+                    const nVal = rawValues[nr * nx + nc];
+                    if (!isNaN(nVal)) {
+                        const weight = (dr === 0 && dc === 0) ? 4 : ((dr === 0 || dc === 0) ? 2 : 1);
+                        sum += nVal * weight;
+                        weightSum += weight;
+                    }
+                }
+            }
+
+            smoothed[idx] = (weightSum > 0) ? (sum / weightSum) : centerVal;
+        }
+    }
+    return smoothed;
+}
+
 function generateContoursClient(gridObj, paletteType) {
     const p = config.palettes[paletteType] || config.palettes["wind"];
     const levels = p.levels;
     const colors = p.colors;
     
     const s = gridObj.s;
-    const values = new Float32Array(s.length);
+    const rawValues = new Float32Array(s.length);
 
-    // Einheitlich: 255 = NaN, sonst 1:1 ganzer Messwert
+    // 1. Ganzzahlen auslesen (255 = NaN)
     for (let i = 0; i < s.length; i++) {
-        values[i] = (s[i] === 255) ? NaN : s[i];
+        rawValues[i] = (s[i] === 255) ? NaN : s[i];
     }
     
+    // 2. Glättungsfilter anwenden, um Zickzack an Kanten aufzulösen
+    const values = smoothGridValues(rawValues, config.nx, config.ny);
+
+    // 3. Konturen mit kontinuierlichen Übergängen berechnen
     const thresholds = levels.slice(0, levels.length - 1);
     const contourGen = d3.contours()
         .size([config.nx, config.ny])
