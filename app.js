@@ -34,6 +34,8 @@ var cantonalBoundaryLayer = null;
 
 var contourLayer1 = null;
 var contourLayer2 = null;
+var canvasRenderer1 = null;
+var canvasRenderer2 = null;
 var activeMarkers = null;
 var cityLayerGroup = null;
 
@@ -43,6 +45,8 @@ var cacheContours = {};
 var uniqueDays = [];
 var dayTimesteps = {};
 var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+
+var mapUpdateTimer = null;
 
 // ================= ERWEITERTES ORTSNETZ DER SCHWEIZ =================
 var CITIES = [
@@ -96,6 +100,14 @@ var CITIES = [
     { name: "Solothurn", lat: 47.2088, lon: 7.5370, minZoom: 10 },
     { name: "Glarus", lat: 47.0406, lon: 9.0678, minZoom: 10 }
 ];
+
+function scheduleMapUpdates() {
+    if (mapUpdateTimer) clearTimeout(mapUpdateTimer);
+    mapUpdateTimer = setTimeout(function() {
+        drawVisibleArrows();
+        updateCityLabels();
+    }, 120);
+}
 
 function updateCityLabels() {
     if (!map) return;
@@ -1054,13 +1066,16 @@ async function init() {
         map.getPane('boundaryPane').style.opacity = '1.0';
         map.getPane('boundaryPane').style.pointerEvents = 'none';
 
+        // Echte HTML5-Canvas Renderer für die Kontur-Panes erzwingen
         map.createPane('contourPane1');
         map.getPane('contourPane1').style.opacity = layer1Opacity;
         map.getPane('contourPane1').style.zIndex = '400';
+        canvasRenderer1 = L.canvas({ pane: 'contourPane1', padding: 0.25 });
 
         map.createPane('contourPane2');
         map.getPane('contourPane2').style.opacity = layer2Opacity;
         map.getPane('contourPane2').style.zIndex = '450';
+        canvasRenderer2 = L.canvas({ pane: 'contourPane2', padding: 0.25 });
 
         map.createPane('cityPane');
         map.getPane('cityPane').style.zIndex = '520';
@@ -1114,14 +1129,9 @@ async function init() {
                 }).addTo(cantonalBoundaryLayer);
             });
 
-        map.on('moveend', function() {
-            drawVisibleArrows();
-            updateCityLabels();
-        });
-        map.on('zoomend', function() {
-            drawVisibleArrows();
-            updateCityLabels();
-        });
+        // Entkoppeltes Updaten über Debounce: Zoom-Gesten bleiben flüssig!
+        map.on('moveend', scheduleMapUpdates);
+        map.on('zoomend', scheduleMapUpdates);
 
         map.on('click', function() {
             closeAllPopups();
@@ -1139,9 +1149,9 @@ async function init() {
             steps.forEach(idx => {
                 var h = parseInt(times[idx].local_str.split(" ")[1].split(":")[0]);
                 var diff = Math.abs(h - targetHour);
-                if (diff < minDiff) { 
-                    minDiff = diff; 
-                    bestIdx = idx; 
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    bestIdx = idx;
                 }
             });
             updateForecast(currentMemberIdx, bestIdx);
@@ -1159,7 +1169,7 @@ async function init() {
             updateModelButtonLabels();
             initMemberPanel();
             updateForecast(currentMemberIdx, currentStepIdx);
-            updateCityLabels();
+            scheduleMapUpdates();
         };
 
         updateNavModeButton();
@@ -1239,8 +1249,10 @@ function renderContours() {
     if (contourLayer1) map.removeLayer(contourLayer1);
     const key1 = `${currentModel}_${currentRunId}_${layer1Var}_${currentMemberIdx}_${currentStepIdx}`;
     
+    // Echtes Canvas-Rendering statt speicherintensiver SVG-Polygone
     contourLayer1 = L.geoJson(cacheContours[key1], {
         pane: 'contourPane1',
+        renderer: canvasRenderer1,
         style: function(feature) {
             var fill = feature.properties.fill;
             var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
@@ -1261,6 +1273,7 @@ function renderContours() {
 
         contourLayer2 = L.geoJson(cacheContours[key2], {
             pane: 'contourPane2',
+            renderer: canvasRenderer2,
             style: function(feature) {
                 var fill = feature.properties.fill;
                 var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
@@ -1305,6 +1318,7 @@ function drawVisibleArrows() {
     var bounds = map.getBounds();
     var zoom = map.getZoom();
 
+    // Dichte bleibt auf allen Geräten vollständig erhalten
     var step = 16;
     if (zoom >= 9 && zoom <= 10) step = 7;
     else if (zoom === 11) step = 4;
