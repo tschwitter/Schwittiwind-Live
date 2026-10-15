@@ -102,6 +102,8 @@ def get_dynamic_chunks(total_steps, max_chunks=4):
 
 def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
     model_cfg = config.MODELS_CONFIG[model_name]
+    nx = model_cfg.get("nx", config.NX)
+    ny = model_cfg.get("ny", config.NY)
     
     for base_folder in ["dist/data", "dist-meta/data"]:
         model_base_dir = f"{base_folder}/{model_name}"
@@ -145,7 +147,7 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
             "model_label": model_cfg["name"],
             "xmin": config.XMIN, "xmax": config.XMAX,
             "ymin": config.YMIN, "ymax": config.YMAX,
-            "nx": config.NX, "ny": config.NY,
+            "nx": nx, "ny": ny,
             "ref_time_utc": ref_time_str or ref_dt.strftime("%d.%m.%Y %H:00 UTC"),
             "member_names": member_names,
             "variables": model_cfg["active_variables"],
@@ -180,7 +182,7 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
         with open(f"{model_base_dir}/runs.json", "w") as f:
             json.dump(valid_runs, f)
 
-    print(f"✓ Metadaten für [{model_name} / {run_id}] bereitgestellt!", flush=True)
+    print(f"✓ Metadaten für [{model_name} / {run_id}] bereitgestellt ({nx}x{ny})!", flush=True)
 
 def prune_old_runs():
     print("--- PRUNING: Bereinige Läufe älter als 24h ---", flush=True)
@@ -246,7 +248,7 @@ def run_chunk(model_name, run_id, start_step, end_step, ref_time_str):
     print(f"--- STARTE [{model_name} / {run_id}]: Schritte {start_step} bis {end_step} ({num_chunk_steps} Schritte) ---", flush=True)
     weather_data = downloader.fetch_weather_data(model_name, start_step, end_step, ref_time_str)
 
-    weights = stats.init_regrid_weights(weather_data["ref_lon"], weather_data["ref_lat"])
+    weights = stats.init_regrid_weights(model_name, weather_data["ref_lon"], weather_data["ref_lat"])
 
     global SHARED_DATA
     SHARED_DATA = {
@@ -256,14 +258,12 @@ def run_chunk(model_name, run_id, start_step, end_step, ref_time_str):
 
     tasks = [(model_name, run_id, local_idx, start_step + local_idx) for local_idx in range(num_chunk_steps)]
 
-    # Nutzt auf GitHub Actions Runners alle verfügbaren vCPUs (bis zu 4)
     num_procs = min(4, os.cpu_count() or 2)
     ctx = get_context("fork")
     with ctx.Pool(processes=num_procs) as pool:
         pool.map(process_single_local_step, tasks)
 
     print(f"=== [{model_name} / {run_id}] CHUNK {start_step} bis {end_step} BEENDET ===", flush=True)
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -284,7 +284,6 @@ def main():
     if args.prepare:
         os.makedirs("dist-meta/data", exist_ok=True)
         
-        # Kopiert automatisch index.html, style.css und app.js ins Deployment
         for static_file in ["index.html", "style.css", "app.js"]:
             if os.path.exists(static_file):
                 shutil.copy(static_file, f"dist-meta/{static_file}")
