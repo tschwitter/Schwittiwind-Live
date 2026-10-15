@@ -36,6 +36,7 @@ var contourLayer1 = null;
 var contourLayer2 = null;
 var canvasRenderer1 = null;
 var canvasRenderer2 = null;
+var canvasRendererBoundary = null;
 var activeMarkers = null;
 var cityLayerGroup = null;
 
@@ -106,7 +107,7 @@ function scheduleMapUpdates() {
     mapUpdateTimer = setTimeout(function() {
         drawVisibleArrows();
         updateCityLabels();
-    }, 120);
+    }, 100);
 }
 
 function updateCityLabels() {
@@ -950,17 +951,14 @@ async function fetchAndDecompress(url) {
 function decodeBinaryGrid(buffer) {
     const totalPoints = config.nx * config.ny;
 
-    // 1. Geshuffelte Blöcke: Erst alle Low-Bytes, dann alle High-Bytes
     const lowBytes = new Uint8Array(buffer, 0, totalPoints);
     const highBytes = new Uint8Array(buffer, totalPoints, totalPoints);
 
-    // 2. Wieder zu 16-Bit-Integers (int16) mit Vorzeichen zusammensetzen
     const s = new Int16Array(totalPoints);
     for (let i = 0; i < totalPoints; i++) {
         s[i] = (highBytes[i] << 8) | lowBytes[i];
     }
 
-    // 3. Windrichtung (falls vorhanden, liegt ab Byte 2 * totalPoints)
     let d = null;
     if (buffer.byteLength >= (totalPoints * 3)) {
         d = new Uint8Array(buffer, totalPoints * 2, totalPoints);
@@ -977,7 +975,6 @@ function generateContoursClient(gridObj, paletteType) {
     const s = gridObj.s;
     const values = new Float32Array(s.length);
 
-    // Volle 0.1-Präzision: -1 = NaN, sonst geteilt durch 10.0 (butterweiche Konturen)
     for (let i = 0; i < s.length; i++) {
         values[i] = (s[i] < 0) ? NaN : (s[i] / 10.0);
     }
@@ -1066,16 +1063,18 @@ async function init() {
         map.getPane('boundaryPane').style.opacity = '1.0';
         map.getPane('boundaryPane').style.pointerEvents = 'none';
 
-        // Echte HTML5-Canvas Renderer für die Kontur-Panes erzwingen
+        // Hardwarebeschleunigter Canvas-Renderer für Kantone
+        canvasRendererBoundary = L.canvas({ pane: 'boundaryPane', padding: 0.1 });
+
         map.createPane('contourPane1');
         map.getPane('contourPane1').style.opacity = layer1Opacity;
         map.getPane('contourPane1').style.zIndex = '400';
-        canvasRenderer1 = L.canvas({ pane: 'contourPane1', padding: 0.25 });
+        canvasRenderer1 = L.canvas({ pane: 'contourPane1', padding: 0.1 });
 
         map.createPane('contourPane2');
         map.getPane('contourPane2').style.opacity = layer2Opacity;
         map.getPane('contourPane2').style.zIndex = '450';
-        canvasRenderer2 = L.canvas({ pane: 'contourPane2', padding: 0.25 });
+        canvasRenderer2 = L.canvas({ pane: 'contourPane2', padding: 0.1 });
 
         map.createPane('cityPane');
         map.getPane('cityPane').style.zIndex = '520';
@@ -1112,6 +1111,7 @@ async function init() {
             .then(geojson => {
                 L.geoJSON(geojson, {
                     pane: 'boundaryPane',
+                    renderer: canvasRendererBoundary,
                     interactive: false,
                     style: {
                         color: "#111111",
@@ -1129,7 +1129,14 @@ async function init() {
                 }).addTo(cantonalBoundaryLayer);
             });
 
-        // Entkoppeltes Updaten über Debounce: Zoom-Gesten bleiben flüssig!
+        // ================= FLÜSSIGE ZOOM-GESTEN =================
+        // Sobald der Finger zoomt, Marker sofort ausblenden -> Zoom läuft mit maximalen FPS
+        map.on('zoomstart', function() {
+            if (activeMarkers) activeMarkers.clearLayers();
+            if (cityLayerGroup) cityLayerGroup.clearLayers();
+        });
+
+        // Erst wenn der Zoom stillsteht, Marker zeichnen
         map.on('moveend', scheduleMapUpdates);
         map.on('zoomend', scheduleMapUpdates);
 
@@ -1149,9 +1156,9 @@ async function init() {
             steps.forEach(idx => {
                 var h = parseInt(times[idx].local_str.split(" ")[1].split(":")[0]);
                 var diff = Math.abs(h - targetHour);
-                if (diff < minDiff) {
-                    minDiff = diff;
-                    bestIdx = idx;
+                if (diff < minDiff) { 
+                    minDiff = diff; 
+                    bestIdx = idx; 
                 }
             });
             updateForecast(currentMemberIdx, bestIdx);
@@ -1249,10 +1256,10 @@ function renderContours() {
     if (contourLayer1) map.removeLayer(contourLayer1);
     const key1 = `${currentModel}_${currentRunId}_${layer1Var}_${currentMemberIdx}_${currentStepIdx}`;
     
-    // Echtes Canvas-Rendering statt speicherintensiver SVG-Polygone
     contourLayer1 = L.geoJson(cacheContours[key1], {
         pane: 'contourPane1',
         renderer: canvasRenderer1,
+        smoothFactor: 1.0,
         style: function(feature) {
             var fill = feature.properties.fill;
             var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
@@ -1274,6 +1281,7 @@ function renderContours() {
         contourLayer2 = L.geoJson(cacheContours[key2], {
             pane: 'contourPane2',
             renderer: canvasRenderer2,
+            smoothFactor: 1.0,
             style: function(feature) {
                 var fill = feature.properties.fill;
                 var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
@@ -1288,7 +1296,7 @@ function renderContours() {
     }
 }
 
-// ================= OPTIMIERTE WINDPFEILE =================
+// ================= ULTRA-SCHNELLE WINDPFEILE =================
 function drawVisibleArrows() {
     if (!map || !config) return;
     if (!activeMarkers) { activeMarkers = L.layerGroup().addTo(map); } else { activeMarkers.clearLayers(); }
@@ -1318,7 +1326,7 @@ function drawVisibleArrows() {
     var bounds = map.getBounds();
     var zoom = map.getZoom();
 
-    // Dichte bleibt auf allen Geräten vollständig erhalten
+    // Schrittweiten wie gewohnt dicht
     var step = 16;
     if (zoom >= 9 && zoom <= 10) step = 7;
     else if (zoom === 11) step = 4;
@@ -1330,22 +1338,41 @@ function drawVisibleArrows() {
     var dirs_half = gridData.d;
     var labelType = config.variables_config[arrowVar].label || "Wind";
 
-    for (var i = 0; i < speeds.length; i++) {
-        var sVal = speeds[i];
-        if (sVal < 25) continue; // Unter 2.5 km/h
+    var nx = config.nx;
+    var ny = config.ny;
+    var xmin = config.xmin, xmax = config.xmax;
+    var ymin = config.ymin, ymax = config.ymax;
 
-        var r = Math.floor(i / config.nx);
-        var c = i % config.nx;
-        if (r % step !== 0 || c % step !== 0) continue;
+    // Nur sichtbaren Ausschnitt in Grid-Koordinaten berechnen (beschleunigt Weit-Zoom massiv!)
+    var bNorth = bounds.getNorth(), bSouth = bounds.getSouth();
+    var bWest = bounds.getWest(), bEast = bounds.getEast();
 
-        var lat = config.ymin + r * (config.ymax - config.ymin) / (config.ny - 1);
-        var lon = config.xmin + c * (config.xmax - config.xmin) / (config.nx - 1);
-        var latlng = L.latLng(lat, lon);
+    var rMin = Math.max(0, Math.floor((bSouth - ymin) / (ymax - ymin) * (ny - 1)));
+    var rMax = Math.min(ny - 1, Math.ceil((bNorth - ymin) / (ymax - ymin) * (ny - 1)));
+    var cMin = Math.max(0, Math.floor((bWest - xmin) / (xmax - xmin) * (nx - 1)));
+    var cMax = Math.min(nx - 1, Math.ceil((bEast - xmin) / (xmax - xmin) * (nx - 1)));
 
-        if (bounds.contains(latlng)) {
-            var speed = sVal / 10.0;
+    // Runden auf das nächste step-Vielfache
+    rMin = Math.floor(rMin / step) * step;
+    cMin = Math.floor(cMin / step) * step;
+
+    // DIREKTE 2D-SCHLEIFE: Läuft nur ~1.500 Mal statt 96.000 Mal!
+    for (var r = rMin; r <= rMax; r += step) {
+        var lat = ymin + r * (ymax - ymin) / (ny - 1);
+        var rowOffset = r * nx;
+
+        for (var c = cMin; c <= cMax; c += step) {
+            var i = rowOffset + c;
+            var sVal = speeds[i];
+            if (sVal < 25) continue; // Unter 2.5 km/h
+
             var dirVal = dirs_half[i];
             if (dirVal === 255) continue;
+
+            var lon = xmin + c * (xmax - xmin) / (nx - 1);
+            var latlng = L.latLng(lat, lon);
+
+            var speed = sVal / 10.0;
             var dir = dirVal * 2.0;
 
             var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
@@ -1358,7 +1385,15 @@ function drawVisibleArrows() {
 
             var icon = L.divIcon({ html: svg, iconSize: [70, 70], iconAnchor: [35, 35], className: 'wind-arrow-icon' });
             var modLabel = (currentModel === "icon-ch2") ? "ICON-CH2" : "ICON-CH1";
-            L.marker(latlng, { icon: icon }).bindPopup(`<b>${labelType} (${modLabel}):</b><br>Stärke: ${speed.toFixed(1)} km/h<br>Richtung: ${dir.toFixed(0)}°`).addTo(activeMarkers);
+            
+            // Marker erzeugen; Popup wird erst beim Klick gebunden (Zero-Lag beim Zeichnen!)
+            (function(sp, dr, ml, lt, pos, ic) {
+                var marker = L.marker(pos, { icon: ic });
+                marker.on('click', function(e) {
+                    marker.bindPopup(`<b>${lt} (${ml}):</b><br>Stärke: ${sp.toFixed(1)} km/h<br>Richtung: ${dr.toFixed(0)}°`).openPopup();
+                });
+                marker.addTo(activeMarkers);
+            })(speed, dir, modLabel, labelType, latlng, icon);
         }
     }
 }
