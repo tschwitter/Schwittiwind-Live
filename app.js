@@ -824,10 +824,14 @@ function initMemberPanel() {
 
     if (toggleBtn) {
         if (isOldRun) {
-            toggleBtn.style.opacity = "0.4";
+            toggleBtn.style.opacity = "0.35";
             toggleBtn.style.pointerEvents = "none";
             toggleBtn.title = "Einzel-Member nur im neuesten Lauf verfügbar";
-            toggleBtn.innerHTML = `<span>Members</span><span style="font-size:8px; opacity:0.7;">(nur neuster Lauf)</span>`;
+            if (isMobile) {
+                toggleBtn.innerHTML = `<span>Members</span>`;
+            } else {
+                toggleBtn.innerHTML = `<span>Members</span><span style="font-size:8px; opacity:0.7;">(nur neuster Lauf)</span>`;
+            }
         } else {
             toggleBtn.style.opacity = "1.0";
             toggleBtn.style.pointerEvents = "auto";
@@ -848,7 +852,7 @@ function initMemberPanel() {
         } else if (idx >= 1 && idx < statOffset) {
             btn.innerText = isMobile ? "M" + idx : "Member " + idx;
             if (isOldRun) {
-                btn.style.opacity = "0.3";
+                btn.style.opacity = "0.25";
                 btn.style.pointerEvents = "none";
                 btn.title = "Nicht verfügbar in archivierten Läufen";
             } else {
@@ -1074,7 +1078,6 @@ async function init() {
         map.getPane('boundaryPane').style.opacity = '1.0';
         map.getPane('boundaryPane').style.pointerEvents = 'none';
 
-        // Hardwarebeschleunigter Canvas-Renderer für Kantone
         canvasRendererBoundary = L.canvas({ pane: 'boundaryPane', padding: 0.1 });
 
         map.createPane('contourPane1');
@@ -1087,7 +1090,6 @@ async function init() {
         map.getPane('contourPane2').style.zIndex = '450';
         canvasRenderer2 = L.canvas({ pane: 'contourPane2', padding: 0.1 });
 
-        // EIGENE PANES FÜR WINDPFEILE & STÄDTE (verhindert DOM-Konflikte bei Touch)
         map.createPane('arrowPane');
         map.getPane('arrowPane').style.zIndex = '500';
         map.getPane('arrowPane').style.transition = 'opacity 0.1s ease';
@@ -1146,12 +1148,8 @@ async function init() {
                 }).addTo(cantonalBoundaryLayer);
             });
 
-        // ================= TOUCH-SICHERE ZOOM-GESTEN =================
-        // Wir machen die Ebenen nur optisch unsichtbar, LÖSCHEN aber keine DOM-Elemente
-        // Dadurch bricht der Touch-Stream auf Smartphones NIEMALS ab!
         map.on('zoomstart', function() {
             setOverlaysVisible(false);
-            // Sicherheits-Timer: Falls der Finger auf dem Glas verharrt, nach 1 Sekunde wieder einblenden
             if (mapSafetyTimer) clearTimeout(mapSafetyTimer);
             mapSafetyTimer = setTimeout(function() {
                 setOverlaysVisible(true);
