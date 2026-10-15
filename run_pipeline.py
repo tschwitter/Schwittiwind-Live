@@ -185,28 +185,26 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
     print(f"✓ Metadaten für [{model_name} / {run_id}] bereitgestellt ({nx}x{ny})!", flush=True)
 
 def prune_old_runs():
-    print("--- PRUNING: Bereinige Läufe älter als 24h ---", flush=True)
+    print("--- PRUNING: Bereinige Läufe & Historie ---", flush=True)
     base_data_dir = "dist/data"
-    if os.path.exists(base_data_dir):
-        for f in os.listdir(base_data_dir):
-            fp = os.path.join(base_data_dir, f)
-            if os.path.isfile(fp):
-                os.remove(fp)
 
-    for m_name in config.MODELS_CONFIG.keys():
-        model_base_dir = f"dist/data/{m_name}"
+    for m_name, m_cfg in config.MODELS_CONFIG.items():
+        model_base_dir = f"{base_data_dir}/{m_name}"
         if not os.path.exists(model_base_dir):
             continue
 
         runs_file = f"{model_base_dir}/runs.json"
-        valid_ids = set()
+        valid_runs = []
         if os.path.exists(runs_file):
             try:
                 with open(runs_file, "r") as f:
                     valid_runs = json.load(f)
-                valid_ids = set(r["id"] for r in valid_runs)
             except Exception:
-                pass
+                valid_runs = []
+
+        valid_ids = [r["id"] for r in valid_runs]
+        latest_run_id = valid_ids[0] if valid_ids else None
+        num_ens = m_cfg["max_members"] - 1  # z.B. 10 bei CH1, 20 bei CH2
 
         for entry in os.listdir(model_base_dir):
             entry_path = os.path.join(model_base_dir, entry)
@@ -214,9 +212,25 @@ def prune_old_runs():
                 if entry != "runs.json":
                     os.remove(entry_path)
             elif os.path.isdir(entry_path):
+                # 1. Läufe älter als 24h komplett entfernen
                 if entry not in valid_ids:
                     print(f"-> Entferne Lauf älter als 24h ({m_name}): {entry}", flush=True)
                     shutil.rmtree(entry_path, ignore_errors=True)
+                # 2. Historische Läufe: Nur Hauptlauf (m0) & Statistiken behalten, Einzel-Member (m1..mN) löschen!
+                elif entry != latest_run_id:
+                    pruned_count = 0
+                    for fname in os.listdir(entry_path):
+                        if fname.startswith("grid_") and "_m" in fname:
+                            try:
+                                m_idx = int(fname.split("_m")[1].split("_s")[0])
+                                # Wenn es ein einzelner Ensemble-Member ist (1 <= m_idx <= num_ens): LÖSCHEN
+                                if 1 <= m_idx <= num_ens:
+                                    os.remove(os.path.join(entry_path, fname))
+                                    pruned_count += 1
+                            except Exception:
+                                pass
+                    if pruned_count > 0:
+                        print(f"✓ Historischer Lauf {entry} ({m_name}): {pruned_count} Einzel-Member-Dateien entfernt (HL & Statistiken behalten).", flush=True)
 
 def process_single_local_step(args):
     import stats
