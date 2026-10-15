@@ -48,6 +48,7 @@ var dayTimesteps = {};
 var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
 var mapUpdateTimer = null;
+var mapSafetyTimer = null;
 
 // ================= ERWEITERTES ORTSNETZ DER SCHWEIZ =================
 var CITIES = [
@@ -102,18 +103,28 @@ var CITIES = [
     { name: "Glarus", lat: 47.0406, lon: 9.0678, minZoom: 10 }
 ];
 
+function setOverlaysVisible(visible) {
+    if (!map) return;
+    var op = visible ? "1" : "0";
+    if (map.getPane('arrowPane')) map.getPane('arrowPane').style.opacity = op;
+    if (map.getPane('cityPane')) map.getPane('cityPane').style.opacity = op;
+}
+
 function scheduleMapUpdates() {
+    if (mapSafetyTimer) clearTimeout(mapSafetyTimer);
     if (mapUpdateTimer) clearTimeout(mapUpdateTimer);
+    
     mapUpdateTimer = setTimeout(function() {
+        setOverlaysVisible(true);
         drawVisibleArrows();
         updateCityLabels();
-    }, 100);
+    }, 120);
 }
 
 function updateCityLabels() {
     if (!map) return;
     if (!cityLayerGroup) {
-        cityLayerGroup = L.layerGroup().addTo(map);
+        cityLayerGroup = L.layerGroup([], { pane: 'cityPane' }).addTo(map);
     } else {
         cityLayerGroup.clearLayers();
     }
@@ -1076,9 +1087,15 @@ async function init() {
         map.getPane('contourPane2').style.zIndex = '450';
         canvasRenderer2 = L.canvas({ pane: 'contourPane2', padding: 0.1 });
 
+        // EIGENE PANES FÜR WINDPFEILE & STÄDTE (verhindert DOM-Konflikte bei Touch)
+        map.createPane('arrowPane');
+        map.getPane('arrowPane').style.zIndex = '500';
+        map.getPane('arrowPane').style.transition = 'opacity 0.1s ease';
+
         map.createPane('cityPane');
         map.getPane('cityPane').style.zIndex = '520';
         map.getPane('cityPane').style.pointerEvents = 'none';
+        map.getPane('cityPane').style.transition = 'opacity 0.1s ease';
 
         baseReliefLayer = L.tileLayer(swisstopo_relief_url, {
             pane: 'reliefPane',
@@ -1129,14 +1146,18 @@ async function init() {
                 }).addTo(cantonalBoundaryLayer);
             });
 
-        // ================= FLÜSSIGE ZOOM-GESTEN =================
-        // Sobald der Finger zoomt, Marker sofort ausblenden -> Zoom läuft mit maximalen FPS
+        // ================= TOUCH-SICHERE ZOOM-GESTEN =================
+        // Wir machen die Ebenen nur optisch unsichtbar, LÖSCHEN aber keine DOM-Elemente
+        // Dadurch bricht der Touch-Stream auf Smartphones NIEMALS ab!
         map.on('zoomstart', function() {
-            if (activeMarkers) activeMarkers.clearLayers();
-            if (cityLayerGroup) cityLayerGroup.clearLayers();
+            setOverlaysVisible(false);
+            // Sicherheits-Timer: Falls der Finger auf dem Glas verharrt, nach 1 Sekunde wieder einblenden
+            if (mapSafetyTimer) clearTimeout(mapSafetyTimer);
+            mapSafetyTimer = setTimeout(function() {
+                setOverlaysVisible(true);
+            }, 1000);
         });
 
-        // Erst wenn der Zoom stillsteht, Marker zeichnen
         map.on('moveend', scheduleMapUpdates);
         map.on('zoomend', scheduleMapUpdates);
 
@@ -1299,7 +1320,11 @@ function renderContours() {
 // ================= ULTRA-SCHNELLE WINDPFEILE =================
 function drawVisibleArrows() {
     if (!map || !config) return;
-    if (!activeMarkers) { activeMarkers = L.layerGroup().addTo(map); } else { activeMarkers.clearLayers(); }
+    if (!activeMarkers) { 
+        activeMarkers = L.layerGroup([], { pane: 'arrowPane' }).addTo(map); 
+    } else { 
+        activeMarkers.clearLayers(); 
+    }
 
     var arrowVar = null;
     var arrowMember = 0;
@@ -1326,7 +1351,6 @@ function drawVisibleArrows() {
     var bounds = map.getBounds();
     var zoom = map.getZoom();
 
-    // Schrittweiten wie gewohnt dicht
     var step = 16;
     if (zoom >= 9 && zoom <= 10) step = 7;
     else if (zoom === 11) step = 4;
@@ -1343,7 +1367,6 @@ function drawVisibleArrows() {
     var xmin = config.xmin, xmax = config.xmax;
     var ymin = config.ymin, ymax = config.ymax;
 
-    // Nur sichtbaren Ausschnitt in Grid-Koordinaten berechnen (beschleunigt Weit-Zoom massiv!)
     var bNorth = bounds.getNorth(), bSouth = bounds.getSouth();
     var bWest = bounds.getWest(), bEast = bounds.getEast();
 
@@ -1352,11 +1375,9 @@ function drawVisibleArrows() {
     var cMin = Math.max(0, Math.floor((bWest - xmin) / (xmax - xmin) * (nx - 1)));
     var cMax = Math.min(nx - 1, Math.ceil((bEast - xmin) / (xmax - xmin) * (nx - 1)));
 
-    // Runden auf das nächste step-Vielfache
     rMin = Math.floor(rMin / step) * step;
     cMin = Math.floor(cMin / step) * step;
 
-    // DIREKTE 2D-SCHLEIFE: Läuft nur ~1.500 Mal statt 96.000 Mal!
     for (var r = rMin; r <= rMax; r += step) {
         var lat = ymin + r * (ymax - ymin) / (ny - 1);
         var rowOffset = r * nx;
@@ -1378,17 +1399,16 @@ function drawVisibleArrows() {
             var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
             var arrow_h = Math.min(62, Math.max(13, 8.5 + Math.pow(speed, 0.80) * 1.6));
 
-            var svg = '<div style="transform: rotate(' + dir + 'deg); width: 70px; height: 70px; display: flex; align-items: center; justify-content: center;">' +
-                      '<svg viewBox="0 0 24 24" width="' + arrow_w.toFixed(1) + 'px" height="' + arrow_h.toFixed(1) + 'px">' +
+            var svg = '<div style="transform: rotate(' + dir + 'deg); width: 70px; height: 70px; display: flex; align-items: center; justify-content: center; pointer-events: none;">' +
+                      '<svg viewBox="0 0 24 24" width="' + arrow_w.toFixed(1) + 'px" height="' + arrow_h.toFixed(1) + 'px" style="pointer-events: auto;">' +
                       '<path d="M11.2 23 H12.8 V9 H16.2 L12 1.5 L7.8 9 H11.2 Z" fill="#111111" stroke="#ffffff" stroke-width="0.5"/>' +
                       '</svg></div>';
 
             var icon = L.divIcon({ html: svg, iconSize: [70, 70], iconAnchor: [35, 35], className: 'wind-arrow-icon' });
             var modLabel = (currentModel === "icon-ch2") ? "ICON-CH2" : "ICON-CH1";
             
-            // Marker erzeugen; Popup wird erst beim Klick gebunden (Zero-Lag beim Zeichnen!)
             (function(sp, dr, ml, lt, pos, ic) {
-                var marker = L.marker(pos, { icon: ic });
+                var marker = L.marker(pos, { icon: ic, pane: 'arrowPane' });
                 marker.on('click', function(e) {
                     marker.bindPopup(`<b>${lt} (${ml}):</b><br>Stärke: ${sp.toFixed(1)} km/h<br>Richtung: ${dr.toFixed(0)}°`).openPopup();
                 });
