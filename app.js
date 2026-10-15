@@ -873,7 +873,7 @@ function updateLegend() {
     box.innerHTML = html;
 }
 
-// ================= BINÄRES LADEN & DEKOMPRIMIEREN =================
+// ================= REINES BINÄRES LADEN & DEKOMPRIMIEREN =================
 async function fetchAndDecompress(url) {
     const response = await fetch(url);
     if (!response.ok) throw new Error("Fehler beim Laden von: " + url);
@@ -882,24 +882,19 @@ async function fetchAndDecompress(url) {
     return await new Response(decompressedStream).arrayBuffer();
 }
 
-function decodeBinaryGrid(buffer, varName) {
-    const vCfg = config.variables_config[varName] || {};
+function decodeBinaryGrid(buffer) {
     const totalPoints = config.nx * config.ny;
-    const isUint8 = (vCfg.dtype === "uint8");
 
-    let s = null;
+    // 1. Alle Messwerte sind jetzt einheitlich 1 Byte groß (uint8)
+    const s = new Uint8Array(buffer, 0, totalPoints);
     let d = null;
 
-    if (isUint8) {
-        s = new Uint8Array(buffer, 0, totalPoints);
-    } else {
-        s = new Int16Array(buffer, 0, totalPoints);
-        if (buffer.byteLength >= (totalPoints * 2 + totalPoints)) {
-            d = new Uint8Array(buffer, totalPoints * 2, totalPoints);
-        }
+    // 2. Falls Windpfeile enthalten sind, liegen die Richtungen direkt danach
+    if (buffer.byteLength >= (totalPoints * 2)) {
+        d = new Uint8Array(buffer, totalPoints, totalPoints);
     }
 
-    return { s: s, d: d, isUint8: isUint8 };
+    return { s: s, d: d };
 }
 
 function generateContoursClient(gridObj, paletteType) {
@@ -908,17 +903,11 @@ function generateContoursClient(gridObj, paletteType) {
     const colors = p.colors;
     
     const s = gridObj.s;
-    const isUint8 = gridObj.isUint8;
     const values = new Float32Array(s.length);
 
-    if (isUint8) {
-        for (let i = 0; i < s.length; i++) {
-            values[i] = (s[i] === 255) ? NaN : s[i];
-        }
-    } else {
-        for (let i = 0; i < s.length; i++) {
-            values[i] = (s[i] < 0) ? NaN : (s[i] / 10.0);
-        }
+    // Einheitlich: 255 = NaN, sonst 1:1 ganzer Messwert
+    for (let i = 0; i < s.length; i++) {
+        values[i] = (s[i] === 255) ? NaN : s[i];
     }
     
     const thresholds = levels.slice(0, levels.length - 1);
@@ -969,7 +958,7 @@ async function ensureDataLoaded(varName, memberIdx, stepIdx) {
         const basePath = currentRunId ? `data/${currentModel}/${currentRunId}` : `data/${currentModel}`;
         if (!cacheGrid[cacheKey]) {
             const rawBuffer = await fetchAndDecompress(`${basePath}/grid_${varName}_m${memberIdx}_s${stepIdx}.bin.gz?v=${runBuster}`);
-            cacheGrid[cacheKey] = decodeBinaryGrid(rawBuffer, varName);
+            cacheGrid[cacheKey] = decodeBinaryGrid(rawBuffer);
         }
         cacheContours[cacheKey] = generateContoursClient(cacheGrid[cacheKey], paletteType);
     }
@@ -1256,7 +1245,6 @@ function drawVisibleArrows() {
     var bounds = map.getBounds();
     var zoom = map.getZoom();
 
-    // Original-Schritte: Bleibt 1:1 unverändert dicht für ICON-CH1
     var step = 16;
     if (zoom >= 9 && zoom <= 10) step = 7;
     else if (zoom === 11) step = 4;
@@ -1270,7 +1258,7 @@ function drawVisibleArrows() {
 
     for (var i = 0; i < speeds.length; i++) {
         var sVal = speeds[i];
-        if (sVal < 25) continue;
+        if (sVal === 255 || sVal < 3) continue; // Wind unter 3 km/h ausblenden
 
         var r = Math.floor(i / config.nx);
         var c = i % config.nx;
@@ -1281,7 +1269,7 @@ function drawVisibleArrows() {
         var latlng = L.latLng(lat, lon);
 
         if (bounds.contains(latlng)) {
-            var speed = sVal / 10.0;
+            var speed = sVal;
             var dirVal = dirs_half[i];
             if (dirVal === 255) continue;
             var dir = dirVal * 2.0;
@@ -1296,7 +1284,7 @@ function drawVisibleArrows() {
 
             var icon = L.divIcon({ html: svg, iconSize: [70, 70], iconAnchor: [35, 35], className: 'wind-arrow-icon' });
             var modLabel = (currentModel === "icon-ch2") ? "ICON-CH2" : "ICON-CH1";
-            L.marker(latlng, { icon: icon }).bindPopup(`<b>${labelType} (${modLabel}):</b><br>Stärke: ${speed.toFixed(1)} km/h<br>Richtung: ${dir.toFixed(0)}°`).addTo(activeMarkers);
+            L.marker(latlng, { icon: icon }).bindPopup(`<b>${labelType} (${modLabel}):</b><br>Stärke: ${speed.toFixed(0)} km/h<br>Richtung: ${dir.toFixed(0)}°`).addTo(activeMarkers);
         }
     }
 }
