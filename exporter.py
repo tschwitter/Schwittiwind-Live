@@ -1,29 +1,15 @@
 import os
 import gzip
 import numpy as np
-import config
 
 def export_variable_step(model_name, run_id, var_name, m_idx, step_idx, data):
     speed = data["speed"]
-    var_cfg = config.VARIABLES_CONFIG.get(var_name, {})
-    palette = var_cfg.get("palette", "wind")
 
-    # Alle Parameter einheitlich als uint8:
-    # 255 = NaN (ungültig / unter Schwellenwert)
-    # Sonne, Wolken, dBZ: 0 bis 100
-    # Wind & Böen: 0 bis 250 km/h (ganzzahlig gerundet)
-    max_val = 100 if palette in ["sun", "cloud", "dbz"] else 250
-
-    s_arr = np.where(
-        np.isnan(speed),
-        255,
-        np.clip(np.round(speed), 0, max_val)
-    ).astype(np.uint8).ravel()
-
+    # Volle 0.1-Präzision für ALLE Parameter: int16, skaliert * 10 (-1 = NaN)
+    s_arr = np.where(np.isnan(speed), -1, np.round(speed * 10.0)).astype(np.int16).ravel()
     payload_bytes = bytearray(s_arr.tobytes())
 
-    # Windrichtung (nur wenn Windpfeile aktiv sind):
-    # Als uint8 direkt angehängt (Winkel / 2 => 0..180, 255 = Windstille/NaN)
+    # Windrichtung nur anhängen, wenn Pfeile aktiv sind (niemals bei Statistiken!)
     if data.get("has_arrows", False) and "dir" in data:
         direction = data["dir"]
         d_arr = np.where(
