@@ -1,5 +1,5 @@
 # ================= CONFIGURATION =================
-NX, NY = 400, 240
+NX, NY = 400, 240  # Standard-Fallback
 
 XMIN, XMAX = 5.8, 10.7
 YMIN, YMAX = 45.6, 47.9
@@ -32,17 +32,21 @@ MODELS_CONFIG = {
         "name": "ICON-CH1 (1km)",
         "collection": "ogd-forecasting-icon-ch1",
         "hhl_asset": "vertical_constants_icon-ch1-eps.grib2",
+        "nx": 400,
+        "ny": 240,
         "hours": 33,
         "max_members": 11,
         "max_runs": 8,  # Volle 24 Stunden (8 Läufe à 3 Stunden)
         "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"],
-        "ensemble_variables": ["wind","gust", "dbz", "sun", "clct", "clch", "clcm", "clcl",  "wind1500"],
+        "ensemble_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"],
         "max_chunks": 4
     },
     "icon-ch2": {
         "name": "ICON-CH2 (2.1km)",
         "collection": "ogd-forecasting-icon-ch2",
         "hhl_asset": "vertical_constants_icon-ch2-eps.grib2",
+        "nx": 200,
+        "ny": 120,
         "hours": 120,
         "max_members": 21,
         "max_runs": 4,  # Volle 24 Stunden (4 Läufe à 6 Stunden)
