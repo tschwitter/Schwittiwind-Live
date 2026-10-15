@@ -393,7 +393,13 @@ async function loadModelAndRun(modelName, runId) {
 
         var vCfg = config.variables_config[layer1Var];
         var hasEns = vCfg ? vCfg.has_ensemble : true;
+        var statOffset = config.member_names.length - 6;
+
+        var isOldRun = (runs.length > 0 && currentRunId !== runs[0].id);
         if (!hasEns) {
+            currentMemberIdx = 0;
+        } else if (isOldRun && prevMember >= 1 && prevMember < statOffset) {
+            // Bei älteren Läufen existieren keine Einzel-Member -> auf Hauptlauf zurückstellen
             currentMemberIdx = 0;
         } else {
             currentMemberIdx = Math.min(prevMember, config.member_names.length - 1);
@@ -671,7 +677,20 @@ function navUp() {
     var vCfg = config.variables_config[layer1Var];
     if (vCfg && !vCfg.has_ensemble) return;
 
+    var runs = availableRuns[currentModel] || [];
+    var isOldRun = (runs.length > 0 && currentRunId !== runs[0].id);
     var statOffset = config.member_names.length - 6;
+
+    if (isOldRun) {
+        // Bei alten Läufen nur zwischen HL (0) und Statistiken springen
+        if (currentMemberIdx >= statOffset) {
+            if (currentMemberIdx === statOffset) updateForecast(0, currentStepIdx);
+            else updateForecast(currentMemberIdx - 1, currentStepIdx);
+        } else {
+            updateForecast(0, currentStepIdx);
+        }
+        return;
+    }
 
     if (!isEnsembleOpen) {
         if (currentMemberIdx >= statOffset) {
@@ -699,6 +718,17 @@ function navDown() {
 
     var maxIdx = config.member_names.length - 1;
     var statOffset = config.member_names.length - 6;
+    var runs = availableRuns[currentModel] || [];
+    var isOldRun = (runs.length > 0 && currentRunId !== runs[0].id);
+
+    if (isOldRun) {
+        if (currentMemberIdx === 0) {
+            updateForecast(statOffset, currentStepIdx);
+        } else if (currentMemberIdx >= statOffset) {
+            updateForecast(Math.min(maxIdx, currentMemberIdx + 1), currentStepIdx);
+        }
+        return;
+    }
 
     if (!isEnsembleOpen) {
         if (currentMemberIdx === 0) {
@@ -762,8 +792,27 @@ function initMemberPanel() {
     var hauptContainer = document.getElementById("hauptlaufContainer");
     var ensembleContainer = document.getElementById("ensembleContainer");
     var statistikenContainer = document.getElementById("statistikenContainer");
+    var toggleBtn = document.getElementById("btnToggleEnsemble");
     hauptContainer.innerHTML = ""; ensembleContainer.innerHTML = ""; statistikenContainer.innerHTML = "";
     var isMobile = window.innerWidth <= 768;
+
+    var runs = availableRuns[currentModel] || [];
+    var isOldRun = (runs.length > 0 && currentRunId !== runs[0].id);
+    var statOffset = config.member_names.length - 6;
+
+    if (toggleBtn) {
+        if (isOldRun) {
+            toggleBtn.style.opacity = "0.4";
+            toggleBtn.style.pointerEvents = "none";
+            toggleBtn.title = "Einzel-Member nur im neuesten Lauf verfügbar";
+            toggleBtn.innerHTML = `<span>Members</span><span style="font-size:8px; opacity:0.7;">(nur neuster Lauf)</span>`;
+        } else {
+            toggleBtn.style.opacity = "1.0";
+            toggleBtn.style.pointerEvents = "auto";
+            toggleBtn.title = "";
+            toggleBtn.innerHTML = `<span>Members</span><span id="ensembleChevron" class="chevron">▾</span>`;
+        }
+    }
 
     config.member_names.forEach((name, idx) => {
         var btn = document.createElement("button");
@@ -772,27 +821,33 @@ function initMemberPanel() {
         
         if (idx === 0) {
             btn.innerText = isMobile ? "HL" : "Hauptlauf";
+            btn.onclick = function() { updateForecast(idx, currentStepIdx); };
             hauptContainer.appendChild(btn);
-        } else if (idx >= 1 && idx < config.member_names.length - 6) {
+        } else if (idx >= 1 && idx < statOffset) {
             btn.innerText = isMobile ? "M" + idx : "Member " + idx;
+            if (isOldRun) {
+                btn.style.opacity = "0.3";
+                btn.style.pointerEvents = "none";
+                btn.title = "Nicht verfügbar in archivierten Läufen";
+            } else {
+                btn.onclick = function() { updateForecast(idx, currentStepIdx); };
+            }
             ensembleContainer.appendChild(btn);
         } else {
-            var statOffset = config.member_names.length - 6;
             if (idx === statOffset) btn.innerText = isMobile ? "MD" : name;
             else if (idx === statOffset + 1) btn.innerText = "Min";
             else if (idx === statOffset + 2) btn.innerText = "Max";
             else if (idx === statOffset + 3) btn.innerText = isMobile ? "%25" : name;
             else if (idx === statOffset + 4) btn.innerText = isMobile ? "%75" : name;
             else if (idx === statOffset + 5) btn.innerText = isMobile ? "IQ" : name;
+            btn.onclick = function() { updateForecast(idx, currentStepIdx); };
             statistikenContainer.appendChild(btn);
         }
-        btn.onclick = function() { updateForecast(idx, currentStepIdx); };
     });
 
     var cont = document.getElementById("ensembleContainer");
-    var tBtn = document.getElementById("btnToggleEnsemble");
-    if (cont) cont.style.display = isEnsembleOpen ? "block" : "none";
-    if (tBtn) tBtn.classList.toggle("open", isEnsembleOpen);
+    if (cont) cont.style.display = (!isOldRun && isEnsembleOpen) ? "block" : "none";
+    if (toggleBtn) toggleBtn.classList.toggle("open", !isOldRun && isEnsembleOpen);
 
     updateEnsembleToggleState();
 }
@@ -873,7 +928,7 @@ function updateLegend() {
     box.innerHTML = html;
 }
 
-// ================= REINES BINÄRES LADEN & DEKOMPRIMIEREN =================
+// ================= BINÄRES LADEN & DEKOMPRIMIEREN =================
 async function fetchAndDecompress(url) {
     const response = await fetch(url);
     if (!response.ok) throw new Error("Fehler beim Laden von: " + url);
@@ -885,56 +940,16 @@ async function fetchAndDecompress(url) {
 function decodeBinaryGrid(buffer) {
     const totalPoints = config.nx * config.ny;
 
-    // 1. Alle Messwerte sind einheitlich 1 Byte groß (uint8)
-    const s = new Uint8Array(buffer, 0, totalPoints);
+    // Alle Messwerte liegen als int16 vor (skaliert mit 10, -1 = NaN)
+    const s = new Int16Array(buffer, 0, totalPoints);
     let d = null;
 
-    // 2. Falls Windpfeile enthalten sind, liegen die Richtungen direkt danach
-    if (buffer.byteLength >= (totalPoints * 2)) {
-        d = new Uint8Array(buffer, totalPoints, totalPoints);
+    // Falls Windpfeile enthalten sind: Richtungen (uint8, Winkel / 2) liegen danach
+    if (buffer.byteLength >= (totalPoints * 2 + totalPoints)) {
+        d = new Uint8Array(buffer, totalPoints * 2, totalPoints);
     }
 
     return { s: s, d: d };
-}
-
-// Subtiler 3x3 Glättungsfilter, um Rundungs-Zickzack aufzulösen
-function smoothGridValues(rawValues, nx, ny) {
-    const smoothed = new Float32Array(rawValues.length);
-
-    for (let r = 0; r < ny; r++) {
-        for (let c = 0; c < nx; c++) {
-            const idx = r * nx + c;
-            const centerVal = rawValues[idx];
-
-            if (isNaN(centerVal)) {
-                smoothed[idx] = NaN;
-                continue;
-            }
-
-            let sum = 0;
-            let weightSum = 0;
-
-            for (let dr = -1; dr <= 1; dr++) {
-                const nr = r + dr;
-                if (nr < 0 || nr >= ny) continue;
-
-                for (let dc = -1; dc <= 1; dc++) {
-                    const nc = c + dc;
-                    if (nc < 0 || nc >= nx) continue;
-
-                    const nVal = rawValues[nr * nx + nc];
-                    if (!isNaN(nVal)) {
-                        const weight = (dr === 0 && dc === 0) ? 4 : ((dr === 0 || dc === 0) ? 2 : 1);
-                        sum += nVal * weight;
-                        weightSum += weight;
-                    }
-                }
-            }
-
-            smoothed[idx] = (weightSum > 0) ? (sum / weightSum) : centerVal;
-        }
-    }
-    return smoothed;
 }
 
 function generateContoursClient(gridObj, paletteType) {
@@ -943,17 +958,13 @@ function generateContoursClient(gridObj, paletteType) {
     const colors = p.colors;
     
     const s = gridObj.s;
-    const rawValues = new Float32Array(s.length);
+    const values = new Float32Array(s.length);
 
-    // 1. Ganzzahlen auslesen (255 = NaN)
+    // Echte Fließkommazahlen mit Zehntel-Genauigkeit (kein Treppeneffekt)
     for (let i = 0; i < s.length; i++) {
-        rawValues[i] = (s[i] === 255) ? NaN : s[i];
+        values[i] = (s[i] < 0) ? NaN : (s[i] / 10.0);
     }
     
-    // 2. Glättungsfilter anwenden, um Zickzack an Kanten aufzulösen
-    const values = smoothGridValues(rawValues, config.nx, config.ny);
-
-    // 3. Konturen mit kontinuierlichen Übergängen berechnen
     const thresholds = levels.slice(0, levels.length - 1);
     const contourGen = d3.contours()
         .size([config.nx, config.ny])
@@ -1302,7 +1313,7 @@ function drawVisibleArrows() {
 
     for (var i = 0; i < speeds.length; i++) {
         var sVal = speeds[i];
-        if (sVal === 255 || sVal < 3) continue; // Wind unter 3 km/h ausblenden
+        if (sVal < 25) continue; // Unter 2.5 km/h
 
         var r = Math.floor(i / config.nx);
         var c = i % config.nx;
@@ -1313,7 +1324,7 @@ function drawVisibleArrows() {
         var latlng = L.latLng(lat, lon);
 
         if (bounds.contains(latlng)) {
-            var speed = sVal;
+            var speed = sVal / 10.0;
             var dirVal = dirs_half[i];
             if (dirVal === 255) continue;
             var dir = dirVal * 2.0;
@@ -1328,7 +1339,7 @@ function drawVisibleArrows() {
 
             var icon = L.divIcon({ html: svg, iconSize: [70, 70], iconAnchor: [35, 35], className: 'wind-arrow-icon' });
             var modLabel = (currentModel === "icon-ch2") ? "ICON-CH2" : "ICON-CH1";
-            L.marker(latlng, { icon: icon }).bindPopup(`<b>${labelType} (${modLabel}):</b><br>Stärke: ${speed.toFixed(0)} km/h<br>Richtung: ${dir.toFixed(0)}°`).addTo(activeMarkers);
+            L.marker(latlng, { icon: icon }).bindPopup(`<b>${labelType} (${modLabel}):</b><br>Stärke: ${speed.toFixed(1)} km/h<br>Richtung: ${dir.toFixed(0)}°`).addTo(activeMarkers);
         }
     }
 }
