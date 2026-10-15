@@ -702,7 +702,7 @@ function navDown() {
 
     if (!isEnsembleOpen) {
         if (currentMemberIdx === 0) {
-            updateForecast(0 + statOffset, currentStepIdx);
+            updateForecast(statOffset, currentStepIdx);
         } else if (currentMemberIdx >= statOffset) {
             updateForecast(Math.min(maxIdx, currentMemberIdx + 1), currentStepIdx);
         } else {
@@ -891,12 +891,9 @@ function decodeBinaryGrid(buffer, varName) {
     let d = null;
 
     if (isUint8) {
-        // Wolken & Sonne: reines Uint8Array (255 = ungültig)
         s = new Uint8Array(buffer, 0, totalPoints);
     } else {
-        // Wind, Böen, Radar: Int16Array (2 Bytes pro Punkt)
         s = new Int16Array(buffer, 0, totalPoints);
-        // Prüfen, ob Richtungswinkel angehängt sind (totalPoints Bytes am Ende)
         if (buffer.byteLength >= (totalPoints * 2 + totalPoints)) {
             d = new Uint8Array(buffer, totalPoints * 2, totalPoints);
         }
@@ -915,12 +912,10 @@ function generateContoursClient(gridObj, paletteType) {
     const values = new Float32Array(s.length);
 
     if (isUint8) {
-        // 0-100%, 255 = NaN
         for (let i = 0; i < s.length; i++) {
             values[i] = (s[i] === 255) ? NaN : s[i];
         }
     } else {
-        // Skaliert mit 10, -1 = NaN
         for (let i = 0; i < s.length; i++) {
             values[i] = (s[i] < 0) ? NaN : (s[i] / 10.0);
         }
@@ -1231,7 +1226,7 @@ function renderContours() {
     }
 }
 
-// ================= OPTIMIERTE WINDPFEILE (BINÄR-ANGESCHLOSSEN) =================
+// ================= OPTIMIERTE WINDPFEILE =================
 function drawVisibleArrows() {
     if (!map || !config) return;
     if (!activeMarkers) { activeMarkers = L.layerGroup().addTo(map); } else { activeMarkers.clearLayers(); }
@@ -1261,6 +1256,7 @@ function drawVisibleArrows() {
     var bounds = map.getBounds();
     var zoom = map.getZoom();
 
+    // Original-Schritte: Bleibt 1:1 unverändert dicht für ICON-CH1
     var step = 16;
     if (zoom >= 9 && zoom <= 10) step = 7;
     else if (zoom === 11) step = 4;
@@ -1274,7 +1270,7 @@ function drawVisibleArrows() {
 
     for (var i = 0; i < speeds.length; i++) {
         var sVal = speeds[i];
-        if (sVal < 25) continue; // unter 2.5 km/h
+        if (sVal < 25) continue;
 
         var r = Math.floor(i / config.nx);
         var c = i % config.nx;
