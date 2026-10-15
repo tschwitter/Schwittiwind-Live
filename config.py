@@ -48,9 +48,9 @@ MODELS_CONFIG = {
         "hours": 120,
         "max_members": 21,
         "max_runs": 4,  # Volle 24 Stunden (4 Läufe à 6 Stunden)
-        "active_variables": [],
+        "active_variables": ["wind"],
         #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"
-        "ensemble_variables": [],
+        "ensemble_variables": ["wind"],
         #"wind", "gust", "sun", "dbz"
         "max_chunks": 4
     }
