@@ -6,20 +6,24 @@ import config
 def export_variable_step(model_name, run_id, var_name, m_idx, step_idx, data):
     speed = data["speed"]
     var_cfg = config.VARIABLES_CONFIG.get(var_name, {})
-    dtype_str = var_cfg.get("dtype", "int16")
+    palette = var_cfg.get("palette", "wind")
 
-    # 1. Hauptwerte (Speed, Wolken oder Sonne)
-    if dtype_str == "uint8":
-        # Wolken und Sonne: 0-100%, 255 = NaN (ungültig/unter Schwelle)
-        s_arr = np.where(np.isnan(speed), 255, np.clip(np.round(speed), 0, 100)).astype(np.uint8).ravel()
-    else:
-        # Wind, Böen, dBZ: Skalierung * 10 in int16, -1 = NaN
-        s_arr = np.where(np.isnan(speed), -1, np.round(speed * 10)).astype(np.int16).ravel()
+    # Alle Parameter einheitlich als uint8:
+    # 255 = NaN (ungültig / unter Schwellenwert)
+    # Sonne, Wolken, dBZ: 0 bis 100
+    # Wind & Böen: 0 bis 250 km/h (ganzzahlig gerundet)
+    max_val = 100 if palette in ["sun", "cloud", "dbz"] else 250
+
+    s_arr = np.where(
+        np.isnan(speed),
+        255,
+        np.clip(np.round(speed), 0, max_val)
+    ).astype(np.uint8).ravel()
 
     payload_bytes = bytearray(s_arr.tobytes())
 
-    # 2. Windrichtung (nur wenn Windpfeile aktiv sind)
-    # Wird als uint8 hinten angehängt (Winkel / 2 => 0..180, 255 = Windstille/NaN)
+    # Windrichtung (nur wenn Windpfeile aktiv sind):
+    # Als uint8 direkt angehängt (Winkel / 2 => 0..180, 255 = Windstille/NaN)
     if data.get("has_arrows", False) and "dir" in data:
         direction = data["dir"]
         d_arr = np.where(
@@ -32,7 +36,6 @@ def export_variable_step(model_name, run_id, var_name, m_idx, step_idx, data):
     out_dir = f"dist/data/{model_name}/{run_id}"
     os.makedirs(out_dir, exist_ok=True)
 
-    # Binäres Schreiben als .bin.gz 
     out_file = f"{out_dir}/grid_{var_name}_m{m_idx}_s{step_idx}.bin.gz"
     with gzip.open(out_file, "wb", compresslevel=3) as f:
         f.write(payload_bytes)
