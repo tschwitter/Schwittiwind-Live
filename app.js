@@ -7,8 +7,8 @@ var selectedRuns = { "icon-ch1": null, "icon-ch2": null };
 
 var verticalNavMode = 'member'; // 'member' oder 'run'
 
-var baseMapOpacity = 0.80; // Standardmäßig 80%
-var baseMapStyle = 'relief'; // 'relief' oder 'simple'
+var baseMapOpacity = 0.80;
+var baseMapStyle = 'relief';
 
 var layer1Var = null;
 var layer2Var = null;
@@ -702,7 +702,7 @@ function navDown() {
 
     if (!isEnsembleOpen) {
         if (currentMemberIdx === 0) {
-            updateForecast(statOffset, currentStepIdx);
+            updateForecast(0 + statOffset, currentStepIdx);
         } else if (currentMemberIdx >= statOffset) {
             updateForecast(Math.min(maxIdx, currentMemberIdx + 1), currentStepIdx);
         } else {
@@ -841,7 +841,6 @@ function renderSingleLegendCol(varName, isIQR) {
     } else if (paletteType === "iqr_wind") {
         labelsHtml = `<div>+</div><div>30</div><div>24</div><div>18</div><div>14</div><div>10</div><div>8</div><div>6</div><div>4</div><div>2</div><div>0</div>`;
     } else {
-        // Skala dynamisch bis 135+ km/h (inklusive Übergang ins knallige Rot)
         if (levels && levels.length > 15) {
             labelsHtml = `<div>+</div><div>135</div><div>125</div><div>115</div><div>105</div><div>95</div><div>85</div><div>75</div><div>65</div><div>55</div><div>45</div><div>36</div><div>27</div><div>23</div><div>18</div><div>14</div><div>11</div><div>7</div><div>4</div><div>0</div>`;
         } else {
@@ -874,24 +873,57 @@ function updateLegend() {
     box.innerHTML = html;
 }
 
+// ================= BINÄRES LADEN & DEKOMPRIMIEREN =================
 async function fetchAndDecompress(url) {
     const response = await fetch(url);
     if (!response.ok) throw new Error("Fehler beim Laden von: " + url);
     const ds = new DecompressionStream('gzip');
     const decompressedStream = response.body.pipeThrough(ds);
-    const decompressedResponse = new Response(decompressedStream);
-    const text = await decompressedResponse.text();
-    return JSON.parse(text);
+    return await new Response(decompressedStream).arrayBuffer();
 }
 
-function generateContoursClient(s_flat, paletteType) {
+function decodeBinaryGrid(buffer, varName) {
+    const vCfg = config.variables_config[varName] || {};
+    const totalPoints = config.nx * config.ny;
+    const isUint8 = (vCfg.dtype === "uint8");
+
+    let s = null;
+    let d = null;
+
+    if (isUint8) {
+        // Wolken & Sonne: reines Uint8Array (255 = ungültig)
+        s = new Uint8Array(buffer, 0, totalPoints);
+    } else {
+        // Wind, Böen, Radar: Int16Array (2 Bytes pro Punkt)
+        s = new Int16Array(buffer, 0, totalPoints);
+        // Prüfen, ob Richtungswinkel angehängt sind (totalPoints Bytes am Ende)
+        if (buffer.byteLength >= (totalPoints * 2 + totalPoints)) {
+            d = new Uint8Array(buffer, totalPoints * 2, totalPoints);
+        }
+    }
+
+    return { s: s, d: d, isUint8: isUint8 };
+}
+
+function generateContoursClient(gridObj, paletteType) {
     const p = config.palettes[paletteType] || config.palettes["wind"];
     const levels = p.levels;
     const colors = p.colors;
     
-    const values = new Float32Array(s_flat.length);
-    for (let i = 0; i < s_flat.length; i++) {
-        values[i] = (s_flat[i] < 0) ? NaN : (s_flat[i] / 10.0);
+    const s = gridObj.s;
+    const isUint8 = gridObj.isUint8;
+    const values = new Float32Array(s.length);
+
+    if (isUint8) {
+        // 0-100%, 255 = NaN
+        for (let i = 0; i < s.length; i++) {
+            values[i] = (s[i] === 255) ? NaN : s[i];
+        }
+    } else {
+        // Skaliert mit 10, -1 = NaN
+        for (let i = 0; i < s.length; i++) {
+            values[i] = (s[i] < 0) ? NaN : (s[i] / 10.0);
+        }
     }
     
     const thresholds = levels.slice(0, levels.length - 1);
@@ -941,9 +973,10 @@ async function ensureDataLoaded(varName, memberIdx, stepIdx) {
         const runBuster = encodeURIComponent(config.ref_time_utc);
         const basePath = currentRunId ? `data/${currentModel}/${currentRunId}` : `data/${currentModel}`;
         if (!cacheGrid[cacheKey]) {
-            cacheGrid[cacheKey] = await fetchAndDecompress(`${basePath}/grid_${varName}_m${memberIdx}_s${stepIdx}.json.gz?v=${runBuster}`);
+            const rawBuffer = await fetchAndDecompress(`${basePath}/grid_${varName}_m${memberIdx}_s${stepIdx}.bin.gz?v=${runBuster}`);
+            cacheGrid[cacheKey] = decodeBinaryGrid(rawBuffer, varName);
         }
-        cacheContours[cacheKey] = generateContoursClient(cacheGrid[cacheKey].s, paletteType);
+        cacheContours[cacheKey] = generateContoursClient(cacheGrid[cacheKey], paletteType);
     }
     return cacheKey;
 }
@@ -1198,7 +1231,7 @@ function renderContours() {
     }
 }
 
-// ================= OPTIMIERTE WINDPFEILE =================
+// ================= OPTIMIERTE WINDPFEILE (BINÄR-ANGESCHLOSSEN) =================
 function drawVisibleArrows() {
     if (!map || !config) return;
     if (!activeMarkers) { activeMarkers = L.layerGroup().addTo(map); } else { activeMarkers.clearLayers(); }
@@ -1223,7 +1256,7 @@ function drawVisibleArrows() {
 
     const cacheKey = `${currentModel}_${currentRunId}_${arrowVar}_${arrowMember}_${currentStepIdx}`;
     const gridData = cacheGrid[cacheKey];
-    if (!gridData || !gridData.s || !gridData.d || gridData.d.length === 0) return;
+    if (!gridData || !gridData.s || !gridData.d) return;
 
     var bounds = map.getBounds();
     var zoom = map.getZoom();
@@ -1236,12 +1269,12 @@ function drawVisibleArrows() {
     else if (zoom >= 14) step = 1;
 
     var speeds = gridData.s;
-    var dirs = gridData.d;
+    var dirs_half = gridData.d;
     var labelType = config.variables_config[arrowVar].label || "Wind";
 
     for (var i = 0; i < speeds.length; i++) {
         var sVal = speeds[i];
-        if (sVal < 25) continue;
+        if (sVal < 25) continue; // unter 2.5 km/h
 
         var r = Math.floor(i / config.nx);
         var c = i % config.nx;
@@ -1253,7 +1286,9 @@ function drawVisibleArrows() {
 
         if (bounds.contains(latlng)) {
             var speed = sVal / 10.0;
-            var dir = dirs[i];
+            var dirVal = dirs_half[i];
+            if (dirVal === 255) continue;
+            var dir = dirVal * 2.0;
 
             var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
             var arrow_h = Math.min(62, Math.max(13, 8.5 + Math.pow(speed, 0.80) * 1.6));
