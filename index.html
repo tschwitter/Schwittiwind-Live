@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Wetter & Wind (ICON CH1, CH2 & AROME HD)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=28" />
+    <link rel="stylesheet" href="style.css?v=29" />
 </head>
 <body>
 
@@ -39,21 +39,27 @@
         </div>
     </div>
 
-    <!-- MODELL-AUSWAHL RECHTS ÜBER DEM PANEL (CH1, CH2, AROME) -->
+    <!-- MODELL-AUSWAHL RECHTS ÜBER DEM PANEL (2 ZEILEN) -->
     <div class="model-select-header">
-        <div class="model-toggle-group">
-            <button class="model-btn active" id="btnModel-icon-ch1" onclick="handleModelButtonClick('icon-ch1')">
-                <span class="model-title">CH1 ▾</span>
-                <span class="model-time">--</span>
-            </button>
-            <button class="model-btn" id="btnModel-icon-ch2" onclick="handleModelButtonClick('icon-ch2')">
-                <span class="model-title">CH2 ▾</span>
-                <span class="model-time">--</span>
-            </button>
-            <button class="model-btn" id="btnModel-arome" onclick="handleModelButtonClick('arome')">
-                <span class="model-title">AROME ▾</span>
-                <span class="model-time">--</span>
-            </button>
+        <div class="model-toggle-column">
+            <!-- ZEILE 1: AROME HD -->
+            <div class="model-toggle-row">
+                <button class="model-btn" id="btnModel-arome" onclick="handleModelButtonClick('arome')">
+                    <span class="model-title">AROME HD ▾</span>
+                    <span class="model-time">--</span>
+                </button>
+            </div>
+            <!-- ZEILE 2: ICON CH1 & CH2 -->
+            <div class="model-toggle-row">
+                <button class="model-btn active" id="btnModel-icon-ch1" onclick="handleModelButtonClick('icon-ch1')">
+                    <span class="model-title">CH1 ▾</span>
+                    <span class="model-time">--</span>
+                </button>
+                <button class="model-btn" id="btnModel-icon-ch2" onclick="handleModelButtonClick('icon-ch2')">
+                    <span class="model-title">CH2 ▾</span>
+                    <span class="model-time">--</span>
+                </button>
+            </div>
         </div>
     </div>
 
@@ -164,6 +170,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=28"></script>
+    <script src="app.js?v=29"></script>
 </body>
 </html>
