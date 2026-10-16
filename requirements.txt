@@ -4,6 +4,6 @@ scipy
 xarray
 numpy
 orjson
-ecmwf-opendata
-cfgrib
-eccodes
+openmeteo-requests
+requests-cache
+retry-requests
