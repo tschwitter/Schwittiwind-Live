@@ -4,3 +4,6 @@ scipy
 xarray
 numpy
 orjson
+requests
+cfgrib
+eccodes
