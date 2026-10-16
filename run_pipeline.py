@@ -39,18 +39,10 @@ def check_model_new_data(model_name):
 
     if model_name == "ecmwf":
         try:
-            # Schneller Check des neuesten verfügbaren 9-km Laufs über Open-Meteo
-            req_url = "https://api.open-meteo.com/v1/forecast?latitude=46.8&longitude=8.2&hourly=wind_speed_10m&models=ecmwf_ifs&forecast_days=1"
-            req = urllib.request.Request(req_url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=10) as response:
-                meta = json.loads(response.read().decode())
-            
-            # Open-Meteo liefert aktuelle Initialisierungszeiten alle 6h (00, 06, 12, 18)
             now_utc = datetime.now(ZoneInfo("UTC"))
-            # ECMWF-Läufe sind ca. 4-5 Stunden nach Termin fertig
             run_hour = (now_utc.hour // 6) * 6
             run_dt = now_utc.replace(hour=run_hour, minute=0, second=0, microsecond=0)
-            if (now_utc - run_dt).total_seconds() < 14400: # Wenn weniger als 4h her, vorheriger Lauf
+            if (now_utc - run_dt).total_seconds() < 14400: # ECMWF braucht ca. 4h Vorlauf
                 run_dt -= timedelta(hours=6)
 
             run_id = run_dt.strftime("%Y%m%d_%H")
@@ -59,7 +51,7 @@ def check_model_new_data(model_name):
             
             is_new = (latest_known_id != run_id)
             if is_new:
-                print(f"✓ [ecmwf] Neuer ECMWF 9km Lauf {run_id} bereit!", flush=True)
+                print(f"✓ [ecmwf] Neuer ECMWF 9km Lauf {run_id} ({run_dt.hour:02d}Z) bereit!", flush=True)
             else:
                 print(f"-> [ecmwf] Lauf {run_id} ist bereits aktuell.", flush=True)
             return is_new, latest_ref_str, iso_str, run_id, run_dt
@@ -131,10 +123,10 @@ def get_dynamic_chunks(total_steps, max_chunks=4):
     return chunks
 
 def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
+    import downloader
     model_cfg = config.MODELS_CONFIG[model_name]
     nx = model_cfg.get("nx", config.NX)
     ny = model_cfg.get("ny", config.NY)
-    step_interval = model_cfg.get("step_interval", 1)
     
     for base_folder in ["dist/data", "dist-meta/data"]:
         model_base_dir = f"{base_folder}/{model_name}"
@@ -147,15 +139,24 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
         else:
             ref_dt = datetime.now(ZoneInfo("UTC"))
 
-        total_steps = (model_cfg["hours"] // step_interval) + 1
         times_by_step = []
-        for idx in range(total_steps):
-            h = idx * step_interval
-            valid_local = (ref_dt + timedelta(hours=h)).astimezone(local_tz)
-            times_by_step.append({
-                "step_hours": h,
-                "local_str": valid_local.strftime("%d.%m.%Y %H:%M Local")
-            })
+        if model_name == "ecmwf":
+            # Dynamische Stunden passend zum ECMWF-Haupt-/Zwischenlauf
+            forecast_hours = downloader.get_ecmwf_forecast_hours(ref_dt)
+            for h in forecast_hours:
+                valid_local = (ref_dt + timedelta(hours=h)).astimezone(local_tz)
+                times_by_step.append({
+                    "step_hours": h,
+                    "local_str": valid_local.strftime("%d.%m.%Y %H:%M Local")
+                })
+        else:
+            total_steps = model_cfg["hours"] + 1
+            for h in range(total_steps):
+                valid_local = (ref_dt + timedelta(hours=h)).astimezone(local_tz)
+                times_by_step.append({
+                    "step_hours": h,
+                    "local_str": valid_local.strftime("%d.%m.%Y %H:%M Local")
+                })
 
         with open(f"{run_dir}/times.json", "w") as f:
             json.dump(times_by_step, f)
@@ -218,7 +219,7 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
         with open(f"{model_base_dir}/runs.json", "w") as f:
             json.dump(valid_runs, f)
 
-    print(f"✓ Metadaten für [{model_name} / {run_id}] bereitgestellt ({nx}x{ny})!", flush=True)
+    print(f"✓ Metadaten für [{model_name} / {run_id}] bereitgestellt ({len(times_by_step)} Schritte, {nx}x{ny})!", flush=True)
 
 def prune_old_runs():
     print("--- PRUNING: Bereinige Läufe & Historie ---", flush=True)
@@ -329,6 +330,7 @@ def main():
         sys.exit(0)
 
     if args.prepare:
+        import downloader
         os.makedirs("dist-meta/data", exist_ok=True)
         
         for static_file in ["index.html", "style.css", "app.js"]:
@@ -344,8 +346,12 @@ def main():
             if should_run_m and run_id:
                 any_new = True
                 prepare_model_base_site(m_name, latest_ref_str, iso_str, run_id, run_dt)
-                step_interval = m_cfg.get("step_interval", 1)
-                total_steps = (m_cfg["hours"] // step_interval) + 1
+
+                if m_name == "ecmwf":
+                    total_steps = len(downloader.get_ecmwf_forecast_hours(run_dt))
+                else:
+                    total_steps = m_cfg["hours"] + 1
+
                 c_list = get_dynamic_chunks(total_steps, max_chunks=m_cfg.get("max_chunks", 4))
                 for c in c_list:
                     all_chunks.append({
