@@ -36,9 +36,9 @@ MODELS_CONFIG = {
         "ny": 240,
         "hours": 33,
         "max_members": 11,
-        "max_runs": 8,  # Volle 24 Stunden (8 Läufe à 3 Stunden)
-        "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"],
-        "ensemble_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"],
+        "max_runs": 8,
+        "active_variables": ["wind"],
+        "ensemble_variables": [],
         "max_chunks": 4
     },
     "icon-ch2": {
@@ -49,9 +49,21 @@ MODELS_CONFIG = {
         "ny": 120,
         "hours": 120,
         "max_members": 21,
-        "max_runs": 4,  # Volle 24 Stunden (4 Läufe à 6 Stunden)
-        "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"],
-        "ensemble_variables": ["wind", "gust", "sun", "dbz"],
+        "max_runs": 4,
+        "active_variables": ["wind"],
+        "ensemble_variables": [],
+        "max_chunks": 4
+    },
+    "arome": {
+        "name": "AROME HD (1.3km)",
+        "collection": "arome-001",
+        "nx": 400,
+        "ny": 240,
+        "hours": 42,
+        "max_members": 1,  # Deterministisch: nur 1 Hauptlauf
+        "max_runs": 8,     # 8 Läufe à 3 Stunden im Archiv
+        "active_variables": ["wind"],
+        "ensemble_variables": [],
         "max_chunks": 4
     }
 }
