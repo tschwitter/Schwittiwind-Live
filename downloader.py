@@ -2,7 +2,7 @@ import os
 import gc
 import time
 import threading
-from datetime import timedelta
+from datetime import timedelta, datetime
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import xarray as xr
@@ -232,14 +232,36 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
             results_by_alt[alt] = slices[0].expand_dims("lead_time")
     return results_by_alt
 
-# ================= ROBUSTER ECMWF IFS 9-KM DOWNLOADER =================
+# ================= DYNAMISCHE ECMWF ZEITSCHRITTE BERECHNEN =================
+def get_ecmwf_forecast_hours(run_dt):
+    # 00Z / 12Z: bis 240h (10 Tage); 06Z / 18Z: bis 144h (6 Tage)
+    is_main_run = (run_dt.hour in [0, 12])
+    max_h = 240 if is_main_run else 144
+
+    hours = []
+    # 1. Stunde 0 bis 90: stündlich (maximale zeitliche Auflösung!)
+    for h in range(0, min(91, max_h + 1)):
+        hours.append(h)
+    # 2. Stunde 90 bis 144: 3-stündlich
+    for h in range(93, min(145, max_h + 1), 3):
+        hours.append(h)
+    # 3. Stunde 144 bis 240: 6-stündlich (nur bei 00Z/12Z)
+    if is_main_run and max_h > 144:
+        for h in range(150, max_h + 1, 6):
+            hours.append(h)
+
+    return hours
+
 def fetch_ecmwf_wind(start_step, end_step, ref_time_str):
     import requests
 
-    step_interval = config.MODELS_CONFIG["ecmwf"].get("step_interval", 3)
-    forecast_hours = [s * step_interval for s in range(start_step, end_step + 1)]
+    dt = datetime.fromisoformat(ref_time_str.replace("Z", ""))
+    all_hours = get_ecmwf_forecast_hours(dt)
+    target_hours = all_hours[start_step : end_step + 1]
 
-    print(f"-> Lade natives ECMWF IFS (9 km) über Open-Meteo API ({len(forecast_hours)} Schritte)...", flush=True)
+    days_needed = int(np.ceil((all_hours[-1] + 1) / 24.0))
+
+    print(f"-> Lade natives ECMWF IFS (9 km): Schritte {start_step} bis {end_step} ({len(target_hours)} Zeitpunkte bis +{target_hours[-1]}h)...", flush=True)
 
     # 42 x 26 = 1092 Punkte über der Schweizer Bounding Box
     lats = np.linspace(config.LAT_MIN, config.LAT_MAX, config.MODELS_CONFIG["ecmwf"]["ny"])
@@ -249,11 +271,9 @@ def fetch_ecmwf_wind(start_step, end_step, ref_time_str):
     flat_lons = grid_lon.ravel()
     total_pts = len(flat_lats)
 
-    # 250 Punkte pro Batch -> nur 5 Requests total für die gesamte Schweiz!
     batch_size = 250
     all_u = []
     all_v = []
-
     headers = {"User-Agent": "WeatherDashboard/1.0 (GitHubActions)"}
 
     for b in range(0, total_pts, batch_size):
@@ -269,7 +289,7 @@ def fetch_ecmwf_wind(start_step, end_step, ref_time_str):
             "longitude": lon_str,
             "hourly": "wind_speed_10m,wind_direction_10m",
             "models": "ecmwf_ifs",
-            "forecast_days": 4
+            "forecast_days": min(16, max(days_needed, 4))
         }
 
         success = False
@@ -287,13 +307,13 @@ def fetch_ecmwf_wind(start_step, end_step, ref_time_str):
                         rad = np.deg2rad(deg)
                         u = -spd * np.sin(rad)
                         v = -spd * np.cos(rad)
-                        all_u.append(u[forecast_hours])
-                        all_v.append(v[forecast_hours])
+                        all_u.append(u[target_hours])
+                        all_v.append(v[target_hours])
                     
                     success = True
                     break
                 elif res.status_code == 429:
-                    last_err = f"HTTP 429 Rate Limit"
+                    last_err = "HTTP 429 Rate Limit"
                     time.sleep(5 * attempt)
                 else:
                     last_err = f"HTTP {res.status_code}: {res.text[:100]}"
@@ -305,7 +325,6 @@ def fetch_ecmwf_wind(start_step, end_step, ref_time_str):
         if not success:
             raise RuntimeError(f"Konnte ECMWF Batch {b} nicht abholen ({last_err})")
 
-        # Pause zwischen den 5 Requests, um die API sauber zu schonen
         time.sleep(0.3)
 
     u_all = np.array(all_u) # Shape: (points, lead_time)
