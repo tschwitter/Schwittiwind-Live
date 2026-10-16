@@ -62,12 +62,12 @@ MODELS_CONFIG = {
     },
     "ecmwf": {
         "name": "ECMWF IFS (9km)",
-        "nx": 42,           # Natives 9-km-Gitter Ost-West über der Schweiz
-        "ny": 28,           # Natives 9-km-Gitter Nord-Süd über der Schweiz
+        "nx": 50,           # Exakte 9-km-Auflösung über der Schweiz
+        "ny": 32,
         "hours": 90,
         "step_interval": 3,
-        "max_members": 1,   # HRES Hauptlauf (9km)
-        "max_runs": 4,      # 4 Läufe pro Tag (00Z, 06Z, 12Z, 18Z)
+        "max_members": 1,   # HRES 9km Hauptlauf
+        "max_runs": 4,      # 4 Läufe pro Tag
         "active_variables": ["wind"],
         "ensemble_variables": [],
         "max_chunks": 4
