@@ -5,16 +5,60 @@ html, body {
     background-color: #141a21; 
 }
 
-#map { width: 100%; height: 100%; z-index: 1; }
+/* --- KARTEN-LAYOUT (SINGLE & SPLIT) --- */
+#mapsWrapper {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    position: absolute;
+    top: 0; left: 0;
+    z-index: 1;
+}
+
+.map-pane-container {
+    height: 100%;
+    position: relative;
+    background-color: #141a21;
+}
+
+#mapsWrapper.single-view #mapLeft {
+    width: 100%;
+    flex: 1 1 100%;
+}
+#mapsWrapper.single-view #mapRight,
+#mapsWrapper.single-view #splitDivider {
+    display: none !important;
+}
+
+#mapsWrapper.split-view #mapLeft {
+    width: 50%;
+    flex: 1 1 50%;
+}
+#mapsWrapper.split-view #mapRight {
+    width: 50%;
+    flex: 1 1 50%;
+    display: block;
+}
+#mapsWrapper.split-view #splitDivider {
+    display: block;
+    width: 3px;
+    height: 100%;
+    background: rgba(0, 122, 183, 0.7);
+    box-shadow: 0 0 10px rgba(0, 122, 183, 0.9);
+    z-index: 5000;
+}
+
 .wind-arrow-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
 
-/* --- EINSTELLUNGS-BUTTON OBEN LINKS (ALLEINE IN DER ECKE) --- */
+/* --- BUTTONS OBEN LINKS (ZAHNRAD & SPLIT) --- */
 .custom-settings-control {
     position: fixed;
     top: 10px;
     left: 10px;
-    z-index: 1000;
+    z-index: 10000;
     pointer-events: auto;
+    display: flex;
+    gap: 6px;
 }
 
 .settings-control-btn {
@@ -39,6 +83,13 @@ html, body {
 .settings-control-btn:hover {
     background-color: #007ab7 !important;
     color: #ffffff !important;
+}
+
+.split-toggle-btn.active {
+    background-color: #007ab7 !important;
+    border-color: #70c4ff !important;
+    color: #ffffff !important;
+    box-shadow: 0 0 10px rgba(0, 122, 183, 0.8) !important;
 }
 
 /* --- DYNAMISCHE ORTSBESCHRIFTUNGEN --- */
@@ -126,7 +177,6 @@ html, body {
     z-index: 2;
 }
 
-/* SUB-LEISTEN: MEHRZEILIG */
 .sub-nav-row {
     background-color: rgba(25, 34, 44, 0.95);
     border-color: rgba(0, 122, 183, 0.4);
@@ -187,7 +237,6 @@ html, body {
     box-shadow: 0 0 8px rgba(0, 122, 183, 0.4);
 }
 
-/* --- 2. EBENE: DROP-NOTCH --- */
 .layer2-anchor-wrap {
     display: flex;
     justify-content: center;
@@ -232,14 +281,27 @@ html, body {
     box-shadow: 0 0 12px rgba(0, 122, 183, 0.75), 0 4px 10px rgba(0, 0, 0, 0.4) !important;
 }
 
-/* --- MODELL-AUSWAHL RECHTS ÜBER DEM PANEL (2 ZEILEN) --- */
+/* --- MODELL-AUSWAHLEN (SINGLE & SPLIT) --- */
 .model-select-header {
     position: fixed;
     top: 10px;
-    right: 10px;
     width: 155px;
     z-index: 10000;
     box-sizing: border-box;
+}
+
+.model-select-right {
+    right: 10px;
+}
+
+.model-select-left {
+    display: none;
+    left: 88px;
+}
+
+/* Im Split-Screen: beide Selektoren sichtbar */
+body.split-active .model-select-left {
+    display: block;
 }
 
 .model-toggle-column {
@@ -319,25 +381,6 @@ html, body {
     box-sizing: border-box;
 }
 
-.runs-dropdown-popup,
-.layer2-dropdown-popup {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
-}
-.runs-dropdown-popup::-webkit-scrollbar,
-.layer2-dropdown-popup::-webkit-scrollbar {
-    width: 4px;
-}
-.runs-dropdown-popup::-webkit-scrollbar-track,
-.layer2-dropdown-popup::-webkit-scrollbar-track {
-    background: transparent;
-}
-.runs-dropdown-popup::-webkit-scrollbar-thumb,
-.layer2-dropdown-popup::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 4px;
-}
-
 .runs-dropdown-popup {
     width: 155px;
     max-height: 260px;
@@ -381,7 +424,6 @@ html, body {
 .dropdown-item.clear { background: rgba(217, 83, 79, 0.3); color: #ff8a80; }
 .dropdown-item.clear:hover { background: #d9534f; color: white; }
 
-/* Einstellungs-Popup */
 .settings-popup {
     top: 48px;
     left: 10px;
@@ -430,7 +472,7 @@ html, body {
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
 }
 
-/* --- VERTICAL PANEL (RECHTS) - RUTSCHT SAUBER RUNTER --- */
+/* --- VERTICAL PANEL (RECHTS) --- */
 .member-panel {
     position: fixed;
     top: 84px; right: 10px;
@@ -459,16 +501,9 @@ html, body {
     pointer-events: none;
 }
 
-.member-panel::-webkit-scrollbar {
-    width: 4px;
-}
-.member-panel::-webkit-scrollbar-track {
-    background: transparent;
-}
-.member-panel::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 4px;
-}
+.member-panel::-webkit-scrollbar { width: 4px; }
+.member-panel::-webkit-scrollbar-track { background: transparent; }
+.member-panel::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
 
 .member-panel-title {
     font-weight: bold; font-size: 12px; letter-spacing: 1px;
@@ -499,18 +534,9 @@ html, body {
     transition: all 0.2s;
     user-select: none;
 }
-.member-section-toggle:hover {
-    background: rgba(255,255,255,0.14);
-    color: #ffffff;
-}
-.member-section-toggle .chevron {
-    font-size: 11px;
-    transition: transform 0.2s ease;
-}
-.member-section-toggle.open .chevron {
-    transform: rotate(180deg);
-}
-
+.member-section-toggle:hover { background: rgba(255,255,255,0.14); color: #ffffff; }
+.member-section-toggle .chevron { font-size: 11px; transition: transform 0.2s ease; }
+.member-section-toggle.open .chevron { transform: rotate(180deg); }
 .member-section-toggle.active-indicator {
     background-color: #007ab7 !important;
     border-color: #70c4ff !important;
@@ -576,10 +602,7 @@ html, body {
     box-shadow: 0 1px 3px rgba(0,0,0,0.2); 
     transition: all 0.15s ease-in-out;
 }
-.day-btn:hover {
-    background: rgba(255,255,255,0.14);
-    color: #ffffff;
-}
+.day-btn:hover { background: rgba(255,255,255,0.14); color: #ffffff; }
 .day-btn.active { 
     background: #007ab7; 
     color: white; 
@@ -598,9 +621,7 @@ html, body {
     cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); font-size: 14px; font-weight: bold;
     transition: all 0.15s;
 }
-.nav-btn:hover {
-    background: rgba(255,255,255,0.18);
-}
+.nav-btn:hover { background: rgba(255,255,255,0.18); }
 
 #timeSlider {
     -webkit-appearance: none; appearance: none;
@@ -620,7 +641,7 @@ html, body {
 .member-stack-btn {
     width: 24px; height: 14px; 
     background: rgba(255,255,255,0.08); 
-    border: 1px solid rgba(255,255,255,0.14);
+    border: 1px solid rgba(255,255,255,0.14); 
     border-radius: 3px; color: #ffffff; font-size: 8px; font-weight: bold;
     display: flex; align-items: center; justify-content: center; cursor: pointer;
     transition: all 0.15s;
@@ -687,7 +708,9 @@ html, body {
     .var-btn, .nav-toggle-btn { font-size: 10px; padding: 4px 6px; border-radius: 10px; }
     .layer2-btn { font-size: 9px; padding: 3px 16px 4px 16px; border-radius: 0 0 12px 12px; }
     
-    .model-select-header { top: 6px; right: 6px; width: 62px; }
+    .model-select-header { top: 6px; width: 62px; }
+    .model-select-right { right: 6px; }
+    .model-select-left { left: 82px; }
     .model-title { font-size: 8.5px; }
     .model-time { font-size: 7px; }
 
