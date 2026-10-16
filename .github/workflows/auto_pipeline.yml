@@ -50,9 +50,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: dist/data
-          key: hist-runs-v15-${{ github.run_id }}
+          key: hist-runs-v20-${{ github.run_id }}
           restore-keys: |
-            hist-runs-v15-
+            hist-runs-v20-
 
       - name: Schnellprüfung & Vorbereitung (CH1 & CH2)
         id: prep
@@ -122,14 +122,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      # 1. Frischer Cache v15 (lädt bestehende Läufe der letzten 24h)
+      # 1. Frischer Cache v20 (lädt bestehende Läufe der letzten 24h)
       - name: Historischen Datenbestand wiederherstellen
         uses: actions/cache/restore@v4
         with:
           path: dist/data
-          key: hist-runs-v15-${{ github.run_id }}
+          key: hist-runs-v20-${{ github.run_id }}
           restore-keys: |
-            hist-runs-v15-
+            hist-runs-v20-
 
       # 2. Basis-Website (Metadaten & index.html) einfügen
       - name: Basis-Website abrufen
@@ -153,13 +153,13 @@ jobs:
           echo "=== DATEIGRÖSSE VOR DEPLOY (Ziel: ~350 MB) ==="
           du -sh dist/ dist/data/* || true
 
-      # 5. Aktualisierten Datenbestand im Cache v15 sichern
+      # 5. Aktualisierten Datenbestand im Cache v20 sichern
       - name: Aktualisierten Datenbestand cachen
         uses: actions/cache/save@v4
         if: always()
         with:
           path: dist/data
-          key: hist-runs-v15-${{ github.run_id }}
+          key: hist-runs-v20-${{ github.run_id }}
 
       - name: GitHub Pages konfigurieren
         uses: actions/configure-pages@v5
