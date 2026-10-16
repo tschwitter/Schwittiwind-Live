@@ -232,18 +232,19 @@ html, body {
     box-shadow: 0 0 12px rgba(0, 122, 183, 0.75), 0 4px 10px rgba(0, 0, 0, 0.4) !important;
 }
 
-/* --- MODELL-AUSWAHL RECHTS (3 BUTTONS) --- */
+/* --- MODELL-AUSWAHL RECHTS ÜBER DEM PANEL (2 ZEILEN) --- */
 .model-select-header {
     position: fixed;
     top: 10px;
     right: 10px;
-    width: 220px;
+    width: 155px;
     z-index: 10000;
     box-sizing: border-box;
 }
 
-.model-toggle-group {
+.model-toggle-column {
     display: flex;
+    flex-direction: column;
     width: 100%;
     gap: 3px;
     background: rgba(24, 33, 42, 0.95);
@@ -253,6 +254,12 @@ html, body {
     padding: 3px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.5);
     box-sizing: border-box;
+}
+
+.model-toggle-row {
+    display: flex;
+    width: 100%;
+    gap: 3px;
 }
 
 .model-btn {
@@ -332,7 +339,7 @@ html, body {
 }
 
 .runs-dropdown-popup {
-    width: 220px;
+    width: 155px;
     max-height: 260px;
     overflow-y: auto;
     flex-direction: column;
@@ -423,13 +430,13 @@ html, body {
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
 }
 
-/* --- VERTICAL PANEL (RECHTS) --- */
+/* --- VERTICAL PANEL (RECHTS) - RUTSCHT SAUBER RUNTER --- */
 .member-panel {
     position: fixed;
-    top: 60px; right: 10px;
+    top: 84px; right: 10px;
     width: 155px;
     height: auto;
-    max-height: calc(100vh - 100px);
+    max-height: calc(100vh - 120px);
     background-color: rgba(24, 33, 42, 0.94);
     backdrop-filter: blur(8px);
     border: 1px solid rgba(255,255,255,0.18);
@@ -680,9 +687,9 @@ html, body {
     .var-btn, .nav-toggle-btn { font-size: 10px; padding: 4px 6px; border-radius: 10px; }
     .layer2-btn { font-size: 9px; padding: 3px 16px 4px 16px; border-radius: 0 0 12px 12px; }
     
-    .model-select-header { top: 6px; right: 6px; width: 88px; }
-    .model-title { font-size: 9px; }
-    .model-time { font-size: 7.5px; }
+    .model-select-header { top: 6px; right: 6px; width: 62px; }
+    .model-title { font-size: 8.5px; }
+    .model-time { font-size: 7px; }
 
     .control-panel { 
         bottom: 6px; 
@@ -695,13 +702,13 @@ html, body {
     }
     
     .member-panel { 
-        top: 60px; 
+        top: 70px; 
         right: 6px; 
-        width: 88px; 
+        width: 62px; 
         padding: 6px 2px; 
         border-radius: 10px; 
-        max-height: calc(100dvh - 200px);
-        max-height: calc(100vh - 200px);
+        max-height: calc(100dvh - 180px);
+        max-height: calc(100vh - 180px);
     }
     .member-panel-title, .member-section-title { display: none; }
     .member-section-toggle { font-size: 8.5px; padding: 4px 2px; }
