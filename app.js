@@ -699,8 +699,11 @@ function navUp() {
 
     if (!isEnsembleOpen) {
         if (currentMemberIdx >= statOffset) {
-            if (currentMemberIdx === statOffset) updateForecast(0, currentStepIdx);
-            else updateForecast(currentMemberIdx - 1, currentStepIdx);
+            if (currentMemberIdx === statOffset) {
+                updateForecast(0, currentStepIdx);
+            } else {
+                updateForecast(currentMemberIdx - 1, currentStepIdx);
+            }
         } else {
             updateForecast(0, currentStepIdx);
         }
@@ -754,7 +757,6 @@ function initDayButtons() {
     times.forEach((t, idx) => {
         var parts = t.local_str.split(" ")[0].split(".");
         var dateObj = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-        // Eindeutiger Tag-Key inklusive Datum, damit 10-Tage-Läufe nicht überlappen!
         var dayKey = `${weekdays[dateObj.getDay()]} ${parts[0]}.${parts[1]}.`;
         if (!uniqueDays.includes(dayKey)) {
             uniqueDays.push(dayKey);
@@ -767,7 +769,7 @@ function initDayButtons() {
         var btn = document.createElement("button");
         btn.className = "day-btn";
         btn.id = "day-btn-" + dayKey.replace(/[^a-zA-Z0-9]/g, "_");
-        btn.innerText = dayKey.split(" ")[0]; // Zeigt z.B. "Mo", "Di"
+        btn.innerText = dayKey.split(" ")[0];
         btn.title = dayKey;
         btn.onclick = function() { jumpToDaySameHour(dayKey); };
         container.appendChild(btn);
@@ -1215,7 +1217,6 @@ async function updateForecast(newMemberIdx, newStepIdx) {
     var parts = tInfo.local_str.split(" ")[0].split(".");
     var hourMin = tInfo.local_str.split(" ")[1].substring(0, 5);
     
-    // Label zeigt z.B.: "16.10. 14:00 LT (+14h)"
     var stepHoursTxt = (tInfo.step_hours !== undefined) ? ` (+${tInfo.step_hours}h)` : "";
     document.getElementById("currentStepLabel").innerText = parts[0] + "." + parts[1] + " " + hourMin + " LT" + stepHoursTxt;
     
@@ -1225,7 +1226,6 @@ async function updateForecast(newMemberIdx, newStepIdx) {
     var modShort = (currentModel === "icon-ch2") ? "CH2" : ((currentModel === "ecmwf") ? "ECMWF" : "CH1");
     document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z ${modShort}`;
 
-    // Aktiven Tag-Button markieren
     var currentDayName = getDayNameForStep(currentStepIdx);
     var currentDayKey = `${currentDayName} ${parts[0]}.${parts[1]}.`;
     uniqueDays.forEach(dKey => {
@@ -1333,14 +1333,11 @@ function drawVisibleArrows() {
     var bounds = map.getBounds();
     var zoom = map.getZoom();
 
-    // Schrittweiten-Steuerung:
-    // ECMWF (nx <= 60): Natives 9-km-Gitter
-    // ICON (nx = 200/400): 1-2 km Gitter
     var step = 16;
     if (config.nx <= 60) {
-        if (zoom <= 7) step = 3;        // ca. alle 27 km ein Pfeil
-        else if (zoom <= 8) step = 2;   // ca. alle 18 km ein Pfeil
-        else step = 1;                  // ab Zoom 9: jeder einzelne 9-km-Punkt
+        if (zoom <= 7) step = 3;
+        else if (zoom <= 8) step = 2;
+        else step = 1;
     } else {
         if (zoom >= 9 && zoom <= 10) step = 7;
         else if (zoom === 11) step = 4;
