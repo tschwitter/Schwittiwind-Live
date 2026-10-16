@@ -232,7 +232,7 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
             results_by_alt[alt] = slices[0].expand_dims("lead_time")
     return results_by_alt
 
-# ================= ECHTER ECMWF IFS 9-KM DOWNLOADER =================
+# ================= ROBUSTER ECMWF IFS 9-KM DOWNLOADER =================
 def fetch_ecmwf_wind(start_step, end_step, ref_time_str):
     import requests
 
@@ -249,16 +249,15 @@ def fetch_ecmwf_wind(start_step, end_step, ref_time_str):
     flat_lons = grid_lon.ravel()
     total_pts = len(flat_lats)
 
-    # API-Limit: Exakt 50 Punkte pro Request (vermeidet URL-Abschneiden)
-    batch_size = 50
-    batches = []
+    # 100 Koordinaten pro Batch (offizielles Open-Meteo Limit)
+    batch_size = 100
+    all_u = []
+    all_v = []
+
     for b in range(0, total_pts, batch_size):
-        batches.append((b, flat_lats[b:b+batch_size], flat_lons[b:b+batch_size]))
+        b_lats = flat_lats[b:b+batch_size]
+        b_lons = flat_lons[b:b+batch_size]
 
-    results_by_batch_index = {}
-
-    def _fetch_single_batch(task):
-        batch_idx, b_lats, b_lons = task
         lat_str = ",".join([f"{lat:.4f}" for lat in b_lats])
         lon_str = ",".join([f"{lon:.4f}" for lon in b_lons])
 
@@ -271,44 +270,41 @@ def fetch_ecmwf_wind(start_step, end_step, ref_time_str):
             "forecast_days": 4
         }
 
-        for attempt in range(1, 4):
+        success = False
+        for attempt in range(1, 6):
             try:
-                res = requests.get(url, params=params, timeout=25)
+                res = requests.get(url, params=params, timeout=30)
                 if res.status_code == 200:
                     data = res.json()
                     loc_list = data if isinstance(data, list) else [data]
                     
-                    b_u = []
-                    b_v = []
                     for loc in loc_list:
                         spd = np.array(loc["hourly"]["wind_speed_10m"], dtype=np.float32) / 3.6
                         deg = np.array(loc["hourly"]["wind_direction_10m"], dtype=np.float32)
                         rad = np.deg2rad(deg)
                         u = -spd * np.sin(rad)
                         v = -spd * np.cos(rad)
-                        b_u.append(u[forecast_hours])
-                        b_v.append(v[forecast_hours])
-
-                    return batch_idx, np.array(b_u), np.array(b_v)
+                        all_u.append(u[forecast_hours])
+                        all_v.append(v[forecast_hours])
+                    
+                    success = True
+                    break
+                elif res.status_code == 429:
+                    # Rate limit -> 3 bis 5 Sekunden warten und wiederholen
+                    time.sleep(3 * attempt)
+                else:
+                    time.sleep(2 * attempt)
             except Exception:
                 time.sleep(2 * attempt)
-        raise RuntimeError(f"Konnte ECMWF Batch {batch_idx} nicht abholen!")
 
-    # 4 Worker parallel: Lädt alle 1600 Punkte in nur ~2 Sekunden
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        for b_idx, u_data, v_data in pool.map(_fetch_single_batch, batches):
-            results_by_batch_index[b_idx] = (u_data, v_data)
+        if not success:
+            raise RuntimeError(f"Konnte ECMWF Batch {b} auch nach 5 Versuchen nicht abholen!")
 
-    # In exakter Reihenfolge zusammenfügen
-    all_u = []
-    all_v = []
-    for b in range(0, total_pts, batch_size):
-        u_part, v_part = results_by_batch_index[b]
-        all_u.append(u_part)
-        all_v.append(v_part)
+        # Minimale Pause zwischen den Batches, um Rate-Limits zu verhindern
+        time.sleep(0.1)
 
-    u_all = np.vstack(all_u) # Shape: (points, lead_time)
-    v_all = np.vstack(all_v)
+    u_all = np.array(all_u) # Shape: (points, lead_time)
+    v_all = np.array(all_v)
 
     # Transponieren zu: (lead_time, points)
     u_matrix = u_all.T
