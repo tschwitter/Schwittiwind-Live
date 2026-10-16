@@ -1,6 +1,7 @@
 var mapLeft, mapRight;
 var isSplitActive = false;
 var isSyncingMaps = false;
+var isSplitLegendOpen = false;
 
 var modelsState = {
     left: {
@@ -135,6 +136,9 @@ function toggleSplitScreen(e) {
     } else {
         wrapper.classList.remove("split-view");
         wrapper.classList.add("single-view");
+        isSplitLegendOpen = false;
+        var legBox = document.getElementById("legendBox");
+        if (legBox) legBox.classList.remove("open");
     }
 
     setTimeout(async () => {
@@ -143,8 +147,47 @@ function toggleSplitScreen(e) {
             mapRight.invalidateSize();
             if (mapLeft) mapRight.setView(mapLeft.getCenter(), mapLeft.getZoom(), { animate: false });
         }
+        initMemberPanelsAll();
         await updateForecast();
     }, 150);
+}
+
+function toggleSplitLegend() {
+    isSplitLegendOpen = !isSplitLegendOpen;
+    var box = document.getElementById("legendBox");
+    if (box) box.classList.toggle("open", isSplitLegendOpen);
+}
+
+function toggleSplitMemberPanel(side) {
+    var pLeft = document.getElementById("memberPanelLeft");
+    var pRight = document.getElementById("memberPanelRight");
+    var bLeft = document.getElementById("btnToggleMemberLeft");
+    var bRight = document.getElementById("btnToggleMemberRight");
+
+    if (side === 'left') {
+        var isOpen = (pLeft.style.display === "flex");
+        closeAllPopups();
+        if (!isOpen) {
+            pLeft.style.display = "flex";
+            bLeft.classList.add("active");
+        }
+    } else {
+        var isOpen = (pRight.style.display === "flex");
+        closeAllPopups();
+        if (!isOpen) {
+            pRight.style.display = "flex";
+            bRight.classList.add("active");
+        }
+    }
+}
+
+function toggleEnsembleAccordionLocal(side) {
+    var cont = document.getElementById(side === 'left' ? "ensembleContainerLeft" : "ensembleContainerRight");
+    var btn = document.getElementById(side === 'left' ? "btnToggleEnsembleLeft" : "btnToggleEnsembleRight");
+    if (!cont) return;
+    var isOpen = (cont.style.display !== "none");
+    cont.style.display = isOpen ? "none" : "block";
+    if (btn) btn.classList.toggle("open", !isOpen);
 }
 
 function syncMap(sourceMap, targetMap) {
@@ -221,6 +264,16 @@ function closeAllPopups() {
             if (el) el.style.display = "none";
         });
     });
+
+    var pLeft = document.getElementById("memberPanelLeft");
+    var pRight = document.getElementById("memberPanelRight");
+    var bLeft = document.getElementById("btnToggleMemberLeft");
+    var bRight = document.getElementById("btnToggleMemberRight");
+    if (pLeft) pLeft.style.display = "none";
+    if (pRight) pRight.style.display = "none";
+    if (bLeft) bLeft.classList.remove("active");
+    if (bRight) bRight.classList.remove("active");
+
     var l2 = document.getElementById("layer2Dropdown");
     if (l2) l2.style.display = "none";
     var sp = document.getElementById("settingsPopup");
@@ -417,12 +470,10 @@ async function loadModelAndRun(side, modelName, runId) {
         return;
     }
 
-    if (side === 'left' || !isSplitActive) {
-        initNavigationBars();
-        initLayer2Dropdown();
-        initDayButtons();
-        initMemberPanel();
-    }
+    initNavigationBars();
+    initLayer2Dropdown();
+    initDayButtons();
+    initMemberPanelsAll();
 
     await updateForecast();
 }
@@ -795,53 +846,36 @@ function jumpToDaySameHour(targetDayName) {
     updateForecast();
 }
 
-function initMemberPanel() {
-    var hauptContainer = document.getElementById("hauptlaufContainer");
-    var ensembleContainer = document.getElementById("ensembleContainer");
-    var statistikenContainer = document.getElementById("statistikenContainer");
-    var toggleBtn = document.getElementById("btnToggleEnsemble");
-    hauptContainer.innerHTML = ""; ensembleContainer.innerHTML = ""; statistikenContainer.innerHTML = "";
+function renderMemberButtonsForTarget(side, hId, eId, sId, optPrefix) {
+    var st = modelsState[side];
+    var cfg = st.config;
+    var hCont = document.getElementById(hId);
+    var eCont = document.getElementById(eId);
+    var sCont = document.getElementById(sId);
+    if (!cfg || !hCont || !eCont || !sCont) return;
+
+    hCont.innerHTML = ""; eCont.innerHTML = ""; sCont.innerHTML = "";
     var isMobile = window.innerWidth <= 768;
-
-    var cfg = modelsState.left.config;
-    if (!cfg) return;
-
-    var runs = availableRuns[modelsState.left.currentModel] || [];
-    var isOldRun = (runs.length > 0 && modelsState.left.currentRunId !== runs[0].id);
+    var runs = availableRuns[st.currentModel] || [];
+    var isOldRun = (runs.length > 0 && st.currentRunId !== runs[0].id);
     var hasMultiple = cfg.member_names.length > 1;
     var statOffset = cfg.member_names.length - 6;
-
-    if (toggleBtn) {
-        if (!hasMultiple) {
-            toggleBtn.style.display = "none";
-        } else if (isOldRun) {
-            toggleBtn.style.display = "flex";
-            toggleBtn.style.opacity = "0.35";
-            toggleBtn.style.pointerEvents = "none";
-            toggleBtn.innerHTML = `<span>Members</span>`;
-        } else {
-            toggleBtn.style.display = "flex";
-            toggleBtn.style.opacity = "1.0";
-            toggleBtn.style.pointerEvents = "auto";
-            toggleBtn.innerHTML = `<span>Members</span><span id="ensembleChevron" class="chevron">▾</span>`;
-        }
-    }
 
     cfg.member_names.forEach((name, idx) => {
         var btn = document.createElement("button");
         btn.className = "member-btn";
-        btn.id = "member-btn-" + idx;
-        
+        btn.id = (optPrefix ? (optPrefix + "-") : "") + "member-btn-" + idx;
+
         if (idx === 0) {
             btn.innerText = isMobile ? "HL" : "Hauptlauf";
-            btn.onclick = function() { modelsState.left.currentMemberIdx = idx; updateForecast(); };
-            hauptContainer.appendChild(btn);
+            btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); };
+            hCont.appendChild(btn);
         } else if (hasMultiple && idx >= 1 && idx < statOffset) {
             btn.innerText = isMobile ? "M" + idx : "Member " + idx;
             if (!isOldRun) {
-                btn.onclick = function() { modelsState.left.currentMemberIdx = idx; updateForecast(); };
+                btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); };
             }
-            ensembleContainer.appendChild(btn);
+            eCont.appendChild(btn);
         } else if (hasMultiple) {
             if (idx === statOffset) btn.innerText = isMobile ? "MD" : name;
             else if (idx === statOffset + 1) btn.innerText = "Min";
@@ -849,14 +883,21 @@ function initMemberPanel() {
             else if (idx === statOffset + 3) btn.innerText = isMobile ? "%25" : name;
             else if (idx === statOffset + 4) btn.innerText = isMobile ? "%75" : name;
             else if (idx === statOffset + 5) btn.innerText = isMobile ? "IQ" : name;
-            btn.onclick = function() { modelsState.left.currentMemberIdx = idx; updateForecast(); };
-            statistikenContainer.appendChild(btn);
+            btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); };
+            sCont.appendChild(btn);
         }
     });
 
-    var cont = document.getElementById("ensembleContainer");
-    if (cont) cont.style.display = (!isOldRun && isEnsembleOpen && hasMultiple) ? "block" : "none";
-    if (toggleBtn) toggleBtn.classList.toggle("open", !isOldRun && isEnsembleOpen && hasMultiple);
+    var ensGroup = document.getElementById(side === 'left' ? "ensembleGroupLeft" : (side === 'right' ? "ensembleGroupRight" : "ensembleGroup"));
+    var notice = document.getElementById(side === 'left' ? "onlyHlNoticeLeft" : (side === 'right' ? "onlyHlNoticeRight" : "onlyHlNotice"));
+    if (ensGroup) ensGroup.style.display = hasMultiple ? "block" : "none";
+    if (notice) notice.style.display = hasMultiple ? "none" : "block";
+}
+
+function initMemberPanelsAll() {
+    renderMemberButtonsForTarget('left', "hauptlaufContainer", "ensembleContainer", "statistikenContainer", "");
+    renderMemberButtonsForTarget('left', "hauptlaufContainerLeft", "ensembleContainerLeft", "statistikenContainerLeft", "left");
+    renderMemberButtonsForTarget('right', "hauptlaufContainerRight", "ensembleContainerRight", "statistikenContainerRight", "right");
     updateEnsembleToggleState();
 }
 
@@ -866,22 +907,51 @@ function renderSingleLegendCol(varName, isIQR) {
     var paletteType = isIQR ? ("iqr_" + (vCfg.palette || "wind")) : (vCfg.palette || "wind");
     var p = (cfg.palettes && cfg.palettes[paletteType]) || (cfg.palettes && cfg.palettes["wind"]) || { levels: [], colors: [] };
     var colors = p.colors || [];
+    var levels = p.levels || [];
 
-    var title = isIQR ? (vCfg.palette === "sun" || vCfg.palette === "cloud" ? "% (IQR)" : (vCfg.palette === "dbz" ? "dBZ (IQR)" : "km/h (IQR)"))
-                      : (vCfg.palette === "sun" ? "Sun %" : (vCfg.palette === "cloud" ? "Cloud %" : (vCfg.palette === "dbz" ? "dBZ" : "km/h")));
+    var title = "";
+    if (isIQR) {
+        if (vCfg.palette === "sun" || vCfg.palette === "cloud") title = "% (IQR)";
+        else if (vCfg.palette === "dbz") title = "dBZ (IQR)";
+        else title = "km/h (IQR)";
+    } else {
+        if (vCfg.palette === "sun") title = "Sun %";
+        else if (vCfg.palette === "cloud") title = "Cloud %";
+        else if (vCfg.palette === "dbz") title = "dBZ";
+        else title = "km/h";
+    }
 
     var barHtml = "";
     for (var i = colors.length - 1; i >= 0; i--) {
         var c = colors[i];
         var isTrans = (c === 'transparent' || c === '#ffffff00' || (c.length === 9 && c.endsWith('00')));
         var bg = isTrans ? 'transparent' : c;
-        barHtml += `<div style="background-color: ${bg}; flex: 1;"></div>`;
+        var border = ((paletteType === "dbz" || paletteType === "cloud") && !isTrans) 
+            ? "border-bottom: 1px solid rgba(255,255,255,0.4);" 
+            : (c.toLowerCase() === "#ffffff" ? "border-top: 1px solid rgba(0,0,0,0.3); border-bottom: 1px solid rgba(0,0,0,0.3);" : "");
+        barHtml += `<div style="background-color: ${bg}; flex: 1; ${border}"></div>`;
     }
 
-    var labelsHtml = (paletteType === "dbz") ? `<div>64</div><div>60</div><div>55</div><div>50</div><div>45</div><div>30</div><div>15</div><div>7</div>`
-                   : (paletteType === "sun") ? `<div>100</div><div>80</div><div>60</div><div>40</div><div>20</div><div>0</div>`
-                   : (paletteType === "cloud") ? `<div>100</div><div>80</div><div>60</div><div>40</div><div>20</div><div>0</div>`
-                   : `<div>+</div><div>115</div><div>85</div><div>65</div><div>45</div><div>27</div><div>14</div><div>4</div><div>0</div>`;
+    var labelsHtml = "";
+    if (paletteType === "dbz") {
+        labelsHtml = `<div>64</div><div>61</div><div>60</div><div>59</div><div>58</div><div>57</div><div>56</div><div>55</div><div>54</div><div>53</div><div>52</div><div>51</div><div>49</div><div>47</div><div>45</div><div>41</div><div>31</div><div>24</div><div>19</div><div>7</div>`;
+    } else if (paletteType === "sun") {
+        labelsHtml = `<div>100</div><div>80</div><div>60</div><div>40</div><div>20</div><div>0</div>`;
+    } else if (paletteType === "cloud") {
+        labelsHtml = `<div>100</div><div>95</div><div>90</div><div>80</div><div>70</div><div>60</div><div>50</div><div>40</div><div>30</div><div>20</div><div>10</div>`;
+    } else if (paletteType === "iqr_dbz") {
+        labelsHtml = `<div>+</div><div>65</div><div>56</div><div>48</div><div>40</div><div>32</div><div>25</div><div>18</div><div>12</div><div>6</div><div>0</div>`;
+    } else if (paletteType === "iqr_sun" || paletteType === "iqr_cloud") {
+        labelsHtml = `<div>100</div><div>90</div><div>80</div><div>70</div><div>60</div><div>50</div><div>40</div><div>30</div><div>20</div><div>10</div><div>0</div>`;
+    } else if (paletteType === "iqr_wind") {
+        labelsHtml = `<div>+</div><div>30</div><div>24</div><div>18</div><div>14</div><div>10</div><div>8</div><div>6</div><div>4</div><div>2</div><div>0</div>`;
+    } else {
+        if (levels && levels.length > 15) {
+            labelsHtml = `<div>+</div><div>135</div><div>125</div><div>115</div><div>105</div><div>95</div><div>85</div><div>75</div><div>65</div><div>55</div><div>45</div><div>36</div><div>27</div><div>23</div><div>18</div><div>14</div><div>11</div><div>7</div><div>4</div><div>0</div>`;
+        } else {
+            labelsHtml = `<div>+</div><div>45</div><div>36</div><div>27</div><div>23</div><div>18</div><div>14</div><div>11</div><div>7</div><div>4</div><div>0</div>`;
+        }
+    }
 
     return `
         <div class="legend-column">
@@ -992,7 +1062,6 @@ function initMapInstance(domId) {
     var swisstopo_relief_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissalti3d-reliefschattierung/default/current/3857/{z}/{x}/{y}.png";
     var swisstopo_lakes_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-seen/default/current/3857/{z}/{x}/{y}.png";
     var swisstopo_rivers_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-gewaessernetz_2000/default/current/3857/{z}/{x}/{y}.png";
-    var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
 
     var m = L.map(domId, {
         center: [46.8182, 8.2275],
@@ -1011,13 +1080,12 @@ function initMapInstance(domId) {
     var relief = L.tileLayer(swisstopo_relief_url, { pane: 'reliefPane', maxZoom: 15, maxNativeZoom: 14 }).addTo(m);
     L.tileLayer(swisstopo_lakes_url, { pane: 'waterPane', maxZoom: 15, maxNativeZoom: 14, opacity: 0.85 }).addTo(m);
     var rivers = L.tileLayer(swisstopo_rivers_url, { pane: 'waterPane', maxZoom: 15, maxNativeZoom: 14, opacity: 0.35 }).addTo(m);
-    L.tileLayer(swisstopo_boundary_url, { pane: 'boundaryPane', className: 'boundary-national', maxZoom: 15, maxNativeZoom: 14 }).addTo(m);
 
     var cantons = L.layerGroup();
     fetch("https://cdn.jsdelivr.net/gh/empet/Datasets@master/swiss-cantons.geojson")
         .then(res => res.json())
         .then(geojson => {
-            L.geoJSON(geojson, { pane: 'boundaryPane', interactive: false, style: { color: "#111111", weight: 0.7, opacity: 1.0, fill: false } }).addTo(cantons);
+            L.geoJSON(geojson, { pane: 'boundaryPane', interactive: false, style: { color: "#111111", weight: 0.7, opacity: 0.8, fill: false } }).addTo(cantons);
         }).catch(() => {});
 
     var cityGroup = L.layerGroup([], { pane: 'cityPane' }).addTo(m);
@@ -1080,7 +1148,7 @@ async function init() {
         window.onresize = function() {
             closeAllPopups();
             updateModelButtonLabels();
-            initMemberPanel();
+            initMemberPanelsAll();
             updateForecast();
             scheduleMapUpdates();
         };
@@ -1153,10 +1221,28 @@ async function updateForecast() {
         if (btn) btn.classList.toggle("active", d === currentDayName);
     });
 
+    ['left', 'right'].forEach(side => {
+        var st = modelsState[side];
+        var lbl = document.getElementById(side === 'left' ? "lblMemberBtnLeft" : "lblMemberBtnRight");
+        if (lbl && st.config) {
+            var mName = st.config.member_names[st.currentMemberIdx] || "HL";
+            lbl.innerText = (mName === "Hauptlauf" ? "HL" : mName) + " ▾";
+        }
+    });
+
     if (cfgL) {
         for (var i = 0; i < cfgL.member_names.length; i++) {
             var btn = document.getElementById("member-btn-" + i);
             if (btn) btn.classList.toggle("active", i === modelsState.left.currentMemberIdx);
+            var btnL = document.getElementById("left-member-btn-" + i);
+            if (btnL) btnL.classList.toggle("active", i === modelsState.left.currentMemberIdx);
+        }
+    }
+    var cfgR = modelsState.right.config;
+    if (cfgR) {
+        for (var j = 0; j < cfgR.member_names.length; j++) {
+            var btnR = document.getElementById("right-member-btn-" + j);
+            if (btnR) btnR.classList.toggle("active", j === modelsState.right.currentMemberIdx);
         }
     }
 
