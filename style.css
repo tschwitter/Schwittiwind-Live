@@ -8,7 +8,7 @@ html, body {
 #map { width: 100%; height: 100%; z-index: 1; }
 .wind-arrow-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
 
-/* --- EINSTELLUNGS-BUTTON OBEN LINKS (ALLEINE IN DER ECKE) --- */
+/* --- EINSTELLUNGS-BUTTON OBEN LINKS --- */
 .custom-settings-control {
     position: fixed;
     top: 10px;
@@ -126,7 +126,6 @@ html, body {
     z-index: 2;
 }
 
-/* SUB-LEISTEN: MEHRZEILIG */
 .sub-nav-row {
     background-color: rgba(25, 34, 44, 0.95);
     border-color: rgba(0, 122, 183, 0.4);
@@ -187,7 +186,7 @@ html, body {
     box-shadow: 0 0 8px rgba(0, 122, 183, 0.4);
 }
 
-/* --- 2. EBENE: EIN EINZIGES, FUGENLOS GERUNDETES FELD --- */
+/* --- 2. EBENE --- */
 .layer2-anchor-wrap {
     display: flex;
     justify-content: center;
@@ -232,7 +231,7 @@ html, body {
     box-shadow: 0 0 12px rgba(0, 122, 183, 0.75), 0 4px 10px rgba(0, 0, 0, 0.4) !important;
 }
 
-/* --- MODELL-AUSWAHL RECHTS ÜBER DEM PANEL --- */
+/* --- MODELL-AUSWAHL RECHTS (GESTACKT: ECMWF ÜBER CH2, DARUNTER CH1 & CH2) --- */
 .model-select-header {
     position: fixed;
     top: 10px;
@@ -242,8 +241,9 @@ html, body {
     box-sizing: border-box;
 }
 
-.model-toggle-group {
+.model-toggle-container {
     display: flex;
+    flex-direction: column;
     width: 100%;
     gap: 3px;
     background: rgba(24, 33, 42, 0.95);
@@ -253,6 +253,24 @@ html, body {
     padding: 3px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.5);
     box-sizing: border-box;
+}
+
+/* Obere Zeile: ECMWF sitzt exakt rechtsbündig über dem CH2-Button */
+.model-row-top {
+    display: flex;
+    justify-content: flex-end;
+    width: 100%;
+}
+
+.model-row-top .model-btn {
+    width: calc(50% - 1.5px); /* Exakt gleiche Breite wie CH2 darunter */
+}
+
+/* Untere Zeile: CH1 links, CH2 rechts */
+.model-row-bottom {
+    display: flex;
+    width: 100%;
+    gap: 3px;
 }
 
 .model-btn {
@@ -374,7 +392,6 @@ html, body {
 .dropdown-item.clear { background: rgba(217, 83, 79, 0.3); color: #ff8a80; }
 .dropdown-item.clear:hover { background: #d9534f; color: white; }
 
-/* Einstellungs-Popup (direkt unter dem Zahnrad oben links) */
 .settings-popup {
     top: 48px;
     left: 10px;
@@ -423,13 +440,14 @@ html, body {
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
 }
 
-/* --- VERTICAL PANEL (RECHTS) --- */
+/* --- VERTICAL PANEL (RECHTS) - ENTSPRECHEND NACH UNTEN GERÜCKT (top: 96px) --- */
 .member-panel {
     position: fixed;
-    top: 60px; right: 10px;
+    top: 96px; /* Von 60px nach unten gerückt */
+    right: 10px;
     width: 155px;
     height: auto;
-    max-height: calc(100vh - 100px);
+    max-height: calc(100vh - 135px);
     background-color: rgba(24, 33, 42, 0.94);
     backdrop-filter: blur(8px);
     border: 1px solid rgba(255,255,255,0.18);
@@ -477,7 +495,6 @@ html, body {
     color: #ffffff !important;
 }
 
-/* KLAPP-BUTTON FÜR MEMBERS */
 .member-section-toggle {
     width: 100%;
     background: rgba(255,255,255,0.06);
@@ -614,7 +631,7 @@ html, body {
 .member-stack-btn {
     width: 24px; height: 14px; 
     background: rgba(255,255,255,0.08); 
-    border: 1px solid rgba(255,255,255,0.14);
+    border: 1px solid rgba(255,255,255,0.14); 
     border-radius: 3px; color: #ffffff; font-size: 8px; font-weight: bold;
     display: flex; align-items: center; justify-content: center; cursor: pointer;
     transition: all 0.15s;
@@ -672,6 +689,7 @@ html, body {
     display: flex; flex-direction: column; justify-content: space-between; 
 }
 
+/* ================= RESPONSIVE ANPASSUNGEN (SMARTPHONE) ================= */
 @media (max-width: 768px) {
     .custom-settings-control { top: 6px; left: 6px; }
     .settings-popup { left: 6px; top: 44px; width: 235px; }
@@ -681,9 +699,13 @@ html, body {
     .var-btn, .nav-toggle-btn { font-size: 10px; padding: 4px 6px; border-radius: 10px; }
     .layer2-btn { font-size: 9px; padding: 3px 16px 4px 16px; border-radius: 0 0 12px 12px; }
     
-    .model-select-header { top: 6px; right: 6px; width: 58px; }
-    .model-title { font-size: 9px; }
-    .model-time { font-size: 7.5px; }
+    .model-select-header { 
+        top: 6px; 
+        right: 6px; 
+        width: 68px; /* Leicht verbreitert für die beiden Zeilen */
+    }
+    .model-title { font-size: 8.5px; }
+    .model-time { font-size: 7px; }
 
     .control-panel { 
         bottom: 6px; 
@@ -695,17 +717,18 @@ html, body {
         border-radius: 10px; 
     }
     
+    /* Läufe-Panel auf Smartphones entsprechend nach unten gerückt */
     .member-panel { 
-        top: 60px; 
+        top: 86px; 
         right: 6px; 
-        width: 58px; 
+        width: 68px; 
         padding: 6px 2px; 
         border-radius: 10px; 
-        max-height: calc(100dvh - 200px);
-        max-height: calc(100vh - 200px);
+        max-height: calc(100dvh - 215px);
+        max-height: calc(100vh - 215px);
     }
     .member-panel-title, .member-section-title { display: none; }
-    .member-section-toggle { font-size: 8.5px; padding: 4px 2px; }
+    .member-section-toggle { font-size: 8.5px; padding: 4px 2px; justify-content: center; }
     .member-btn { font-size: 9.5px; padding: 5px 1px; border-radius: 8px; }
     .nav-mode-btn { width: 28px; height: 28px; font-size: 9px; margin-left: 2px; }
     .legend-box { bottom: 105px; left: 6px; padding: 4px; }
