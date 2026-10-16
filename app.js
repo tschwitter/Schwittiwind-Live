@@ -291,6 +291,7 @@ function updateModelButtonLabels() {
 
 function toggleRunDropdown(modelName) {
     var el = document.getElementById(`runDropdown-${modelName}`);
+    if (!el) return;
     var isAlreadyOpen = (el.style.display === "flex");
     closeAllPopups();
     if (isAlreadyOpen) return;
@@ -423,18 +424,19 @@ async function loadModelAndRun(modelName, runId) {
 
         var vCfg = config.variables_config[layer1Var];
         var hasEns = vCfg ? vCfg.has_ensemble : true;
-        var statOffset = config.member_names.length - 6;
+        var numMembers = config.member_names ? config.member_names.length : 1;
+        var statOffset = numMembers - 6;
 
         var isOldRun = (runs.length > 0 && currentRunId !== runs[0].id);
-        if (!hasEns) {
+        if (!hasEns || numMembers <= 1) {
             currentMemberIdx = 0;
         } else if (isOldRun && prevMember >= 1 && prevMember < statOffset) {
             currentMemberIdx = 0;
         } else {
-            currentMemberIdx = Math.min(prevMember, config.member_names.length - 1);
+            currentMemberIdx = Math.min(prevMember, numMembers - 1);
         }
 
-        updateMemberPanelVisibility(hasEns);
+        updateMemberPanelVisibility(hasEns && numMembers > 1);
         document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (vCfg ? vCfg.label : layer1Var);
 
         var initialOp1 = (vCfg && vCfg.palette === "cloud") ? 95 : 60;
@@ -640,14 +642,15 @@ function switchLayer1(newVar) {
 
     var vCfg = config.variables_config[layer1Var];
     var hasEns = vCfg ? vCfg.has_ensemble : true;
-    if (!hasEns) currentMemberIdx = 0;
+    var numMembers = config.member_names ? config.member_names.length : 1;
+    if (!hasEns || numMembers <= 1) currentMemberIdx = 0;
 
     document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (vCfg ? vCfg.label : layer1Var);
 
     var targetOp = (vCfg && vCfg.palette === "cloud") ? 95 : 60;
     setLayerOpacity(1, targetOp);
 
-    updateMemberPanelVisibility(hasEns);
+    updateMemberPanelVisibility(hasEns && numMembers > 1);
     updateForecast(currentMemberIdx, currentStepIdx);
 }
 
@@ -706,9 +709,12 @@ function navUp() {
     var vCfg = config.variables_config[layer1Var];
     if (vCfg && !vCfg.has_ensemble) return;
 
+    var numMembers = config.member_names ? config.member_names.length : 1;
+    if (numMembers <= 1) return;
+
     var runs = availableRuns[currentModel] || [];
     var isOldRun = (runs.length > 0 && currentRunId !== runs[0].id);
-    var statOffset = config.member_names.length - 6;
+    var statOffset = numMembers - 6;
 
     if (isOldRun) {
         if (currentMemberIdx >= statOffset) {
@@ -744,8 +750,11 @@ function navDown() {
     var vCfg = config.variables_config[layer1Var];
     if (vCfg && !vCfg.has_ensemble) return;
 
-    var maxIdx = config.member_names.length - 1;
-    var statOffset = config.member_names.length - 6;
+    var numMembers = config.member_names ? config.member_names.length : 1;
+    if (numMembers <= 1) return;
+
+    var maxIdx = numMembers - 1;
+    var statOffset = numMembers - 6;
     var runs = availableRuns[currentModel] || [];
     var isOldRun = (runs.length > 0 && currentRunId !== runs[0].id);
 
@@ -826,14 +835,14 @@ function initMemberPanel() {
 
     var runs = availableRuns[currentModel] || [];
     var isOldRun = (runs.length > 0 && currentRunId !== runs[0].id);
-    var statOffset = config.member_names.length - 6;
+    var numMembers = config.member_names ? config.member_names.length : 1;
+    var statOffset = numMembers - 6;
 
     if (toggleBtn) {
         if (isOldRun) {
             toggleBtn.style.opacity = "0.35";
             toggleBtn.style.pointerEvents = "none";
             toggleBtn.title = "Einzel-Member nur im neuesten Lauf verfügbar";
-            // Auf Smartphones nur schlank "Members" anzeigen ohne überlangen Textumbruch
             if (isMobile) {
                 toggleBtn.innerHTML = `<span>Members</span>`;
             } else {
@@ -949,13 +958,14 @@ function renderSingleLegendCol(varName, isIQR) {
 
 function updateLegend() {
     var box = document.getElementById("legendBox");
-    var iqrIdx = config.member_names.length - 1;
-    var isIQR1 = (currentMemberIdx === iqrIdx);
+    var numMembers = config.member_names ? config.member_names.length : 1;
+    var iqrIdx = numMembers - 1;
+    var isIQR1 = (numMembers > 6 && currentMemberIdx === iqrIdx);
     
     var html = renderSingleLegendCol(layer1Var, isIQR1);
     if (layer2Var && layer2Var !== layer1Var) {
         var vCfg2 = config.variables_config[layer2Var] || {};
-        var isIQR2 = (vCfg2.has_ensemble && currentMemberIdx === iqrIdx);
+        var isIQR2 = (vCfg2.has_ensemble && numMembers > 6 && currentMemberIdx === iqrIdx);
         html += renderSingleLegendCol(layer2Var, isIQR2);
     }
     box.innerHTML = html;
@@ -1040,8 +1050,9 @@ function generateContoursClient(gridObj, paletteType) {
 async function ensureDataLoaded(varName, memberIdx, stepIdx) {
     const cacheKey = `${currentModel}_${currentRunId}_${varName}_${memberIdx}_${stepIdx}`;
     const vCfg = config.variables_config[varName] || {};
-    var iqrIdx = config.member_names.length - 1;
-    const isIQR = (vCfg.has_ensemble && memberIdx === iqrIdx);
+    var numMembers = config.member_names ? config.member_names.length : 1;
+    var iqrIdx = numMembers - 1;
+    const isIQR = (vCfg.has_ensemble && numMembers > 6 && memberIdx === iqrIdx);
     const paletteType = isIQR ? ("iqr_" + (vCfg.palette || "wind")) : (vCfg.palette || "wind");
 
     if (!cacheContours[cacheKey]) {
@@ -1262,12 +1273,13 @@ async function updateForecast(newMemberIdx, newStepIdx) {
         if (btn) btn.classList.toggle("active", d === currentDayName);
     });
 
-    var statOffset = config.member_names.length - 6;
-    if (currentMemberIdx >= 1 && currentMemberIdx < statOffset && !isEnsembleOpen) {
+    var numMembers = config.member_names ? config.member_names.length : 1;
+    var statOffset = numMembers - 6;
+    if (numMembers > 6 && currentMemberIdx >= 1 && currentMemberIdx < statOffset && !isEnsembleOpen) {
         toggleEnsembleAccordion(true);
     }
 
-    for (var i = 0; i < config.member_names.length; i++) {
+    for (var i = 0; i < numMembers; i++) {
         var btn = document.getElementById("member-btn-" + i);
         if (btn) btn.classList.toggle("active", i === currentMemberIdx);
     }
@@ -1336,13 +1348,17 @@ function drawVisibleArrows() {
     var arrowMember = 0;
 
     var vCfg1 = config.variables_config[layer1Var];
-    var iqrIdx = config.member_names.length - 1;
-    if (vCfg1 && vCfg1.has_arrows && currentMemberIdx < iqrIdx - 5) {
+    var numMembers = config.member_names ? config.member_names.length : 1;
+    // Pfeile nur ausblenden, wenn es sich um einen der 6 Statistik-Layer handelt:
+    var isStatMember = (numMembers > 6 && currentMemberIdx >= numMembers - 6);
+
+    if (vCfg1 && vCfg1.has_arrows && !isStatMember) {
         arrowVar = layer1Var;
         arrowMember = currentMemberIdx;
     } else if (layer2Var) {
         var vCfg2 = config.variables_config[layer2Var];
-        if (vCfg2 && vCfg2.has_arrows) {
+        var isStatMember2 = (numMembers > 6 && currentMemberIdx >= numMembers - 6);
+        if (vCfg2 && vCfg2.has_arrows && !isStatMember2) {
             arrowVar = layer2Var;
             arrowMember = vCfg2.has_ensemble ? currentMemberIdx : 0;
         }
@@ -1357,12 +1373,19 @@ function drawVisibleArrows() {
     var bounds = map.getBounds();
     var zoom = map.getZoom();
 
+    // Schrittweiten:
+    // Für ECMWF (9 km Gitter, nx <= 120) ist das Netz bereits weitmaschig -> step=1 oder 2
+    // Für ICON (1-2 km Gitter) die gewohnten dichten Abstufungen
     var step = 16;
-    if (zoom >= 9 && zoom <= 10) step = 7;
-    else if (zoom === 11) step = 4;
-    else if (zoom === 12) step = 3;
-    else if (zoom === 13) step = 2;
-    else if (zoom >= 14) step = 1;
+    if (config.nx <= 120) {
+        step = (zoom <= 8) ? 2 : 1;
+    } else {
+        if (zoom >= 9 && zoom <= 10) step = 7;
+        else if (zoom === 11) step = 4;
+        else if (zoom === 12) step = 3;
+        else if (zoom === 13) step = 2;
+        else if (zoom >= 14) step = 1;
+    }
 
     var speeds = gridData.s;
     var dirs_half = gridData.d;
