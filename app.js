@@ -278,7 +278,7 @@ function updateModelButtonLabels() {
         var runs = availableRuns[m] || [];
         var activeRun = (currentModel === m) ? currentRunId : (selectedRuns[m] || (runs[0] ? runs[0].id : null));
         var activeObj = runs.find(r => r.id === activeRun) || runs[0];
-        var modName = (m === "icon-ch1") ? "CH1" : (m === "icon-ch2" ? "CH2" : "AROME");
+        var modName = (m === "icon-ch1") ? "CH1" : (m === "icon-ch2" ? "CH2" : "AROME HD");
         var timeTxt = activeObj ? activeObj.label : "--";
         
         btn.innerHTML = `<span class="model-title">${modName} ▾</span><span class="model-time">${timeTxt}</span>`;
