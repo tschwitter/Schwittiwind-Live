@@ -8,7 +8,6 @@ import urllib.request
 from datetime import timedelta, datetime
 from zoneinfo import ZoneInfo
 from multiprocessing import get_context
-import requests
 import config
 
 SHARED_DATA = {}
@@ -36,11 +35,12 @@ def load_existing_runs(model_name):
 
 def check_arome_new_data():
     """Prüft die Verfügbarkeit des neuesten 3-stündigen AROME-Laufs auf Open Data."""
+    import requests
+
     now_utc = datetime.now(ZoneInfo("UTC"))
     existing_runs = load_existing_runs("arome")
     latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
 
-    # Prüfe die letzten 4 möglichen Modell-Runs (00, 03, 06, 09, 12, 15, 18, 21 UTC)
     candidate_hours = [0, 3, 6, 9, 12, 15, 18, 21]
     candidates = []
     for days_back in [0, 1]:
@@ -57,7 +57,6 @@ def check_arome_new_data():
         run_id = run_dt.strftime("%Y%m%d_%H")
         ref_str = run_dt.strftime("%d.%m.%Y %H:00 UTC")
 
-        # Teste, ob Stunde 42 (Ende des Laufs) publiziert wurde
         test_url = f"https://meteofrance-pnt.s3.rbx.io.cloud.ovh.net/pnt/{iso_str}/arome/001/SP1/arome__001__SP1__42H__{iso_str}.grib2"
         try:
             r = requests.head(test_url, timeout=5)
