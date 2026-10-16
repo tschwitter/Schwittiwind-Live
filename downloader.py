@@ -239,7 +239,7 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
 def fetch_arome_single_hour(ref_iso, lead_hour):
     """
     Lädt das stündliche SP1-GRIB2-Paket von Météo-France herunter
-    und extrahiert u10 sowie v10 für den Schweizer Ausschnitt.
+    und extrahiert u10, v10 sowie die Böen für den Schweizer Ausschnitt.
     """
     urls = [
         f"https://meteofrance-pnt.s3.rbx.io.cloud.ovh.net/pnt/{ref_iso}/arome/001/SP1/arome__001__SP1__{lead_hour:02d}H__{ref_iso}.grib2",
@@ -261,7 +261,7 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
 
     if resp is None:
         print(f"⚠️ AROME Stunde +{lead_hour}h konnte nicht geladen werden.", flush=True)
-        return None, None, None, None
+        return None, None, None, None, None
 
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp:
         tmp.write(resp.content)
@@ -269,7 +269,7 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
 
     try:
         datasets = cfgrib.open_datasets(tmp_path)
-        u10_da, v10_da = None, None
+        u10_da, v10_da, gust_da = None, None, None
 
         for ds in datasets:
             if 'u10' in ds:
@@ -280,6 +280,10 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
                 v10_da = ds['v10']
             elif '10v' in ds:
                 v10_da = ds['10v']
+            for g_key in ['fg10', 'gust', 'fg', 'wsgsmax', '10fg', 'u10g']:
+                if g_key in ds:
+                    gust_da = ds[g_key]
+                    break
 
         if u10_da is None or v10_da is None:
             for ds in datasets:
@@ -289,6 +293,19 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
                         u10_da = v
                     elif getattr(v, 'standard_name', '') == 'northward_wind':
                         v10_da = v
+
+        if gust_da is None:
+            for ds in datasets:
+                for var_name in ds.data_vars:
+                    v = ds[var_name]
+                    long_n = getattr(v, 'long_name', '').lower()
+                    grib_n = getattr(v, 'GRIB_name', '').lower()
+                    std_n = getattr(v, 'standard_name', '').lower()
+                    if 'gust' in long_n or 'gust' in grib_n or 'rafale' in long_n or 'gust' in std_n:
+                        gust_da = v
+                        break
+                if gust_da is not None:
+                    break
 
         lat_coord = 'latitude' if 'latitude' in u10_da.coords else 'lat'
         lon_coord = 'longitude' if 'longitude' in u10_da.coords else 'lon'
@@ -304,14 +321,20 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
         u_sub = u10_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
         v_sub = v10_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
 
+        if gust_da is not None:
+            g_sub = gust_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
+            g_sub = np.where(np.isnan(g_sub), np.sqrt(u_sub**2 + v_sub**2), g_sub)
+        else:
+            g_sub = np.sqrt(u_sub**2 + v_sub**2)
+
         sub_lats = u10_da[lat_coord].sel({lat_coord: lat_slice}).values
         sub_lons = u10_da[lon_coord].sel({lon_coord: lon_slice}).values
 
         glon, glat = np.meshgrid(sub_lons, sub_lats)
-        return u_sub.ravel(), v_sub.ravel(), glon.ravel(), glat.ravel()
+        return u_sub.ravel(), v_sub.ravel(), g_sub.ravel(), glon.ravel(), glat.ravel()
     except Exception as e:
         print(f"Fehler beim Dekodieren von AROME GRIB2 (+{lead_hour}h): {e}", flush=True)
-        return None, None, None, None
+        return None, None, None, None, None
     finally:
         if os.path.exists(tmp_path):
             try:
@@ -320,36 +343,40 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
                 pass
 
 def fetch_arome_hd_data(start_step, end_step, ref_time_str):
-    print(f"-> Lade AROME HD (10m Wind) für Schritte {start_step} bis {end_step} ({ref_time_str})...", flush=True)
+    print(f"-> Lade AROME HD (Wind & Böen) für Schritte {start_step} bis {end_step} ({ref_time_str})...", flush=True)
     lead_hours = list(range(start_step, end_step + 1))
 
-    u_list, v_list = [], []
+    u_list, v_list, g_list = [], [], []
     ref_lon, ref_lat = None, None
 
     for h in lead_hours:
-        u_arr, v_arr, lons, lats = fetch_arome_single_hour(ref_time_str, h)
+        u_arr, v_arr, g_arr, lons, lats = fetch_arome_single_hour(ref_time_str, h)
         if u_arr is not None:
             u_list.append(u_arr)
             v_list.append(v_arr)
+            g_list.append(g_arr)
             if ref_lon is None:
                 ref_lon = lons
                 ref_lat = lats
         else:
-            # Fallback mit Nans
             dummy_len = len(ref_lon) if ref_lon is not None else 1000
             u_list.append(np.full(dummy_len, np.nan, dtype=np.float32))
             v_list.append(np.full(dummy_len, np.nan, dtype=np.float32))
+            g_list.append(np.full(dummy_len, np.nan, dtype=np.float32))
 
     u_stack = np.stack(u_list, axis=0)  # Shape: (lead_time, cell)
     v_stack = np.stack(v_list, axis=0)
+    g_stack = np.stack(g_list, axis=0)
 
     u_da = xr.DataArray(u_stack, dims=["lead_time", "cell"])
     v_da = xr.DataArray(v_stack, dims=["lead_time", "cell"])
+    g_da = xr.DataArray(g_stack, dims=["lead_time", "cell"])
 
     return {
         "surface": {
             "u_h": u_da,
-            "v_h": v_da
+            "v_h": v_da,
+            "g_h": g_da
         },
         "altitude_hl": {},
         "altitude_ens": {},
