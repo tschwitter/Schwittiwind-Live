@@ -2,8 +2,8 @@ var map, config, times;
 
 var currentModel = "icon-ch1";
 var currentRunId = null;
-var availableRuns = { "icon-ch1": [], "icon-ch2": [] };
-var selectedRuns = { "icon-ch1": null, "icon-ch2": null };
+var availableRuns = { "icon-ch1": [], "icon-ch2": [], "arome": [] };
+var selectedRuns = { "icon-ch1": null, "icon-ch2": null, "arome": null };
 
 var verticalNavMode = 'member'; // 'member' oder 'run'
 
@@ -180,12 +180,13 @@ function setPopupsDimmed(dimmed) {
 function closeAllPopups() {
     document.getElementById("runDropdown-icon-ch1").style.display = "none";
     document.getElementById("runDropdown-icon-ch2").style.display = "none";
+    var aromeDrop = document.getElementById("runDropdown-arome");
+    if (aromeDrop) aromeDrop.style.display = "none";
     document.getElementById("layer2Dropdown").style.display = "none";
     document.getElementById("settingsPopup").style.display = "none";
     setPopupsDimmed(false);
 }
 
-// ================= HINTERGRUNDKARTE: TRANSPARENZ & STIL =================
 function setBaseMapOpacity(val) {
     var op = val / 100.0;
     baseMapOpacity = op;
@@ -220,7 +221,6 @@ function setBaseMapStyle(style) {
     }
 }
 
-// ================= VERTIKAL-MODUS (MEMBER VS. LÄUFE) =================
 function toggleNavMode() {
     verticalNavMode = (verticalNavMode === 'member') ? 'run' : 'member';
     updateNavModeButton();
@@ -250,7 +250,6 @@ function navRun(dir) {
     }
 }
 
-// ================= MODELL-BUTTON KLICK =================
 async function handleModelButtonClick(modelName) {
     if (currentModel !== modelName) {
         closeAllPopups();
@@ -273,13 +272,13 @@ async function fetchAvailableRuns(modelName) {
 }
 
 function updateModelButtonLabels() {
-    ["icon-ch1", "icon-ch2"].forEach(m => {
+    ["icon-ch1", "icon-ch2", "arome"].forEach(m => {
         var btn = document.getElementById(`btnModel-${m}`);
         if (!btn) return;
         var runs = availableRuns[m] || [];
         var activeRun = (currentModel === m) ? currentRunId : (selectedRuns[m] || (runs[0] ? runs[0].id : null));
         var activeObj = runs.find(r => r.id === activeRun) || runs[0];
-        var modName = (m === "icon-ch1") ? "CH1" : "CH2";
+        var modName = (m === "icon-ch1") ? "CH1" : (m === "icon-ch2" ? "CH2" : "AROME");
         var timeTxt = activeObj ? activeObj.label : "--";
         
         btn.innerHTML = `<span class="model-title">${modName} ▾</span><span class="model-time">${timeTxt}</span>`;
@@ -288,6 +287,7 @@ function updateModelButtonLabels() {
 
 function toggleRunDropdown(modelName) {
     var el = document.getElementById(`runDropdown-${modelName}`);
+    if (!el) return;
     var isAlreadyOpen = (el.style.display === "flex");
     closeAllPopups();
     if (isAlreadyOpen) return;
@@ -337,7 +337,6 @@ async function switchModel(newModel) {
     await loadModelAndRun(currentModel, runId);
 }
 
-// ================= ENSEMBLE-AKKORDEON =================
 function updateEnsembleToggleState() {
     var btn = document.getElementById("btnToggleEnsemble");
     if (!btn || !config) return;
@@ -361,13 +360,14 @@ function toggleEnsembleAccordion(forceOpen) {
     updateEnsembleToggleState();
 }
 
-// ================= KERN-LADEN =================
 async function loadModelAndRun(modelName, runId) {
     var prevValidDate = (times && times[currentStepIdx]) ? parseLocalStr(times[currentStepIdx].local_str) : null;
     var prevMember = currentMemberIdx;
 
     document.getElementById("btnModel-icon-ch1").classList.toggle("active", modelName === "icon-ch1");
     document.getElementById("btnModel-icon-ch2").classList.toggle("active", modelName === "icon-ch2");
+    var btnArome = document.getElementById("btnModel-arome");
+    if (btnArome) btnArome.classList.toggle("active", modelName === "arome");
 
     document.getElementById("loadingIndicator").style.display = "block";
     try {
@@ -416,7 +416,7 @@ async function loadModelAndRun(modelName, runId) {
         currentStepIdx = bestStepIdx;
 
         var vCfg = config.variables_config[layer1Var];
-        var hasEns = vCfg ? vCfg.has_ensemble : true;
+        var hasEns = vCfg ? vCfg.has_ensemble : (config.member_names.length > 1);
         var statOffset = config.member_names.length - 6;
 
         var isOldRun = (runs.length > 0 && currentRunId !== runs[0].id);
@@ -441,7 +441,6 @@ async function loadModelAndRun(modelName, runId) {
     document.getElementById("loadingIndicator").style.display = "none";
 }
 
-// ================= MENÜS =================
 function toggleWetterMenu() {
     isWetterOpen = !isWetterOpen;
     document.getElementById("wetterSubRow").style.display = isWetterOpen ? "flex" : "none";
@@ -633,7 +632,7 @@ function switchLayer1(newVar) {
     updateActiveButtonStates();
 
     var vCfg = config.variables_config[layer1Var];
-    var hasEns = vCfg ? vCfg.has_ensemble : true;
+    var hasEns = vCfg ? vCfg.has_ensemble : (config.member_names.length > 1);
     if (!hasEns) currentMemberIdx = 0;
 
     document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (vCfg ? vCfg.label : layer1Var);
@@ -652,7 +651,6 @@ function updateMemberPanelVisibility(hasEns) {
     if (notice) notice.style.display = hasEns ? "none" : "block";
 }
 
-// ================= INTELLIGENTE VERTIKAL- & HORIZONTAL-NAVIGATION =================
 function navLeft() {
     var curDay = getDayNameForStep(currentStepIdx);
     var steps = dayTimesteps[curDay] || [];
@@ -699,28 +697,16 @@ function navUp() {
 
     var vCfg = config.variables_config[layer1Var];
     if (vCfg && !vCfg.has_ensemble) return;
+    if (config.member_names.length <= 1) return;
 
     var runs = availableRuns[currentModel] || [];
     var isOldRun = (runs.length > 0 && currentRunId !== runs[0].id);
     var statOffset = config.member_names.length - 6;
 
-    if (isOldRun) {
+    if (isOldRun || !isEnsembleOpen) {
         if (currentMemberIdx >= statOffset) {
             if (currentMemberIdx === statOffset) updateForecast(0, currentStepIdx);
             else updateForecast(currentMemberIdx - 1, currentStepIdx);
-        } else {
-            updateForecast(0, currentStepIdx);
-        }
-        return;
-    }
-
-    if (!isEnsembleOpen) {
-        if (currentMemberIdx >= statOffset) {
-            if (currentMemberIdx === statOffset) {
-                updateForecast(0, currentStepIdx);
-            } else {
-                updateForecast(currentMemberIdx - 1, currentStepIdx);
-            }
         } else {
             updateForecast(0, currentStepIdx);
         }
@@ -737,28 +723,18 @@ function navDown() {
 
     var vCfg = config.variables_config[layer1Var];
     if (vCfg && !vCfg.has_ensemble) return;
+    if (config.member_names.length <= 1) return;
 
     var maxIdx = config.member_names.length - 1;
     var statOffset = config.member_names.length - 6;
     var runs = availableRuns[currentModel] || [];
     var isOldRun = (runs.length > 0 && currentRunId !== runs[0].id);
 
-    if (isOldRun) {
+    if (isOldRun || !isEnsembleOpen) {
         if (currentMemberIdx === 0) {
             updateForecast(statOffset, currentStepIdx);
         } else if (currentMemberIdx >= statOffset) {
             updateForecast(Math.min(maxIdx, currentMemberIdx + 1), currentStepIdx);
-        }
-        return;
-    }
-
-    if (!isEnsembleOpen) {
-        if (currentMemberIdx === 0) {
-            updateForecast(statOffset, currentStepIdx);
-        } else if (currentMemberIdx >= statOffset) {
-            updateForecast(Math.min(maxIdx, currentMemberIdx + 1), currentStepIdx);
-        } else {
-            updateForecast(statOffset, currentStepIdx);
         }
     } else {
         updateForecast(Math.min(maxIdx, currentMemberIdx + 1), currentStepIdx);
@@ -820,19 +796,20 @@ function initMemberPanel() {
 
     var runs = availableRuns[currentModel] || [];
     var isOldRun = (runs.length > 0 && currentRunId !== runs[0].id);
+    var hasMultiple = config.member_names.length > 1;
     var statOffset = config.member_names.length - 6;
 
     if (toggleBtn) {
-        if (isOldRun) {
+        if (!hasMultiple) {
+            toggleBtn.style.display = "none";
+        } else if (isOldRun) {
+            toggleBtn.style.display = "flex";
             toggleBtn.style.opacity = "0.35";
             toggleBtn.style.pointerEvents = "none";
             toggleBtn.title = "Einzel-Member nur im neuesten Lauf verfügbar";
-            if (isMobile) {
-                toggleBtn.innerHTML = `<span>Members</span>`;
-            } else {
-                toggleBtn.innerHTML = `<span>Members</span><span style="font-size:8px; opacity:0.7;">(nur neuster Lauf)</span>`;
-            }
+            toggleBtn.innerHTML = `<span>Members</span>`;
         } else {
+            toggleBtn.style.display = "flex";
             toggleBtn.style.opacity = "1.0";
             toggleBtn.style.pointerEvents = "auto";
             toggleBtn.title = "";
@@ -849,17 +826,16 @@ function initMemberPanel() {
             btn.innerText = isMobile ? "HL" : "Hauptlauf";
             btn.onclick = function() { updateForecast(idx, currentStepIdx); };
             hauptContainer.appendChild(btn);
-        } else if (idx >= 1 && idx < statOffset) {
+        } else if (hasMultiple && idx >= 1 && idx < statOffset) {
             btn.innerText = isMobile ? "M" + idx : "Member " + idx;
             if (isOldRun) {
                 btn.style.opacity = "0.25";
                 btn.style.pointerEvents = "none";
-                btn.title = "Nicht verfügbar in archivierten Läufen";
             } else {
                 btn.onclick = function() { updateForecast(idx, currentStepIdx); };
             }
             ensembleContainer.appendChild(btn);
-        } else {
+        } else if (hasMultiple) {
             if (idx === statOffset) btn.innerText = isMobile ? "MD" : name;
             else if (idx === statOffset + 1) btn.innerText = "Min";
             else if (idx === statOffset + 2) btn.innerText = "Max";
@@ -872,8 +848,8 @@ function initMemberPanel() {
     });
 
     var cont = document.getElementById("ensembleContainer");
-    if (cont) cont.style.display = (!isOldRun && isEnsembleOpen) ? "block" : "none";
-    if (toggleBtn) toggleBtn.classList.toggle("open", !isOldRun && isEnsembleOpen);
+    if (cont) cont.style.display = (!isOldRun && isEnsembleOpen && hasMultiple) ? "block" : "none";
+    if (toggleBtn) toggleBtn.classList.toggle("open", !isOldRun && isEnsembleOpen && hasMultiple);
 
     updateEnsembleToggleState();
 }
@@ -942,19 +918,19 @@ function renderSingleLegendCol(varName, isIQR) {
 
 function updateLegend() {
     var box = document.getElementById("legendBox");
+    var hasMultiple = config.member_names.length > 1;
     var iqrIdx = config.member_names.length - 1;
-    var isIQR1 = (currentMemberIdx === iqrIdx);
+    var isIQR1 = (hasMultiple && currentMemberIdx === iqrIdx);
     
     var html = renderSingleLegendCol(layer1Var, isIQR1);
     if (layer2Var && layer2Var !== layer1Var) {
         var vCfg2 = config.variables_config[layer2Var] || {};
-        var isIQR2 = (vCfg2.has_ensemble && currentMemberIdx === iqrIdx);
+        var isIQR2 = (hasMultiple && vCfg2.has_ensemble && currentMemberIdx === iqrIdx);
         html += renderSingleLegendCol(layer2Var, isIQR2);
     }
     box.innerHTML = html;
 }
 
-// ================= BYTE-SHUFFLING LADEN & DEKOMPRIMIEREN =================
 async function fetchAndDecompress(url) {
     const response = await fetch(url);
     if (!response.ok) throw new Error("Fehler beim Laden von: " + url);
@@ -1033,8 +1009,9 @@ function generateContoursClient(gridObj, paletteType) {
 async function ensureDataLoaded(varName, memberIdx, stepIdx) {
     const cacheKey = `${currentModel}_${currentRunId}_${varName}_${memberIdx}_${stepIdx}`;
     const vCfg = config.variables_config[varName] || {};
+    var hasMultiple = config.member_names.length > 1;
     var iqrIdx = config.member_names.length - 1;
-    const isIQR = (vCfg.has_ensemble && memberIdx === iqrIdx);
+    const isIQR = (hasMultiple && vCfg.has_ensemble && memberIdx === iqrIdx);
     const paletteType = isIQR ? ("iqr_" + (vCfg.palette || "wind")) : (vCfg.palette || "wind");
 
     if (!cacheContours[cacheKey]) {
@@ -1101,7 +1078,7 @@ async function init() {
 
         baseReliefLayer = L.tileLayer(swisstopo_relief_url, {
             pane: 'reliefPane',
-            attribution: '&copy; <a href="https://www.swisstopo.admin.ch/" target="_blank">swisstopo</a> | Wetterdaten: &copy; <a href="https://www.meteoschweiz.admin.ch/" target="_blank">MeteoSchweiz</a>',
+            attribution: '&copy; <a href="https://www.swisstopo.admin.ch/" target="_blank">swisstopo</a> | Wetterdaten: &copy; MeteoSchweiz & Météo-France',
             maxZoom: 15, maxNativeZoom: 14
         }).addTo(map);
 
@@ -1202,6 +1179,7 @@ async function init() {
 
         await fetchAvailableRuns("icon-ch1");
         await fetchAvailableRuns("icon-ch2");
+        await fetchAvailableRuns("arome");
 
         await switchModel("icon-ch1");
         updateCityLabels();
@@ -1246,7 +1224,7 @@ async function updateForecast(newMemberIdx, newStepIdx) {
     var refParts = config.ref_time_utc.split(" ");
     var refDateParts = refParts[0].split(".");
     var refTimeHour = refParts[1].split(":")[0];
-    var modShort = (currentModel === "icon-ch2") ? "CH2" : "CH1";
+    var modShort = (currentModel === "icon-ch2") ? "CH2" : (currentModel === "arome" ? "AROME" : "CH1");
     document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z ${modShort}`;
 
     uniqueDays.forEach(d => {
@@ -1254,8 +1232,9 @@ async function updateForecast(newMemberIdx, newStepIdx) {
         if (btn) btn.classList.toggle("active", d === currentDayName);
     });
 
+    var hasMultiple = config.member_names.length > 1;
     var statOffset = config.member_names.length - 6;
-    if (currentMemberIdx >= 1 && currentMemberIdx < statOffset && !isEnsembleOpen) {
+    if (hasMultiple && currentMemberIdx >= 1 && currentMemberIdx < statOffset && !isEnsembleOpen) {
         toggleEnsembleAccordion(true);
     }
 
@@ -1315,7 +1294,6 @@ function renderContours() {
     }
 }
 
-// ================= ULTRA-SCHNELLE WINDPFEILE =================
 function drawVisibleArrows() {
     if (!map || !config) return;
     if (!activeMarkers) { 
@@ -1328,8 +1306,10 @@ function drawVisibleArrows() {
     var arrowMember = 0;
 
     var vCfg1 = config.variables_config[layer1Var];
+    var hasMultiple = config.member_names.length > 1;
     var iqrIdx = config.member_names.length - 1;
-    if (vCfg1 && vCfg1.has_arrows && currentMemberIdx < iqrIdx - 5) {
+    
+    if (vCfg1 && vCfg1.has_arrows && (!hasMultiple || currentMemberIdx < iqrIdx - 5)) {
         arrowVar = layer1Var;
         arrowMember = currentMemberIdx;
     } else if (layer2Var) {
@@ -1383,7 +1363,7 @@ function drawVisibleArrows() {
         for (var c = cMin; c <= cMax; c += step) {
             var i = rowOffset + c;
             var sVal = speeds[i];
-            if (sVal < 25) continue; // Unter 2.5 km/h
+            if (sVal < 25) continue;
 
             var dirVal = dirs_half[i];
             if (dirVal === 255) continue;
@@ -1403,7 +1383,7 @@ function drawVisibleArrows() {
                       '</svg></div>';
 
             var icon = L.divIcon({ html: svg, iconSize: [70, 70], iconAnchor: [35, 35], className: 'wind-arrow-icon' });
-            var modLabel = (currentModel === "icon-ch2") ? "ICON-CH2" : "ICON-CH1";
+            var modLabel = (currentModel === "icon-ch2") ? "ICON-CH2" : (currentModel === "arome" ? "AROME-HD" : "ICON-CH1");
             
             (function(sp, dr, ml, lt, pos, ic) {
                 var marker = L.marker(pos, { icon: ic, pane: 'arrowPane' });
