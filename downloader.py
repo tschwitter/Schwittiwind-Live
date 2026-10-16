@@ -238,8 +238,9 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
 # ================= AROME HD (MÉTÉO-FRANCE) FETCHER =================
 def fetch_arome_single_hour(ref_iso, lead_hour):
     """
-    Lädt das stündliche SP1-GRIB2-Paket von Météo-France herunter
-    und extrahiert u10, v10 sowie die korrekte Vektor-Böenstärke für den Schweizer Ausschnitt.
+    Lädt das stündliche SP1-GRIB2-Paket von Météo-France herunter.
+    Bei Stunde 0 wird für Böen sauber NaN geliefert (weggelassen).
+    Ab Stunde 1 wird der echte Betrag der Böenvektoren berechnet.
     """
     urls = [
         f"https://meteofrance-pnt.s3.rbx.io.cloud.ovh.net/pnt/{ref_iso}/arome/001/SP1/arome__001__SP1__{lead_hour:02d}H__{ref_iso}.grib2",
@@ -283,23 +284,22 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
             elif '10v' in ds:
                 v10_da = ds['10v']
 
-            # 2. Skalare Böe (falls vorhanden)
-            for k in ['fg10', '10fg', 'ff_raf', 'wsgsmax']:
-                if k in ds:
-                    scalar_gust_da = ds[k]
-                    break
+            # 2. Böenkomponenten (nur ab Stunde 1 suchen)
+            if lead_hour > 0:
+                for k in ['fg10', '10fg', 'ff_raf', 'wsgsmax']:
+                    if k in ds:
+                        scalar_gust_da = ds[k]
+                        break
+                for ku in ['efg10', 'u10g', 'u_raf']:
+                    if ku in ds:
+                        u_gust_da = ds[ku]
+                        break
+                for kv in ['nfg10', 'v10g', 'v_raf']:
+                    if kv in ds:
+                        v_gust_da = ds[kv]
+                        break
 
-            # 3. Vektor-Böenkomponenten (Météo-France Standard in SP1)
-            for ku in ['efg10', 'u10g', 'u_raf']:
-                if ku in ds:
-                    u_gust_da = ds[ku]
-                    break
-            for kv in ['nfg10', 'v10g', 'v_raf']:
-                if kv in ds:
-                    v_gust_da = ds[kv]
-                    break
-
-        # Fallback-Suche über Beschreibungsattribute
+        # Fallback-Suche Wind
         if u10_da is None or v10_da is None:
             for ds in datasets:
                 for var_name in ds.data_vars:
@@ -310,7 +310,8 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
                     elif std_n == 'northward_wind':
                         v10_da = v
 
-        if scalar_gust_da is None and (u_gust_da is None or v_gust_da is None):
+        # Fallback-Suche Böen (nur ab Stunde 1)
+        if lead_hour > 0 and scalar_gust_da is None and (u_gust_da is None or v_gust_da is None):
             for ds in datasets:
                 for var_name in ds.data_vars:
                     v = ds[var_name]
@@ -328,7 +329,7 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
         lat_coord = 'latitude' if 'latitude' in u10_da.coords else 'lat'
         lon_coord = 'longitude' if 'longitude' in u10_da.coords else 'lon'
 
-        # Zuschneiden auf Schweizer Bounding Box
+        # Schweizer Bounding Box
         lat_vals = u10_da[lat_coord].values
         if lat_vals[0] > lat_vals[-1]:
             lat_slice = slice(config.LAT_MAX, config.LAT_MIN)
@@ -339,20 +340,18 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
         u_sub = u10_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
         v_sub = v10_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
 
-        # Böenberechnung: Wenn Vektor vorliegt, Pythagoras sqrt(u² + v²)
-        if scalar_gust_da is not None:
+        # Böenberechnung:
+        # Bei Stunde 0 existiert physikalisch noch kein 1-stündiger Rückblick -> NaN (weglassen)
+        if lead_hour == 0:
+            g_sub = np.full_like(u_sub, np.nan)
+        elif scalar_gust_da is not None:
             g_sub = scalar_gust_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
         elif u_gust_da is not None and v_gust_da is not None:
             ug_val = u_gust_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
             vg_val = v_gust_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
             g_sub = np.sqrt(ug_val**2 + vg_val**2)
         else:
-            # Physikalischer Fallback: Bei Stunde 0 entspricht die Böe dem Momentanwind
-            g_sub = np.sqrt(u_sub**2 + v_sub**2)
-
-        # NaNs absichern (Böe ist immer mindestens so stark wie der mittlere Wind)
-        mean_wind = np.sqrt(u_sub**2 + v_sub**2)
-        g_sub = np.where(np.isnan(g_sub), mean_wind, np.maximum(g_sub, mean_wind))
+            g_sub = np.full_like(u_sub, np.nan)
 
         sub_lats = u10_da[lat_coord].sel({lat_coord: lat_slice}).values
         sub_lons = u10_da[lon_coord].sel({lon_coord: lon_slice}).values
