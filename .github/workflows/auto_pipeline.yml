@@ -54,7 +54,7 @@ jobs:
           restore-keys: |
             hist-runs-v30-
 
-      - name: Schnellprüfung & Vorbereitung (CH1 & CH2)
+      - name: Schnellprüfung & Vorbereitung (CH1, CH2 & AROME)
         id: prep
         run: |
           if [ "${{ github.event.inputs.force }}" = "true" ]; then
@@ -121,6 +121,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
+
+      - name: Werkzeuge installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       # 1. Frischer Cache v30 (lädt bestehende Läufe der letzten 24h)
       - name: Historischen Datenbestand wiederherstellen
