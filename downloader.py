@@ -239,7 +239,7 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
 def fetch_arome_single_hour(ref_iso, lead_hour):
     """
     Lädt das stündliche SP1-GRIB2-Paket von Météo-France herunter
-    und extrahiert u10, v10 sowie die Böen für den Schweizer Ausschnitt.
+    und extrahiert u10, v10 sowie die korrekte Vektor-Böenstärke für den Schweizer Ausschnitt.
     """
     urls = [
         f"https://meteofrance-pnt.s3.rbx.io.cloud.ovh.net/pnt/{ref_iso}/arome/001/SP1/arome__001__SP1__{lead_hour:02d}H__{ref_iso}.grib2",
@@ -269,9 +269,11 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
 
     try:
         datasets = cfgrib.open_datasets(tmp_path)
-        u10_da, v10_da, gust_da = None, None, None
+        u10_da, v10_da = None, None
+        u_gust_da, v_gust_da, scalar_gust_da = None, None, None
 
         for ds in datasets:
+            # 1. 10m Windkomponenten
             if 'u10' in ds:
                 u10_da = ds['u10']
             elif '10u' in ds:
@@ -280,37 +282,53 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
                 v10_da = ds['v10']
             elif '10v' in ds:
                 v10_da = ds['10v']
-            for g_key in ['fg10', 'gust', 'fg', 'wsgsmax', '10fg', 'u10g']:
-                if g_key in ds:
-                    gust_da = ds[g_key]
+
+            # 2. Skalare Böe (falls vorhanden)
+            for k in ['fg10', '10fg', 'ff_raf', 'wsgsmax']:
+                if k in ds:
+                    scalar_gust_da = ds[k]
                     break
 
+            # 3. Vektor-Böenkomponenten (Météo-France Standard in SP1)
+            for ku in ['efg10', 'u10g', 'u_raf']:
+                if ku in ds:
+                    u_gust_da = ds[ku]
+                    break
+            for kv in ['nfg10', 'v10g', 'v_raf']:
+                if kv in ds:
+                    v_gust_da = ds[kv]
+                    break
+
+        # Fallback-Suche über Beschreibungsattribute
         if u10_da is None or v10_da is None:
             for ds in datasets:
                 for var_name in ds.data_vars:
                     v = ds[var_name]
-                    if getattr(v, 'standard_name', '') == 'eastward_wind':
+                    std_n = getattr(v, 'standard_name', '').lower()
+                    if std_n == 'eastward_wind':
                         u10_da = v
-                    elif getattr(v, 'standard_name', '') == 'northward_wind':
+                    elif std_n == 'northward_wind':
                         v10_da = v
 
-        if gust_da is None:
+        if scalar_gust_da is None and (u_gust_da is None or v_gust_da is None):
             for ds in datasets:
                 for var_name in ds.data_vars:
                     v = ds[var_name]
                     long_n = getattr(v, 'long_name', '').lower()
                     grib_n = getattr(v, 'GRIB_name', '').lower()
-                    std_n = getattr(v, 'standard_name', '').lower()
-                    if 'gust' in long_n or 'gust' in grib_n or 'rafale' in long_n or 'gust' in std_n:
-                        gust_da = v
-                        break
-                if gust_da is not None:
-                    break
+                    name_comb = f"{long_n} {grib_n}"
+                    if 'gust' in name_comb or 'rafale' in name_comb:
+                        if 'eastward' in name_comb or ' u ' in name_comb or name_comb.startswith('u '):
+                            u_gust_da = v
+                        elif 'northward' in name_comb or ' v ' in name_comb or name_comb.startswith('v '):
+                            v_gust_da = v
+                        elif 'maximum' in name_comb or 'speed' in name_comb:
+                            scalar_gust_da = v
 
         lat_coord = 'latitude' if 'latitude' in u10_da.coords else 'lat'
         lon_coord = 'longitude' if 'longitude' in u10_da.coords else 'lon'
 
-        # Zuschneiden auf Schweiz
+        # Zuschneiden auf Schweizer Bounding Box
         lat_vals = u10_da[lat_coord].values
         if lat_vals[0] > lat_vals[-1]:
             lat_slice = slice(config.LAT_MAX, config.LAT_MIN)
@@ -321,11 +339,20 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
         u_sub = u10_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
         v_sub = v10_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
 
-        if gust_da is not None:
-            g_sub = gust_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
-            g_sub = np.where(np.isnan(g_sub), np.sqrt(u_sub**2 + v_sub**2), g_sub)
+        # Böenberechnung: Wenn Vektor vorliegt, Pythagoras sqrt(u² + v²)
+        if scalar_gust_da is not None:
+            g_sub = scalar_gust_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
+        elif u_gust_da is not None and v_gust_da is not None:
+            ug_val = u_gust_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
+            vg_val = v_gust_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
+            g_sub = np.sqrt(ug_val**2 + vg_val**2)
         else:
+            # Physikalischer Fallback: Bei Stunde 0 entspricht die Böe dem Momentanwind
             g_sub = np.sqrt(u_sub**2 + v_sub**2)
+
+        # NaNs absichern (Böe ist immer mindestens so stark wie der mittlere Wind)
+        mean_wind = np.sqrt(u_sub**2 + v_sub**2)
+        g_sub = np.where(np.isnan(g_sub), mean_wind, np.maximum(g_sub, mean_wind))
 
         sub_lats = u10_da[lat_coord].sel({lat_coord: lat_slice}).values
         sub_lons = u10_da[lon_coord].sel({lon_coord: lon_slice}).values
@@ -364,7 +391,7 @@ def fetch_arome_hd_data(start_step, end_step, ref_time_str):
             v_list.append(np.full(dummy_len, np.nan, dtype=np.float32))
             g_list.append(np.full(dummy_len, np.nan, dtype=np.float32))
 
-    u_stack = np.stack(u_list, axis=0)  # Shape: (lead_time, cell)
+    u_stack = np.stack(u_list, axis=0)
     v_stack = np.stack(v_list, axis=0)
     g_stack = np.stack(g_list, axis=0)
 
