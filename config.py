@@ -37,7 +37,7 @@ MODELS_CONFIG = {
         "hours": 33,
         "max_members": 11,
         "max_runs": 8,
-        "active_variables": ["wind"],
+        "active_variables": [],
         "ensemble_variables": [],
         "max_chunks": 4
     },
@@ -50,7 +50,7 @@ MODELS_CONFIG = {
         "hours": 120,
         "max_members": 21,
         "max_runs": 4,
-        "active_variables": ["wind"],
+        "active_variables": [],
         "ensemble_variables": [],
         "max_chunks": 4
     },
