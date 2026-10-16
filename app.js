@@ -1349,7 +1349,6 @@ function drawVisibleArrows() {
 
     var vCfg1 = config.variables_config[layer1Var];
     var numMembers = config.member_names ? config.member_names.length : 1;
-    // Pfeile nur ausblenden, wenn es sich um einen der 6 Statistik-Layer handelt:
     var isStatMember = (numMembers > 6 && currentMemberIdx >= numMembers - 6);
 
     if (vCfg1 && vCfg1.has_arrows && !isStatMember) {
@@ -1373,12 +1372,15 @@ function drawVisibleArrows() {
     var bounds = map.getBounds();
     var zoom = map.getZoom();
 
-    // Schrittweiten:
-    // Für ECMWF (9 km Gitter, nx <= 120) ist das Netz bereits weitmaschig -> step=1 oder 2
-    // Für ICON (1-2 km Gitter) die gewohnten dichten Abstufungen
+    // Schrittweiten-Steuerung:
+    // ECMWF (nx <= 60): Natives 9-km-Gitter harmonisch staffeln
+    // ICON (1-2 km Gitter): Wie gewohnt dicht
     var step = 16;
-    if (config.nx <= 120) {
-        step = (zoom <= 8) ? 2 : 1;
+    if (config.nx <= 60) {
+        if (zoom <= 7) step = 4;        // Weit raus: ca. alle 36 km ein Pfeil
+        else if (zoom === 8) step = 3;  // ca. alle 27 km ein Pfeil
+        else if (zoom === 9) step = 2;  // ca. alle 18 km ein Pfeil
+        else step = 1;                  // ab Zoom 10: jeder Punkt des echten 9-km-Gitters
     } else {
         if (zoom >= 9 && zoom <= 10) step = 7;
         else if (zoom === 11) step = 4;
