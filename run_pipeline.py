@@ -39,18 +39,30 @@ def check_model_new_data(model_name):
 
     if model_name == "ecmwf":
         try:
-            from ecmwf.opendata import Client
-            client = Client(source="azure", model="ifs")
-            latest_dt = client.latest()
-            run_id = latest_dt.strftime("%Y%m%d_%H")
-            latest_ref_str = latest_dt.strftime("%d.%m.%Y %H:00 UTC")
-            iso_str = latest_dt.strftime("%Y-%m-%dT%H:00:00Z")
+            # Schneller Check des neuesten verfügbaren 9-km Laufs über Open-Meteo
+            req_url = "https://api.open-meteo.com/v1/forecast?latitude=46.8&longitude=8.2&hourly=wind_speed_10m&models=ecmwf_ifs&forecast_days=1"
+            req = urllib.request.Request(req_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=10) as response:
+                meta = json.loads(response.read().decode())
+            
+            # Open-Meteo liefert aktuelle Initialisierungszeiten alle 6h (00, 06, 12, 18)
+            now_utc = datetime.now(ZoneInfo("UTC"))
+            # ECMWF-Läufe sind ca. 4-5 Stunden nach Termin fertig
+            run_hour = (now_utc.hour // 6) * 6
+            run_dt = now_utc.replace(hour=run_hour, minute=0, second=0, microsecond=0)
+            if (now_utc - run_dt).total_seconds() < 14400: # Wenn weniger als 4h her, vorheriger Lauf
+                run_dt -= timedelta(hours=6)
+
+            run_id = run_dt.strftime("%Y%m%d_%H")
+            latest_ref_str = run_dt.strftime("%d.%m.%Y %H:00 UTC")
+            iso_str = run_dt.strftime("%Y-%m-%dT%H:00:00Z")
+            
             is_new = (latest_known_id != run_id)
             if is_new:
-                print(f"✓ [ecmwf] Neuer ECMWF Lauf {run_id} ist verfügbar!", flush=True)
+                print(f"✓ [ecmwf] Neuer ECMWF 9km Lauf {run_id} bereit!", flush=True)
             else:
                 print(f"-> [ecmwf] Lauf {run_id} ist bereits aktuell.", flush=True)
-            return is_new, latest_ref_str, iso_str, run_id, latest_dt
+            return is_new, latest_ref_str, iso_str, run_id, run_dt
         except Exception as e:
             print(f"-> Hinweis: [ecmwf] Konnte Status nicht abrufen ({e}).", flush=True)
             return False, None, "latest", None, None
