@@ -35,8 +35,9 @@ MODELS_CONFIG = {
         "nx": 400,
         "ny": 240,
         "hours": 33,
+        "step_interval": 1,
         "max_members": 11,
-        "max_runs": 8,  # Volle 24 Stunden (8 Läufe à 3 Stunden)
+        "max_runs": 8,
         "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"],
         "ensemble_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"],
         "max_chunks": 4
@@ -48,11 +49,24 @@ MODELS_CONFIG = {
         "nx": 200,
         "ny": 120,
         "hours": 120,
+        "step_interval": 1,
         "max_members": 21,
-        "max_runs": 4,  # Volle 24 Stunden (4 Läufe à 6 Stunden)
+        "max_runs": 4,
         "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"],
         "ensemble_variables": ["wind", "gust", "sun", "dbz"],
         "max_chunks": 4
+    },
+    "ecmwf": {
+        "name": "ECMWF IFS (9km)",
+        "nx": 100,
+        "ny": 60,
+        "hours": 90,
+        "step_interval": 3,
+        "max_members": 1,   # HRES Hauptlauf (9km)
+        "max_runs": 4,      # 4 Läufe pro Tag (00Z, 06Z, 12Z, 18Z)
+        "active_variables": ["wind"],
+        "ensemble_variables": [],
+        "max_chunks": 3
     }
 }
 
