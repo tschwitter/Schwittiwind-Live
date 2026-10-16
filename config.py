@@ -38,10 +38,10 @@ MODELS_CONFIG = {
         "step_interval": 1,
         "max_members": 11,
         "max_runs": 8,
-        "active_variables": [],
-        #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
-        "ensemble_variables": [],
-        #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"
+        "active_variables": ["wind"],
+        #, "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
+        "ensemble_variables": ["wind"],
+        #, "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"
         "max_chunks": 4
     },
     "icon-ch2": {
@@ -54,16 +54,16 @@ MODELS_CONFIG = {
         "step_interval": 1,
         "max_members": 21,
         "max_runs": 4,
-        "active_variables": [],
-        #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"
-        "ensemble_variables": [],
-        #"wind", "gust", "sun", "dbz"
+        "active_variables": ["wind"],
+        #, "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"
+        "ensemble_variables": ["wind"],
+        #, "gust", "sun", "dbz"
         "max_chunks": 4
     },
     "ecmwf": {
         "name": "ECMWF IFS (9km)",
-        "nx": 100,
-        "ny": 60,
+        "nx": 42,           # Natives 9-km-Gitter Ost-West über der Schweiz
+        "ny": 28,           # Natives 9-km-Gitter Nord-Süd über der Schweiz
         "hours": 90,
         "step_interval": 3,
         "max_members": 1,   # HRES Hauptlauf (9km)
