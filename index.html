@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ICON Wetter & Ensembles (CH1 & CH2)</title>
+    <title>Wetter & Wind (ICON CH1, CH2 & AROME HD)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=27" />
+    <link rel="stylesheet" href="style.css?v=28" />
 </head>
 <body>
 
     <!-- Die Karte -->
     <div id="map"></div>
 
-    <!-- EINSTELLUNGS-BUTTON OBEN LINKS (ALLEINE IN DER ECKE) -->
+    <!-- EINSTELLUNGS-BUTTON OBEN LINKS -->
     <div class="custom-settings-control">
         <a href="#" class="settings-control-btn" id="settingsBtn" onclick="toggleSettings(event)" title="Karten- & Ebenen-Optionen">⚙</a>
     </div>
 
-    <!-- OBERES KONTROLL-PANEL (MITTE) -->
+    <!-- OBERES KONTROLL-PANEL -->
     <div class="top-control-panel">
         <!-- ZEILE 1: HAUPTPARAMETER -->
         <div class="top-row">
@@ -33,13 +33,13 @@
         <!-- ZEILE 3: HÖHENWIND-SUBLEISTE -->
         <div class="top-row sub-nav-row" id="hoehenSubRow" style="display: none;"></div>
 
-        <!-- 2. EBENE: EIN EINZIGES FELD (DROP-NOTCH) -->
+        <!-- 2. EBENE: DROP-NOTCH -->
         <div class="layer2-anchor-wrap">
             <button class="layer2-btn" id="layer2Btn" onclick="toggleLayer2Dropdown()">+ 2. Ebene</button>
         </div>
     </div>
 
-    <!-- MODELL-AUSWAHL RECHTS ÜBER DEM LÄUFE-PANEL -->
+    <!-- MODELL-AUSWAHL RECHTS ÜBER DEM PANEL (CH1, CH2, AROME) -->
     <div class="model-select-header">
         <div class="model-toggle-group">
             <button class="model-btn active" id="btnModel-icon-ch1" onclick="handleModelButtonClick('icon-ch1')">
@@ -50,19 +50,24 @@
                 <span class="model-title">CH2 ▾</span>
                 <span class="model-time">--</span>
             </button>
+            <button class="model-btn" id="btnModel-arome" onclick="handleModelButtonClick('arome')">
+                <span class="model-title">AROME ▾</span>
+                <span class="model-time">--</span>
+            </button>
         </div>
     </div>
 
     <!-- SCHWEBENDE MENÜS -->
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-icon-ch1"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-icon-ch2"></div>
+    <div class="floating-popup runs-dropdown-popup" id="runDropdown-arome"></div>
     <div class="floating-popup layer2-dropdown-popup" id="layer2Dropdown"></div>
 
     <!-- EINSTELLUNGEN-POPUP -->
     <div class="floating-popup settings-popup" id="settingsPopup">
         <div class="settings-title">⚙ Karten- & Ebenen-Optionen</div>
         
-        <!-- HINTERGRUNDKARTE: STIL & TRANSPARENZ -->
+        <!-- HINTERGRUNDKARTE -->
         <div class="settings-section">
             <div class="settings-section-title">Hintergrundkarte</div>
             <div class="settings-row">
@@ -159,6 +164,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=27"></script>
+    <script src="app.js?v=28"></script>
 </body>
 </html>
