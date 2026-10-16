@@ -232,79 +232,85 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
             results_by_alt[alt] = slices[0].expand_dims("lead_time")
     return results_by_alt
 
-# ================= ECMWF IFS OPEN DATA DOWNLOADER =================
+# ================= ECHTER ECMWF IFS 9-KM DOWNLOADER =================
 def fetch_ecmwf_wind(start_step, end_step, ref_time_str):
-    from ecmwf.opendata import Client
+    import requests
+    import json
     from datetime import datetime
-    import tempfile
 
     step_interval = config.MODELS_CONFIG["ecmwf"].get("step_interval", 3)
-    forecast_steps = [s * step_interval for s in range(start_step, end_step + 1)]
+    forecast_hours = [s * step_interval for s in range(start_step, end_step + 1)]
 
-    print(f"-> Lade ECMWF IFS 10m Wind für Schritte {forecast_steps}h...", flush=True)
+    print(f"-> Lade natives ECMWF IFS (9 km) über Open-Meteo API ({len(forecast_hours)} Schritte)...", flush=True)
 
-    client = Client(source="azure", model="ifs") # Schneller Cloud-Mirror
-    dt = datetime.fromisoformat(ref_time_str.replace("Z", ""))
-    run_date = dt.strftime("%Y%m%d")
-    run_time = dt.hour
+    # Wir erzeugen ein 9-km Gitter über der Schweiz für die Koordinaten-Abfrage
+    # ca. 0.08° bis 0.1° entspricht exakt 9 km
+    lats = np.linspace(config.LAT_MIN, config.LAT_MAX, config.MODELS_CONFIG["ecmwf"]["ny"])
+    lons = np.linspace(config.LON_MIN, config.LON_MAX, config.MODELS_CONFIG["ecmwf"]["nx"])
+    grid_lon, grid_lat = np.meshgrid(lons, lats)
+    flat_lats = grid_lat.ravel()
+    flat_lons = grid_lon.ravel()
 
-    u_slices = []
-    v_slices = []
-    ref_lons = None
-    ref_lats = None
+    # BATCH-ANFRAGE: Open-Meteo akzeptiert bis zu 1000 Koordinaten pro Request
+    batch_size = 500
+    all_u_points = []
+    all_v_points = []
 
-    for step_h in forecast_steps:
-        with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp:
-            tmp_path = tmp.name
+    for b in range(0, len(flat_lats), batch_size):
+        b_lats = flat_lats[b:b+batch_size]
+        b_lons = flat_lons[b:b+batch_size]
 
-        try:
-            client.retrieve(
-                date=run_date,
-                time=run_time,
-                step=step_h,
-                stream="oper",
-                type="fc",
-                param=["10u", "10v"],
-                target=tmp_path
-            )
+        lat_str = ",".join([f"{lat:.4f}" for lat in b_lats])
+        lon_str = ",".join([f"{lon:.4f}" for lon in b_lons])
 
-            ds = xr.open_dataset(tmp_path, engine="cfgrib")
-            
-            # Schweizer Bounding Box sauber herausfiltern
-            sub = ds.where(
-                (ds.latitude >= config.LAT_MIN) & (ds.latitude <= config.LAT_MAX) &
-                (ds.longitude >= config.LON_MIN) & (ds.longitude <= config.LON_MAX),
-                drop=True
-            )
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            "latitude": lat_str,
+            "longitude": lon_str,
+            "hourly": "wind_speed_10m,wind_direction_10m",
+            "models": "ecmwf_ifs", # NATIVES 9-KM-MODELL!
+            "forecast_days": 4
+        }
 
-            if ref_lons is None:
-                mesh_lon, mesh_lat = np.meshgrid(sub.longitude.values, sub.latitude.values)
-                ref_lons = mesh_lon.ravel()
-                ref_lats = mesh_lat.ravel()
+        for attempt in range(1, 4):
+            try:
+                res = requests.get(url, params=params, timeout=30)
+                if res.status_code == 200:
+                    data_list = res.json()
+                    if not isinstance(data_list, list):
+                        data_list = [data_list]
 
-            u_flat = sub['u10'].values.ravel()
-            v_flat = sub['v10'].values.ravel()
+                    for loc in data_list:
+                        spd = np.array(loc["hourly"]["wind_speed_10m"], dtype=np.float32) / 3.6 # in m/s
+                        deg = np.array(loc["hourly"]["wind_direction_10m"], dtype=np.float32)
+                        rad = np.deg2rad(deg)
+                        # Umrechnung in meteorologische U- und V-Komponenten
+                        u = -spd * np.sin(rad)
+                        v = -spd * np.cos(rad)
 
-            u_slices.append(u_flat)
-            v_slices.append(v_flat)
-            ds.close()
-        finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+                        # Ausfiltern der gewünschten Stunden
+                        all_u_points.append(u[forecast_hours])
+                        all_v_points.append(v[forecast_hours])
+                    break
+            except Exception as e:
+                if attempt == 3:
+                    raise RuntimeError(f"Konnte ECMWF 9km nicht laden: {e}")
+                time.sleep(2 * attempt)
 
-    u_all = np.array(u_slices) # Shape: (steps, cells)
-    v_all = np.array(v_slices)
+    # Shape: (lead_time, points)
+    u_matrix = np.array(all_u_points).T
+    v_matrix = np.array(all_v_points).T
 
-    da_u = xr.DataArray(u_all, dims=["lead_time", "cell"])
-    da_v = xr.DataArray(v_all, dims=["lead_time", "cell"])
+    da_u = xr.DataArray(u_matrix, dims=["lead_time", "cell"])
+    da_v = xr.DataArray(v_matrix, dims=["lead_time", "cell"])
 
-    print(f"✓ ECMWF IFS 10m Wind ({len(forecast_steps)} Schritte) bereitgestellt!", flush=True)
+    print(f"✓ ECMWF IFS 9km ({u_matrix.shape[0]} Schritte, {u_matrix.shape[1]} Punkte) erfolgreich geladen!", flush=True)
     return {
         "surface": {"u_h": da_u, "v_h": da_v},
         "altitude_hl": {},
         "altitude_ens": {},
-        "ref_lon": ref_lons,
-        "ref_lat": ref_lats
+        "ref_lon": flat_lons,
+        "ref_lat": flat_lats
     }
 
 def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
@@ -318,7 +324,6 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
 
     lead_times = [timedelta(hours=h) for h in range(start_step, end_step + 1)]
 
-    # Pilot-Download für Koordinaten
     print(f"1. Pilot-Download [{model_name}]: Hole Referenzgitter aus Stunde 1...", flush=True)
     req_pilot = ogd_api.Request(
         collection=collection,
@@ -394,7 +399,6 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
             key, ds = f.result()
             surface_results[key] = ds
 
-    # 3D-Höhenwinde
     hl_altitudes = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and k in active_vars]
     ens_altitudes = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and k in ens_vars]
     all_target_alts = sorted(list(set(hl_altitudes + ens_altitudes)))
