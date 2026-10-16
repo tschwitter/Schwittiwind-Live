@@ -5,21 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Wetter & Wind (ICON CH1, CH2 & AROME HD)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=29" />
+    <link rel="stylesheet" href="style.css?v=30" />
 </head>
 <body>
 
-    <!-- Die Karte -->
-    <div id="map"></div>
+    <!-- KARTEN CONTAINER (EINZEL- ODER SPLIT-ANSICHT) -->
+    <div id="mapsWrapper" class="single-view">
+        <div id="mapLeft" class="map-pane-container"></div>
+        <div id="splitDivider"></div>
+        <div id="mapRight" class="map-pane-container"></div>
+    </div>
 
-    <!-- EINSTELLUNGS-BUTTON OBEN LINKS -->
+    <!-- EINSTELLUNGEN & SPLIT-BUTTON OBEN LINKS -->
     <div class="custom-settings-control">
         <a href="#" class="settings-control-btn" id="settingsBtn" onclick="toggleSettings(event)" title="Karten- & Ebenen-Optionen">⚙</a>
+        <a href="#" class="settings-control-btn split-toggle-btn" id="splitBtn" onclick="toggleSplitScreen(event)" title="Splitscreen Vergleich an/aus">◫</a>
     </div>
 
     <!-- OBERES KONTROLL-PANEL -->
     <div class="top-control-panel">
-        <!-- ZEILE 1: HAUPTPARAMETER -->
         <div class="top-row">
             <button class="nav-toggle-btn" id="btnToggleWetter" onclick="toggleWetterMenu()">Wetter ▾</button>
             <button class="var-btn" id="varBtn-wind" onclick="switchLayer1('wind')">10m Wind</button>
@@ -27,35 +31,29 @@
             <button class="nav-toggle-btn" id="btnToggleHoehen" onclick="toggleHoehenMenu()">Höhenwind ▾</button>
         </div>
 
-        <!-- ZEILE 2: WETTER-SUBLEISTE -->
         <div class="top-row sub-nav-row" id="wetterSubRow" style="display: none;"></div>
-
-        <!-- ZEILE 3: HÖHENWIND-SUBLEISTE -->
         <div class="top-row sub-nav-row" id="hoehenSubRow" style="display: none;"></div>
 
-        <!-- 2. EBENE: DROP-NOTCH -->
         <div class="layer2-anchor-wrap">
             <button class="layer2-btn" id="layer2Btn" onclick="toggleLayer2Dropdown()">+ 2. Ebene</button>
         </div>
     </div>
 
-    <!-- MODELL-AUSWAHL RECHTS ÜBER DEM PANEL (2 ZEILEN) -->
-    <div class="model-select-header">
+    <!-- MODELL-AUSWAHL LINKS (WIRD IM SPLITSCREEN AKTIV) -->
+    <div class="model-select-header model-select-left" id="modelSelectLeft">
         <div class="model-toggle-column">
-            <!-- ZEILE 1: AROME HD -->
             <div class="model-toggle-row">
-                <button class="model-btn" id="btnModel-arome" onclick="handleModelButtonClick('arome')">
+                <button class="model-btn" id="btnModel-left-arome" onclick="handleModelButtonClick('arome', 'left')">
                     <span class="model-title">AROME HD ▾</span>
                     <span class="model-time">--</span>
                 </button>
             </div>
-            <!-- ZEILE 2: ICON CH1 & CH2 -->
             <div class="model-toggle-row">
-                <button class="model-btn active" id="btnModel-icon-ch1" onclick="handleModelButtonClick('icon-ch1')">
+                <button class="model-btn active" id="btnModel-left-icon-ch1" onclick="handleModelButtonClick('icon-ch1', 'left')">
                     <span class="model-title">CH1 ▾</span>
                     <span class="model-time">--</span>
                 </button>
-                <button class="model-btn" id="btnModel-icon-ch2" onclick="handleModelButtonClick('icon-ch2')">
+                <button class="model-btn" id="btnModel-left-icon-ch2" onclick="handleModelButtonClick('icon-ch2', 'left')">
                     <span class="model-title">CH2 ▾</span>
                     <span class="model-time">--</span>
                 </button>
@@ -63,17 +61,43 @@
         </div>
     </div>
 
-    <!-- SCHWEBENDE MENÜS -->
-    <div class="floating-popup runs-dropdown-popup" id="runDropdown-icon-ch1"></div>
-    <div class="floating-popup runs-dropdown-popup" id="runDropdown-icon-ch2"></div>
-    <div class="floating-popup runs-dropdown-popup" id="runDropdown-arome"></div>
+    <!-- MODELL-AUSWAHL RECHTS (STANDARD-AUSWAHL IM SINGLE-MODUS & RECHTE SEITE IM SPLIT) -->
+    <div class="model-select-header model-select-right" id="modelSelectRight">
+        <div class="model-toggle-column">
+            <div class="model-toggle-row">
+                <button class="model-btn" id="btnModel-right-arome" onclick="handleModelButtonClick('arome', 'right')">
+                    <span class="model-title">AROME HD ▾</span>
+                    <span class="model-time">--</span>
+                </button>
+            </div>
+            <div class="model-toggle-row">
+                <button class="model-btn active" id="btnModel-right-icon-ch1" onclick="handleModelButtonClick('icon-ch1', 'right')">
+                    <span class="model-title">CH1 ▾</span>
+                    <span class="model-time">--</span>
+                </button>
+                <button class="model-btn" id="btnModel-right-icon-ch2" onclick="handleModelButtonClick('icon-ch2', 'right')">
+                    <span class="model-title">CH2 ▾</span>
+                    <span class="model-time">--</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCHWEBENDE RUN-DROPDOWNS -->
+    <div class="floating-popup runs-dropdown-popup" id="runDropdown-left-icon-ch1"></div>
+    <div class="floating-popup runs-dropdown-popup" id="runDropdown-left-icon-ch2"></div>
+    <div class="floating-popup runs-dropdown-popup" id="runDropdown-left-arome"></div>
+
+    <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-icon-ch1"></div>
+    <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-icon-ch2"></div>
+    <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-arome"></div>
+
     <div class="floating-popup layer2-dropdown-popup" id="layer2Dropdown"></div>
 
     <!-- EINSTELLUNGEN-POPUP -->
     <div class="floating-popup settings-popup" id="settingsPopup">
         <div class="settings-title">⚙ Karten- & Ebenen-Optionen</div>
         
-        <!-- HINTERGRUNDKARTE -->
         <div class="settings-section">
             <div class="settings-section-title">Hintergrundkarte</div>
             <div class="settings-row">
@@ -90,7 +114,6 @@
             </div>
         </div>
 
-        <!-- 1. EBENE -->
         <div class="settings-section">
             <div class="settings-section-title" id="cfgTitleL1">1. Ebene: Basis</div>
             <div class="settings-row">
@@ -107,7 +130,6 @@
             </div>
         </div>
 
-        <!-- 2. EBENE -->
         <div class="settings-section" id="cfgSectionL2" style="opacity: 0.5;">
             <div class="settings-section-title" id="cfgTitleL2">2. Ebene: Keine</div>
             <div class="settings-row">
@@ -170,6 +192,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=29"></script>
+    <script src="app.js?v=30"></script>
 </body>
 </html>
