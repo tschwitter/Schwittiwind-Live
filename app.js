@@ -2,8 +2,8 @@ var map, config, times;
 
 var currentModel = "icon-ch1";
 var currentRunId = null;
-var availableRuns = { "icon-ch1": [], "icon-ch2": [] };
-var selectedRuns = { "icon-ch1": null, "icon-ch2": null };
+var availableRuns = { "icon-ch1": [], "icon-ch2": [], "ecmwf": [] };
+var selectedRuns = { "icon-ch1": null, "icon-ch2": null, "ecmwf": null };
 
 var verticalNavMode = 'member'; // 'member' oder 'run'
 
@@ -180,6 +180,9 @@ function setPopupsDimmed(dimmed) {
 function closeAllPopups() {
     document.getElementById("runDropdown-icon-ch1").style.display = "none";
     document.getElementById("runDropdown-icon-ch2").style.display = "none";
+    if (document.getElementById("runDropdown-ecmwf")) {
+        document.getElementById("runDropdown-ecmwf").style.display = "none";
+    }
     document.getElementById("layer2Dropdown").style.display = "none";
     document.getElementById("settingsPopup").style.display = "none";
     setPopupsDimmed(false);
@@ -273,13 +276,13 @@ async function fetchAvailableRuns(modelName) {
 }
 
 function updateModelButtonLabels() {
-    ["icon-ch1", "icon-ch2"].forEach(m => {
+    ["icon-ch1", "icon-ch2", "ecmwf"].forEach(m => {
         var btn = document.getElementById(`btnModel-${m}`);
         if (!btn) return;
         var runs = availableRuns[m] || [];
         var activeRun = (currentModel === m) ? currentRunId : (selectedRuns[m] || (runs[0] ? runs[0].id : null));
         var activeObj = runs.find(r => r.id === activeRun) || runs[0];
-        var modName = (m === "icon-ch1") ? "CH1" : "CH2";
+        var modName = (m === "icon-ch1") ? "CH1" : ((m === "icon-ch2") ? "CH2" : "ECMWF");
         var timeTxt = activeObj ? activeObj.label : "--";
         
         btn.innerHTML = `<span class="model-title">${modName} ▾</span><span class="model-time">${timeTxt}</span>`;
@@ -368,6 +371,9 @@ async function loadModelAndRun(modelName, runId) {
 
     document.getElementById("btnModel-icon-ch1").classList.toggle("active", modelName === "icon-ch1");
     document.getElementById("btnModel-icon-ch2").classList.toggle("active", modelName === "icon-ch2");
+    if (document.getElementById("btnModel-ecmwf")) {
+        document.getElementById("btnModel-ecmwf").classList.toggle("active", modelName === "ecmwf");
+    }
 
     document.getElementById("loadingIndicator").style.display = "block";
     try {
@@ -827,6 +833,7 @@ function initMemberPanel() {
             toggleBtn.style.opacity = "0.35";
             toggleBtn.style.pointerEvents = "none";
             toggleBtn.title = "Einzel-Member nur im neuesten Lauf verfügbar";
+            // Auf Smartphones nur schlank "Members" anzeigen ohne überlangen Textumbruch
             if (isMobile) {
                 toggleBtn.innerHTML = `<span>Members</span>`;
             } else {
@@ -1202,6 +1209,7 @@ async function init() {
 
         await fetchAvailableRuns("icon-ch1");
         await fetchAvailableRuns("icon-ch2");
+        await fetchAvailableRuns("ecmwf");
 
         await switchModel("icon-ch1");
         updateCityLabels();
@@ -1246,7 +1254,7 @@ async function updateForecast(newMemberIdx, newStepIdx) {
     var refParts = config.ref_time_utc.split(" ");
     var refDateParts = refParts[0].split(".");
     var refTimeHour = refParts[1].split(":")[0];
-    var modShort = (currentModel === "icon-ch2") ? "CH2" : "CH1";
+    var modShort = (currentModel === "icon-ch2") ? "CH2" : ((currentModel === "ecmwf") ? "ECMWF" : "CH1");
     document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z ${modShort}`;
 
     uniqueDays.forEach(d => {
@@ -1403,7 +1411,7 @@ function drawVisibleArrows() {
                       '</svg></div>';
 
             var icon = L.divIcon({ html: svg, iconSize: [70, 70], iconAnchor: [35, 35], className: 'wind-arrow-icon' });
-            var modLabel = (currentModel === "icon-ch2") ? "ICON-CH2" : "ICON-CH1";
+            var modLabel = (currentModel === "icon-ch2") ? "ICON-CH2" : ((currentModel === "ecmwf") ? "ECMWF IFS" : "ICON-CH1");
             
             (function(sp, dr, ml, lt, pos, ic) {
                 var marker = L.marker(pos, { icon: ic, pane: 'arrowPane' });
