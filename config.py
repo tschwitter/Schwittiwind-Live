@@ -70,7 +70,7 @@ MODELS_CONFIG = {
         "max_runs": 4,      # 4 Läufe pro Tag
         "active_variables": ["wind"],
         "ensemble_variables": [],
-        "max_chunks": 4
+        "max_chunks": 1
     }
 }
 
