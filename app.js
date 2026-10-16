@@ -1,18 +1,47 @@
-var map, config, times;
+var mapLeft, mapRight;
+var isSplitActive = false;
+var isSyncingMaps = false;
 
-var currentModel = "icon-ch1";
-var currentRunId = null;
+var modelsState = {
+    left: {
+        currentModel: "icon-ch1",
+        currentRunId: null,
+        currentMemberIdx: 0,
+        config: null,
+        times: null,
+        contourLayer1: null,
+        contourLayer2: null,
+        activeMarkers: null,
+        canvasRenderer1: null,
+        canvasRenderer2: null
+    },
+    right: {
+        currentModel: "arome",
+        currentRunId: null,
+        currentMemberIdx: 0,
+        config: null,
+        times: null,
+        contourLayer1: null,
+        contourLayer2: null,
+        activeMarkers: null,
+        canvasRenderer1: null,
+        canvasRenderer2: null
+    }
+};
+
 var availableRuns = { "icon-ch1": [], "icon-ch2": [], "arome": [] };
-var selectedRuns = { "icon-ch1": null, "icon-ch2": null, "arome": null };
+var selectedRuns = {
+    left: { "icon-ch1": null, "icon-ch2": null, "arome": null },
+    right: { "icon-ch1": null, "icon-ch2": null, "arome": null }
+};
 
-var verticalNavMode = 'member'; // 'member' oder 'run'
+var verticalNavMode = 'member';
 
 var baseMapOpacity = 0.80;
 var baseMapStyle = 'relief';
 
-var layer1Var = null;
+var layer1Var = "wind";
 var layer2Var = null;
-
 var layer1Mode = 'fill';
 var layer2Mode = 'fill';
 var layer1Opacity = 0.60;
@@ -20,25 +49,14 @@ var layer2Opacity = 0.60;
 
 var isWetterOpen = false;
 var isHoehenOpen = false;
-
 var isEnsembleOpen = (localStorage.getItem("icon_ensemble_open") === "true");
 
-var currentMemberIdx = 0;
 var currentStepIdx = 0;
 
-var baseReliefLayer = null;
-var lakesLayer = null;
-var riversLayer = null;
-var nationalBoundaryLayer = null;
-var cantonalBoundaryLayer = null;
-
-var contourLayer1 = null;
-var contourLayer2 = null;
-var canvasRenderer1 = null;
-var canvasRenderer2 = null;
-var canvasRendererBoundary = null;
-var activeMarkers = null;
-var cityLayerGroup = null;
+var baseReliefLayerLeft, baseReliefLayerRight;
+var riversLayerLeft, riversLayerRight;
+var cantonalBoundaryLayerLeft, cantonalBoundaryLayerRight;
+var cityLayerGroupLeft, cityLayerGroupRight;
 
 var cacheGrid = {};
 var cacheContours = {};
@@ -50,7 +68,6 @@ var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 var mapUpdateTimer = null;
 var mapSafetyTimer = null;
 
-// ================= ERWEITERTES ORTSNETZ DER SCHWEIZ =================
 var CITIES = [
     { name: "Zürich", lat: 47.3769, lon: 8.5417, minZoom: 7 },
     { name: "Bern", lat: 46.9480, lon: 7.4474, minZoom: 7 },
@@ -103,11 +120,38 @@ var CITIES = [
     { name: "Glarus", lat: 47.0406, lon: 9.0678, minZoom: 10 }
 ];
 
-function setOverlaysVisible(visible) {
-    if (!map) return;
-    var op = visible ? "1" : "0";
-    if (map.getPane('arrowPane')) map.getPane('arrowPane').style.opacity = op;
-    if (map.getPane('cityPane')) map.getPane('cityPane').style.opacity = op;
+function toggleSplitScreen(e) {
+    if (e) e.preventDefault();
+    isSplitActive = !isSplitActive;
+
+    var wrapper = document.getElementById("mapsWrapper");
+    var btn = document.getElementById("splitBtn");
+    document.body.classList.toggle("split-active", isSplitActive);
+    btn.classList.toggle("active", isSplitActive);
+
+    if (isSplitActive) {
+        wrapper.classList.remove("single-view");
+        wrapper.classList.add("split-view");
+    } else {
+        wrapper.classList.remove("split-view");
+        wrapper.classList.add("single-view");
+    }
+
+    setTimeout(async () => {
+        if (mapLeft) mapLeft.invalidateSize();
+        if (mapRight) {
+            mapRight.invalidateSize();
+            if (mapLeft) mapRight.setView(mapLeft.getCenter(), mapLeft.getZoom(), { animate: false });
+        }
+        await updateForecast();
+    }, 150);
+}
+
+function syncMap(sourceMap, targetMap) {
+    if (!sourceMap || !targetMap || !isSplitActive || isSyncingMaps) return;
+    isSyncingMaps = true;
+    targetMap.setView(sourceMap.getCenter(), sourceMap.getZoom(), { animate: false });
+    isSyncingMaps = false;
 }
 
 function scheduleMapUpdates() {
@@ -115,37 +159,29 @@ function scheduleMapUpdates() {
     if (mapUpdateTimer) clearTimeout(mapUpdateTimer);
     
     mapUpdateTimer = setTimeout(function() {
-        setOverlaysVisible(true);
-        drawVisibleArrows();
+        drawVisibleArrows('left');
+        if (isSplitActive) drawVisibleArrows('right');
         updateCityLabels();
     }, 120);
 }
 
 function updateCityLabels() {
-    if (!map) return;
-    if (!cityLayerGroup) {
-        cityLayerGroup = L.layerGroup([], { pane: 'cityPane' }).addTo(map);
-    } else {
-        cityLayerGroup.clearLayers();
-    }
+    [ { map: mapLeft, group: cityLayerGroupLeft }, { map: mapRight, group: cityLayerGroupRight } ].forEach(item => {
+        if (!item.map || !item.group) return;
+        item.group.clearLayers();
+        var curZoom = item.map.getZoom();
+        var bounds = item.map.getBounds();
 
-    var curZoom = map.getZoom();
-    var bounds = map.getBounds();
-
-    CITIES.forEach(city => {
-        if (curZoom >= city.minZoom) {
-            var latlng = L.latLng(city.lat, city.lon);
-            if (bounds.contains(latlng)) {
-                var html = `<div class="city-label-container"><div class="city-dot"></div><span class="city-name">${city.name}</span></div>`;
-                var icon = L.divIcon({
-                    html: html,
-                    className: 'city-div-icon',
-                    iconSize: [0, 0],
-                    iconAnchor: [0, 0]
-                });
-                L.marker(latlng, { icon: icon, pane: 'cityPane', interactive: false }).addTo(cityLayerGroup);
+        CITIES.forEach(city => {
+            if (curZoom >= city.minZoom) {
+                var latlng = L.latLng(city.lat, city.lon);
+                if (bounds.contains(latlng)) {
+                    var html = `<div class="city-label-container"><div class="city-dot"></div><span class="city-name">${city.name}</span></div>`;
+                    var icon = L.divIcon({ html: html, className: 'city-div-icon', iconSize: [0, 0], iconAnchor: [0, 0] });
+                    L.marker(latlng, { icon: icon, pane: 'cityPane', interactive: false }).addTo(item.group);
+                }
             }
-        }
+        });
     });
 }
 
@@ -164,8 +200,9 @@ function parseLocalStr(str) {
 }
 
 function getDayNameForStep(stepIdx) {
-    if (!times || !times[stepIdx]) return "";
-    var parts = times[stepIdx].local_str.split(" ")[0].split(".");
+    var t = modelsState.left.times;
+    if (!t || !t[stepIdx]) return "";
+    var parts = t[stepIdx].local_str.split(" ")[0].split(".");
     var dateObj = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
     return weekdays[dateObj.getDay()];
 }
@@ -178,12 +215,16 @@ function setPopupsDimmed(dimmed) {
 }
 
 function closeAllPopups() {
-    document.getElementById("runDropdown-icon-ch1").style.display = "none";
-    document.getElementById("runDropdown-icon-ch2").style.display = "none";
-    var aromeDrop = document.getElementById("runDropdown-arome");
-    if (aromeDrop) aromeDrop.style.display = "none";
-    document.getElementById("layer2Dropdown").style.display = "none";
-    document.getElementById("settingsPopup").style.display = "none";
+    ['left', 'right'].forEach(side => {
+        ['icon-ch1', 'icon-ch2', 'arome'].forEach(m => {
+            var el = document.getElementById(`runDropdown-${side}-${m}`);
+            if (el) el.style.display = "none";
+        });
+    });
+    var l2 = document.getElementById("layer2Dropdown");
+    if (l2) l2.style.display = "none";
+    var sp = document.getElementById("settingsPopup");
+    if (sp) sp.style.display = "none";
     setPopupsDimmed(false);
 }
 
@@ -194,10 +235,12 @@ function setBaseMapOpacity(val) {
     var sld = document.getElementById("opacitySliderBase");
     if (lbl) lbl.innerText = val + "%";
     if (sld) sld.value = val;
-    if (map) {
-        if (map.getPane('reliefPane')) map.getPane('reliefPane').style.opacity = op;
-        if (map.getPane('waterPane')) map.getPane('waterPane').style.opacity = op;
-    }
+    [mapLeft, mapRight].forEach(m => {
+        if (m) {
+            if (m.getPane('reliefPane')) m.getPane('reliefPane').style.opacity = op;
+            if (m.getPane('waterPane')) m.getPane('waterPane').style.opacity = op;
+        }
+    });
 }
 
 function setBaseMapStyle(style) {
@@ -205,20 +248,23 @@ function setBaseMapStyle(style) {
     document.getElementById("btnBaseRelief").classList.toggle("active", style === 'relief');
     document.getElementById("btnBaseSimple").classList.toggle("active", style === 'simple');
 
-    if (!map) return;
-    var mapContainer = map.getContainer();
-
-    if (style === 'simple') {
-        if (baseReliefLayer && map.hasLayer(baseReliefLayer)) map.removeLayer(baseReliefLayer);
-        if (riversLayer && map.hasLayer(riversLayer)) map.removeLayer(riversLayer);
-        mapContainer.classList.add('simple-gray-background');
-        if (cantonalBoundaryLayer && !map.hasLayer(cantonalBoundaryLayer)) cantonalBoundaryLayer.addTo(map);
-    } else {
-        mapContainer.classList.remove('simple-gray-background');
-        if (cantonalBoundaryLayer && map.hasLayer(cantonalBoundaryLayer)) map.removeLayer(cantonalBoundaryLayer);
-        if (baseReliefLayer && !map.hasLayer(baseReliefLayer)) baseReliefLayer.addTo(map);
-        if (riversLayer && !map.hasLayer(riversLayer)) riversLayer.addTo(map);
-    }
+    [ { map: mapLeft, relief: baseReliefLayerLeft, rivers: riversLayerLeft, cantons: cantonalBoundaryLayerLeft },
+      { map: mapRight, relief: baseReliefLayerRight, rivers: riversLayerRight, cantons: cantonalBoundaryLayerRight }
+    ].forEach(c => {
+        if (!c.map) return;
+        var container = c.map.getContainer();
+        if (style === 'simple') {
+            if (c.relief && c.map.hasLayer(c.relief)) c.map.removeLayer(c.relief);
+            if (c.rivers && c.map.hasLayer(c.rivers)) c.map.removeLayer(c.rivers);
+            container.classList.add('simple-gray-background');
+            if (c.cantons && !c.map.hasLayer(c.cantons)) c.cantons.addTo(c.map);
+        } else {
+            container.classList.remove('simple-gray-background');
+            if (c.cantons && c.map.hasLayer(c.cantons)) c.map.removeLayer(c.cantons);
+            if (c.relief && !c.map.hasLayer(c.relief)) c.relief.addTo(c.map);
+            if (c.rivers && !c.map.hasLayer(c.rivers)) c.rivers.addTo(c.map);
+        }
+    });
 }
 
 function toggleNavMode() {
@@ -239,23 +285,29 @@ function updateNavModeButton() {
 }
 
 function navRun(dir) {
-    var runs = availableRuns[currentModel] || [];
+    var side = isSplitActive ? 'right' : 'left';
+    var st = modelsState[side];
+    var runs = availableRuns[st.currentModel] || [];
     if (runs.length <= 1) return;
-    var currentIdx = runs.findIndex(r => r.id === currentRunId);
+    var currentIdx = runs.findIndex(r => r.id === st.currentRunId);
     if (currentIdx === -1) currentIdx = 0;
 
     var newIdx = currentIdx + dir;
     if (newIdx >= 0 && newIdx < runs.length) {
-        selectRun(currentModel, runs[newIdx].id);
+        selectRun(side, st.currentModel, runs[newIdx].id);
     }
 }
 
-async function handleModelButtonClick(modelName) {
-    if (currentModel !== modelName) {
+async function handleModelButtonClick(modelName, side) {
+    var st = modelsState[side];
+    if (st.currentModel !== modelName) {
         closeAllPopups();
-        await switchModel(modelName);
+        st.currentModel = modelName;
+        var runs = availableRuns[modelName] || [];
+        var runId = selectedRuns[side][modelName] || (runs.length > 0 ? runs[0].id : null);
+        await loadModelAndRun(side, modelName, runId);
     } else {
-        toggleRunDropdown(modelName);
+        toggleRunDropdown(side, modelName);
     }
 }
 
@@ -272,21 +324,24 @@ async function fetchAvailableRuns(modelName) {
 }
 
 function updateModelButtonLabels() {
-    ["icon-ch1", "icon-ch2", "arome"].forEach(m => {
-        var btn = document.getElementById(`btnModel-${m}`);
-        if (!btn) return;
-        var runs = availableRuns[m] || [];
-        var activeRun = (currentModel === m) ? currentRunId : (selectedRuns[m] || (runs[0] ? runs[0].id : null));
-        var activeObj = runs.find(r => r.id === activeRun) || runs[0];
-        var modName = (m === "icon-ch1") ? "CH1" : (m === "icon-ch2" ? "CH2" : "AROME HD");
-        var timeTxt = activeObj ? activeObj.label : "--";
-        
-        btn.innerHTML = `<span class="model-title">${modName} ▾</span><span class="model-time">${timeTxt}</span>`;
+    ['left', 'right'].forEach(side => {
+        var st = modelsState[side];
+        ["icon-ch1", "icon-ch2", "arome"].forEach(m => {
+            var btn = document.getElementById(`btnModel-${side}-${m}`);
+            if (!btn) return;
+            var runs = availableRuns[m] || [];
+            var activeRun = (st.currentModel === m) ? st.currentRunId : (selectedRuns[side][m] || (runs[0] ? runs[0].id : null));
+            var activeObj = runs.find(r => r.id === activeRun) || runs[0];
+            var modName = (m === "icon-ch1") ? "CH1" : (m === "icon-ch2" ? "CH2" : "AROME HD");
+            var timeTxt = activeObj ? activeObj.label : "--";
+            btn.innerHTML = `<span class="model-title">${modName} ▾</span><span class="model-time">${timeTxt}</span>`;
+            btn.classList.toggle("active", st.currentModel === m);
+        });
     });
 }
 
-function toggleRunDropdown(modelName) {
-    var el = document.getElementById(`runDropdown-${modelName}`);
+function toggleRunDropdown(side, modelName) {
+    var el = document.getElementById(`runDropdown-${side}-${modelName}`);
     if (!el) return;
     var isAlreadyOpen = (el.style.display === "flex");
     closeAllPopups();
@@ -300,48 +355,84 @@ function toggleRunDropdown(modelName) {
     } else {
         runs.forEach((r) => {
             var item = document.createElement("button");
-            item.className = "run-item" + (r.id === currentRunId ? " active" : "");
+            item.className = "run-item" + (r.id === modelsState[side].currentRunId ? " active" : "");
             item.innerHTML = `<span>${r.label}</span>`;
             item.onclick = function(e) {
                 e.stopPropagation();
-                selectRun(modelName, r.id);
+                selectRun(side, modelName, r.id);
             };
             el.appendChild(item);
         });
     }
 
-    var header = document.querySelector(".model-select-header");
+    var header = document.getElementById(`modelSelect${side === 'left' ? 'Left' : 'Right'}`);
     var rect = header.getBoundingClientRect();
     el.style.top = (rect.bottom + 5) + "px";
-    el.style.right = (window.innerWidth - rect.right) + "px";
-    el.style.left = "auto";
-    el.style.transform = "none";
+    if (side === 'left') {
+        el.style.left = rect.left + "px";
+        el.style.right = "auto";
+    } else {
+        el.style.right = (window.innerWidth - rect.right) + "px";
+        el.style.left = "auto";
+    }
     el.style.display = "flex";
-
     setPopupsDimmed(true);
 }
 
-async function selectRun(modelName, runId) {
+async function selectRun(side, modelName, runId) {
     closeAllPopups();
-    currentModel = modelName;
-    currentRunId = runId;
-    selectedRuns[modelName] = runId;
-    await loadModelAndRun(currentModel, currentRunId);
+    modelsState[side].currentModel = modelName;
+    modelsState[side].currentRunId = runId;
+    selectedRuns[side][modelName] = runId;
+    await loadModelAndRun(side, modelName, runId);
 }
 
-async function switchModel(newModel) {
-    if (currentModel === newModel && config) return;
-    currentModel = newModel;
-    var runs = availableRuns[currentModel] || [];
-    var runId = selectedRuns[currentModel] || (runs.length > 0 ? runs[0].id : null);
-    await loadModelAndRun(currentModel, runId);
+async function loadModelAndRun(side, modelName, runId) {
+    var st = modelsState[side];
+    st.currentModel = modelName;
+
+    if (!availableRuns[modelName] || availableRuns[modelName].length === 0) {
+        await fetchAvailableRuns(modelName);
+    }
+    var runs = availableRuns[modelName] || [];
+    if (!runId && runs.length > 0) runId = runs[0].id;
+    st.currentRunId = runId;
+    selectedRuns[side][modelName] = runId;
+
+    updateModelButtonLabels();
+
+    const cacheBuster = Date.now();
+    const runPath = runId ? `data/${modelName}/${runId}` : `data/${modelName}`;
+    
+    try {
+        const configRes = await fetch(`${runPath}/config.json?t=${cacheBuster}`);
+        if (!configRes.ok) throw new Error("Konnte config.json nicht laden: " + configRes.status);
+        st.config = await configRes.json();
+
+        const timesRes = await fetch(`${runPath}/times.json?t=${cacheBuster}`);
+        if (!timesRes.ok) throw new Error("Konnte times.json nicht laden: " + timesRes.status);
+        st.times = await timesRes.json();
+    } catch (e) {
+        console.error("Fehler beim Laden von " + modelName, e);
+        return;
+    }
+
+    if (side === 'left' || !isSplitActive) {
+        initNavigationBars();
+        initLayer2Dropdown();
+        initDayButtons();
+        initMemberPanel();
+    }
+
+    await updateForecast();
 }
 
 function updateEnsembleToggleState() {
     var btn = document.getElementById("btnToggleEnsemble");
-    if (!btn || !config) return;
-    var statOffset = config.member_names.length - 6;
-    var isMemberActive = (currentMemberIdx >= 1 && currentMemberIdx < statOffset);
+    var cfg = modelsState.left.config;
+    if (!btn || !cfg) return;
+    var statOffset = cfg.member_names.length - 6;
+    var isMemberActive = (modelsState.left.currentMemberIdx >= 1 && modelsState.left.currentMemberIdx < statOffset);
     btn.classList.toggle("active-indicator", isMemberActive && !isEnsembleOpen);
 }
 
@@ -351,94 +442,11 @@ function toggleEnsembleAccordion(forceOpen) {
     else isEnsembleOpen = !isEnsembleOpen;
 
     localStorage.setItem("icon_ensemble_open", isEnsembleOpen ? "true" : "false");
-
     var cont = document.getElementById("ensembleContainer");
     var btn = document.getElementById("btnToggleEnsemble");
     if (cont) cont.style.display = isEnsembleOpen ? "block" : "none";
     if (btn) btn.classList.toggle("open", isEnsembleOpen);
-
     updateEnsembleToggleState();
-}
-
-async function loadModelAndRun(modelName, runId) {
-    var prevValidDate = (times && times[currentStepIdx]) ? parseLocalStr(times[currentStepIdx].local_str) : null;
-    var prevMember = currentMemberIdx;
-
-    document.getElementById("btnModel-icon-ch1").classList.toggle("active", modelName === "icon-ch1");
-    document.getElementById("btnModel-icon-ch2").classList.toggle("active", modelName === "icon-ch2");
-    var btnArome = document.getElementById("btnModel-arome");
-    if (btnArome) btnArome.classList.toggle("active", modelName === "arome");
-
-    document.getElementById("loadingIndicator").style.display = "block";
-    try {
-        if (!availableRuns[modelName] || availableRuns[modelName].length === 0) {
-            await fetchAvailableRuns(modelName);
-        }
-        var runs = availableRuns[modelName] || [];
-        if (!runId && runs.length > 0) runId = runs[0].id;
-        currentRunId = runId;
-        selectedRuns[modelName] = currentRunId;
-
-        updateModelButtonLabels();
-
-        const cacheBuster = Date.now();
-        const runPath = runId ? `data/${modelName}/${runId}` : `data/${modelName}`;
-        
-        const configRes = await fetch(`${runPath}/config.json?t=${cacheBuster}`);
-        if (!configRes.ok) throw new Error("Konnte config.json nicht laden: " + configRes.status);
-        config = await configRes.json();
-
-        const timesRes = await fetch(`${runPath}/times.json?t=${cacheBuster}`);
-        if (!timesRes.ok) throw new Error("Konnte times.json nicht laden: " + timesRes.status);
-        times = await timesRes.json();
-
-        var vars = config.variables || Object.keys(config.variables_config);
-        if (!vars.includes(layer1Var)) layer1Var = vars[0];
-        if (layer2Var && !vars.includes(layer2Var)) setSecondaryVar(null);
-
-        initNavigationBars();
-        initLayer2Dropdown();
-        initDayButtons();
-        initMemberPanel();
-
-        var bestStepIdx = 0;
-        if (prevValidDate && times && times.length > 0) {
-            var minDiff = Infinity;
-            times.forEach((t, idx) => {
-                var d = parseLocalStr(t.local_str);
-                var diff = Math.abs(d - prevValidDate);
-                if (diff < minDiff) { 
-                    minDiff = diff; 
-                    bestStepIdx = idx; 
-                }
-            });
-        }
-        currentStepIdx = bestStepIdx;
-
-        var vCfg = config.variables_config[layer1Var];
-        var hasEns = vCfg ? vCfg.has_ensemble : (config.member_names.length > 1);
-        var statOffset = config.member_names.length - 6;
-
-        var isOldRun = (runs.length > 0 && currentRunId !== runs[0].id);
-        if (!hasEns) {
-            currentMemberIdx = 0;
-        } else if (isOldRun && prevMember >= 1 && prevMember < statOffset) {
-            currentMemberIdx = 0;
-        } else {
-            currentMemberIdx = Math.min(prevMember, config.member_names.length - 1);
-        }
-
-        updateMemberPanelVisibility(hasEns);
-        document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (vCfg ? vCfg.label : layer1Var);
-
-        var initialOp1 = (vCfg && vCfg.palette === "cloud") ? 95 : 60;
-        setLayerOpacity(1, initialOp1);
-
-        await updateForecast(currentMemberIdx, currentStepIdx);
-    } catch (err) {
-        console.error("Fehler beim Laden des Laufs:", err);
-    }
-    document.getElementById("loadingIndicator").style.display = "none";
 }
 
 function toggleWetterMenu() {
@@ -475,7 +483,6 @@ function toggleSettings(e) {
     var isAlreadyOpen = (el.style.display === "block");
     closeAllPopups();
     if (isAlreadyOpen) return;
-
     el.style.display = "block";
     setPopupsDimmed(true);
 }
@@ -490,7 +497,8 @@ function setLayerMode(layerNum, mode) {
         document.getElementById("btnModeFillL2").classList.toggle("active", mode === 'fill');
         document.getElementById("btnModeLineL2").classList.toggle("active", mode === 'line');
     }
-    renderContours();
+    renderContours('left');
+    if (isSplitActive) renderContours('right');
 }
 
 function setLayerOpacity(layerNum, val) {
@@ -499,13 +507,16 @@ function setLayerOpacity(layerNum, val) {
         layer1Opacity = op;
         document.getElementById("opacityLabelL1").innerText = val + "%";
         document.getElementById("opacitySliderL1").value = val;
-        if (map && map.getPane('contourPane1')) map.getPane('contourPane1').style.opacity = op;
     } else {
         layer2Opacity = op;
         document.getElementById("opacityLabelL2").innerText = val + "%";
         document.getElementById("opacitySliderL2").value = val;
-        if (map && map.getPane('contourPane2')) map.getPane('contourPane2').style.opacity = op;
     }
+    [mapLeft, mapRight].forEach(m => {
+        if (!m) return;
+        var p = m.getPane(layerNum === 1 ? 'contourPane1' : 'contourPane2');
+        if (p) p.style.opacity = op;
+    });
 }
 
 function initNavigationBars() {
@@ -514,7 +525,9 @@ function initNavigationBars() {
     wetterContainer.innerHTML = "";
     hoehenContainer.innerHTML = "";
 
-    var vars = config.variables || Object.keys(config.variables_config);
+    var cfg = modelsState.left.config;
+    if (!cfg) return;
+    var vars = cfg.variables || Object.keys(cfg.variables_config);
     if (!layer1Var || !vars.includes(layer1Var)) layer1Var = vars[0];
 
     var btnWind = document.getElementById("varBtn-wind");
@@ -522,14 +535,14 @@ function initNavigationBars() {
     if (btnWind) btnWind.style.display = vars.includes("wind") ? "inline-block" : "none";
     if (btnGust) btnGust.style.display = vars.includes("gust") ? "inline-block" : "none";
 
-    var hasAlt = vars.some(v => config.variables_config[v] && config.variables_config[v].type === "altitude");
+    var hasAlt = vars.some(v => cfg.variables_config[v] && cfg.variables_config[v].type === "altitude");
     document.getElementById("btnToggleHoehen").style.display = hasAlt ? "inline-flex" : "none";
 
-    var hasWetter = vars.some(v => v !== "wind" && v !== "gust" && config.variables_config[v] && config.variables_config[v].type !== "altitude");
+    var hasWetter = vars.some(v => v !== "wind" && v !== "gust" && cfg.variables_config[v] && cfg.variables_config[v].type !== "altitude");
     document.getElementById("btnToggleWetter").style.display = hasWetter ? "inline-flex" : "none";
 
     vars.forEach(vKey => {
-        var vCfg = config.variables_config[vKey];
+        var vCfg = cfg.variables_config[vKey];
         if (!vCfg || vKey === "wind" || vKey === "gust") return;
 
         var btn = document.createElement("button");
@@ -538,18 +551,17 @@ function initNavigationBars() {
         btn.innerText = vCfg.label || vKey;
         btn.onclick = function() { switchLayer1(vKey); };
 
-        if (vCfg.type === "altitude") {
-            hoehenContainer.appendChild(btn);
-        } else {
-            wetterContainer.appendChild(btn);
-        }
+        if (vCfg.type === "altitude") hoehenContainer.appendChild(btn);
+        else wetterContainer.appendChild(btn);
     });
 
     updateActiveButtonStates();
 }
 
 function updateActiveButtonStates() {
-    var vars = config.variables || Object.keys(config.variables_config);
+    var cfg = modelsState.left.config;
+    if (!cfg) return;
+    var vars = cfg.variables || Object.keys(cfg.variables_config);
     var isWetterActive = false;
     var isHoehenActive = false;
 
@@ -559,7 +571,7 @@ function updateActiveButtonStates() {
         if (btn) btn.classList.toggle("active", isActive);
 
         if (isActive) {
-            var vCfg = config.variables_config[vKey];
+            var vCfg = cfg.variables_config[vKey];
             if (vCfg) {
                 if (vCfg.type === "altitude") isHoehenActive = true;
                 else if (vKey !== "wind" && vKey !== "gust") isWetterActive = true;
@@ -586,9 +598,11 @@ function initLayer2Dropdown() {
     clearBtn.onclick = function() { setSecondaryVar(null); };
     menu.appendChild(clearBtn);
 
-    var vars = config.variables || Object.keys(config.variables_config);
+    var cfg = modelsState.left.config;
+    if (!cfg) return;
+    var vars = cfg.variables || Object.keys(cfg.variables_config);
     vars.forEach(vKey => {
-        var vCfg = config.variables_config[vKey];
+        var vCfg = cfg.variables_config[vKey];
         var btn = document.createElement("button");
         btn.className = "dropdown-item";
         btn.innerText = vCfg ? vCfg.label : vKey;
@@ -604,17 +618,16 @@ function setSecondaryVar(newVar) {
     var btn = document.getElementById("layer2Btn");
     var cfgSec = document.getElementById("cfgSectionL2");
     var titleSec = document.getElementById("cfgTitleL2");
+    var cfg = modelsState.left.config;
 
     if (layer2Var) {
-        var vCfg = config.variables_config[layer2Var] || {};
+        var vCfg = (cfg && cfg.variables_config[layer2Var]) || {};
         var lbl = vCfg.label || layer2Var;
         if (btn) btn.innerText = "2. Ebene: " + lbl + " ✕";
         btn.classList.add("active");
         cfgSec.style.opacity = "1";
         titleSec.innerText = "2. Ebene: " + lbl;
-
-        var targetOp = (vCfg.palette === "cloud") ? 95 : 60;
-        setLayerOpacity(2, targetOp);
+        setLayerOpacity(2, (vCfg.palette === "cloud") ? 95 : 60);
     } else {
         if (btn) btn.innerText = "+ 2. Ebene";
         btn.classList.remove("active");
@@ -622,26 +635,24 @@ function setSecondaryVar(newVar) {
         titleSec.innerText = "2. Ebene: Keine";
     }
 
-    updateForecast(currentMemberIdx, currentStepIdx);
+    updateForecast();
 }
 
 function switchLayer1(newVar) {
     if (layer1Var === newVar) return;
     layer1Var = newVar;
-
     updateActiveButtonStates();
 
-    var vCfg = config.variables_config[layer1Var];
-    var hasEns = vCfg ? vCfg.has_ensemble : (config.member_names.length > 1);
-    if (!hasEns) currentMemberIdx = 0;
+    var cfg = modelsState.left.config;
+    var vCfg = cfg ? cfg.variables_config[layer1Var] : null;
+    var hasEns = vCfg ? vCfg.has_ensemble : (cfg && cfg.member_names.length > 1);
+    if (!hasEns) modelsState.left.currentMemberIdx = 0;
 
     document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (vCfg ? vCfg.label : layer1Var);
-
-    var targetOp = (vCfg && vCfg.palette === "cloud") ? 95 : 60;
-    setLayerOpacity(1, targetOp);
+    setLayerOpacity(1, (vCfg && vCfg.palette === "cloud") ? 95 : 60);
 
     updateMemberPanelVisibility(hasEns);
-    updateForecast(currentMemberIdx, currentStepIdx);
+    updateForecast();
 }
 
 function updateMemberPanelVisibility(hasEns) {
@@ -657,14 +668,16 @@ function navLeft() {
     var pos = steps.indexOf(currentStepIdx);
 
     if (pos > 0) {
-        updateForecast(currentMemberIdx, steps[pos - 1]);
+        currentStepIdx = steps[pos - 1];
+        updateForecast();
     } else {
         var dIdx = uniqueDays.indexOf(curDay);
         if (dIdx > 0) {
             var prevDay = uniqueDays[dIdx - 1];
             var prevSteps = dayTimesteps[prevDay];
             if (prevSteps && prevSteps.length > 0) {
-                updateForecast(currentMemberIdx, prevSteps[prevSteps.length - 1]);
+                currentStepIdx = prevSteps[prevSteps.length - 1];
+                updateForecast();
             }
         }
     }
@@ -676,14 +689,16 @@ function navRight() {
     var pos = steps.indexOf(currentStepIdx);
 
     if (pos < steps.length - 1) {
-        updateForecast(currentMemberIdx, steps[pos + 1]);
+        currentStepIdx = steps[pos + 1];
+        updateForecast();
     } else {
         var dIdx = uniqueDays.indexOf(curDay);
         if (dIdx < uniqueDays.length - 1) {
             var nextDay = uniqueDays[dIdx + 1];
             var nextSteps = dayTimesteps[nextDay];
             if (nextSteps && nextSteps.length > 0) {
-                updateForecast(currentMemberIdx, nextSteps[0]);
+                currentStepIdx = nextSteps[0];
+                updateForecast();
             }
         }
     }
@@ -694,25 +709,20 @@ function navUp() {
         navRun(-1);
         return;
     }
+    var st = modelsState.left;
+    if (!st.config || st.config.member_names.length <= 1) return;
+    var statOffset = st.config.member_names.length - 6;
 
-    var vCfg = config.variables_config[layer1Var];
-    if (vCfg && !vCfg.has_ensemble) return;
-    if (config.member_names.length <= 1) return;
-
-    var runs = availableRuns[currentModel] || [];
-    var isOldRun = (runs.length > 0 && currentRunId !== runs[0].id);
-    var statOffset = config.member_names.length - 6;
-
-    if (isOldRun || !isEnsembleOpen) {
-        if (currentMemberIdx >= statOffset) {
-            if (currentMemberIdx === statOffset) updateForecast(0, currentStepIdx);
-            else updateForecast(currentMemberIdx - 1, currentStepIdx);
+    if (!isEnsembleOpen) {
+        if (st.currentMemberIdx >= statOffset) {
+            st.currentMemberIdx = (st.currentMemberIdx === statOffset) ? 0 : st.currentMemberIdx - 1;
         } else {
-            updateForecast(0, currentStepIdx);
+            st.currentMemberIdx = 0;
         }
     } else {
-        updateForecast(Math.max(0, currentMemberIdx - 1), currentStepIdx);
+        st.currentMemberIdx = Math.max(0, st.currentMemberIdx - 1);
     }
+    updateForecast();
 }
 
 function navDown() {
@@ -720,25 +730,18 @@ function navDown() {
         navRun(1);
         return;
     }
+    var st = modelsState.left;
+    if (!st.config || st.config.member_names.length <= 1) return;
+    var maxIdx = st.config.member_names.length - 1;
+    var statOffset = st.config.member_names.length - 6;
 
-    var vCfg = config.variables_config[layer1Var];
-    if (vCfg && !vCfg.has_ensemble) return;
-    if (config.member_names.length <= 1) return;
-
-    var maxIdx = config.member_names.length - 1;
-    var statOffset = config.member_names.length - 6;
-    var runs = availableRuns[currentModel] || [];
-    var isOldRun = (runs.length > 0 && currentRunId !== runs[0].id);
-
-    if (isOldRun || !isEnsembleOpen) {
-        if (currentMemberIdx === 0) {
-            updateForecast(statOffset, currentStepIdx);
-        } else if (currentMemberIdx >= statOffset) {
-            updateForecast(Math.min(maxIdx, currentMemberIdx + 1), currentStepIdx);
-        }
+    if (!isEnsembleOpen) {
+        if (st.currentMemberIdx === 0) st.currentMemberIdx = statOffset;
+        else if (st.currentMemberIdx >= statOffset) st.currentMemberIdx = Math.min(maxIdx, st.currentMemberIdx + 1);
     } else {
-        updateForecast(Math.min(maxIdx, currentMemberIdx + 1), currentStepIdx);
+        st.currentMemberIdx = Math.min(maxIdx, st.currentMemberIdx + 1);
     }
+    updateForecast();
 }
 
 function initDayButtons() {
@@ -747,6 +750,9 @@ function initDayButtons() {
     uniqueDays = [];
     dayTimesteps = {};
     
+    var times = modelsState.left.times;
+    if (!times) return;
+
     times.forEach((t, idx) => {
         var parts = t.local_str.split(" ")[0].split(".");
         var dateObj = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
@@ -769,6 +775,8 @@ function initDayButtons() {
 }
 
 function jumpToDaySameHour(targetDayName) {
+    var times = modelsState.left.times;
+    if (!times || !times[currentStepIdx]) return;
     var currentHour = parseInt(times[currentStepIdx].local_str.split(" ")[1].split(":")[0]);
     var targetIndices = dayTimesteps[targetDayName];
     if (!targetIndices || targetIndices.length === 0) return;
@@ -783,7 +791,8 @@ function jumpToDaySameHour(targetDayName) {
             bestIdx = idx; 
         }
     });
-    updateForecast(currentMemberIdx, bestIdx);
+    currentStepIdx = bestIdx;
+    updateForecast();
 }
 
 function initMemberPanel() {
@@ -794,10 +803,13 @@ function initMemberPanel() {
     hauptContainer.innerHTML = ""; ensembleContainer.innerHTML = ""; statistikenContainer.innerHTML = "";
     var isMobile = window.innerWidth <= 768;
 
-    var runs = availableRuns[currentModel] || [];
-    var isOldRun = (runs.length > 0 && currentRunId !== runs[0].id);
-    var hasMultiple = config.member_names.length > 1;
-    var statOffset = config.member_names.length - 6;
+    var cfg = modelsState.left.config;
+    if (!cfg) return;
+
+    var runs = availableRuns[modelsState.left.currentModel] || [];
+    var isOldRun = (runs.length > 0 && modelsState.left.currentRunId !== runs[0].id);
+    var hasMultiple = cfg.member_names.length > 1;
+    var statOffset = cfg.member_names.length - 6;
 
     if (toggleBtn) {
         if (!hasMultiple) {
@@ -806,33 +818,28 @@ function initMemberPanel() {
             toggleBtn.style.display = "flex";
             toggleBtn.style.opacity = "0.35";
             toggleBtn.style.pointerEvents = "none";
-            toggleBtn.title = "Einzel-Member nur im neuesten Lauf verfügbar";
             toggleBtn.innerHTML = `<span>Members</span>`;
         } else {
             toggleBtn.style.display = "flex";
             toggleBtn.style.opacity = "1.0";
             toggleBtn.style.pointerEvents = "auto";
-            toggleBtn.title = "";
             toggleBtn.innerHTML = `<span>Members</span><span id="ensembleChevron" class="chevron">▾</span>`;
         }
     }
 
-    config.member_names.forEach((name, idx) => {
+    cfg.member_names.forEach((name, idx) => {
         var btn = document.createElement("button");
         btn.className = "member-btn";
         btn.id = "member-btn-" + idx;
         
         if (idx === 0) {
             btn.innerText = isMobile ? "HL" : "Hauptlauf";
-            btn.onclick = function() { updateForecast(idx, currentStepIdx); };
+            btn.onclick = function() { modelsState.left.currentMemberIdx = idx; updateForecast(); };
             hauptContainer.appendChild(btn);
         } else if (hasMultiple && idx >= 1 && idx < statOffset) {
             btn.innerText = isMobile ? "M" + idx : "Member " + idx;
-            if (isOldRun) {
-                btn.style.opacity = "0.25";
-                btn.style.pointerEvents = "none";
-            } else {
-                btn.onclick = function() { updateForecast(idx, currentStepIdx); };
+            if (!isOldRun) {
+                btn.onclick = function() { modelsState.left.currentMemberIdx = idx; updateForecast(); };
             }
             ensembleContainer.appendChild(btn);
         } else if (hasMultiple) {
@@ -842,7 +849,7 @@ function initMemberPanel() {
             else if (idx === statOffset + 3) btn.innerText = isMobile ? "%25" : name;
             else if (idx === statOffset + 4) btn.innerText = isMobile ? "%75" : name;
             else if (idx === statOffset + 5) btn.innerText = isMobile ? "IQ" : name;
-            btn.onclick = function() { updateForecast(idx, currentStepIdx); };
+            btn.onclick = function() { modelsState.left.currentMemberIdx = idx; updateForecast(); };
             statistikenContainer.appendChild(btn);
         }
     });
@@ -850,60 +857,31 @@ function initMemberPanel() {
     var cont = document.getElementById("ensembleContainer");
     if (cont) cont.style.display = (!isOldRun && isEnsembleOpen && hasMultiple) ? "block" : "none";
     if (toggleBtn) toggleBtn.classList.toggle("open", !isOldRun && isEnsembleOpen && hasMultiple);
-
     updateEnsembleToggleState();
 }
 
 function renderSingleLegendCol(varName, isIQR) {
-    var vCfg = config.variables_config[varName] || {};
+    var cfg = modelsState.left.config || {};
+    var vCfg = (cfg.variables_config && cfg.variables_config[varName]) || {};
     var paletteType = isIQR ? ("iqr_" + (vCfg.palette || "wind")) : (vCfg.palette || "wind");
-    var p = config.palettes[paletteType] || config.palettes["wind"];
-    var colors = p.colors;
-    var levels = p.levels;
+    var p = (cfg.palettes && cfg.palettes[paletteType]) || (cfg.palettes && cfg.palettes["wind"]) || { levels: [], colors: [] };
+    var colors = p.colors || [];
 
-    var title = "";
-    if (isIQR) {
-        if (vCfg.palette === "sun" || vCfg.palette === "cloud") title = "% (IQR)";
-        else if (vCfg.palette === "dbz") title = "dBZ (IQR)";
-        else title = "km/h (IQR)";
-    } else {
-        if (vCfg.palette === "sun") title = "Sun %";
-        else if (vCfg.palette === "cloud") title = "Cloud %";
-        else if (vCfg.palette === "dbz") title = "dBZ";
-        else title = "km/h";
-    }
+    var title = isIQR ? (vCfg.palette === "sun" || vCfg.palette === "cloud" ? "% (IQR)" : (vCfg.palette === "dbz" ? "dBZ (IQR)" : "km/h (IQR)"))
+                      : (vCfg.palette === "sun" ? "Sun %" : (vCfg.palette === "cloud" ? "Cloud %" : (vCfg.palette === "dbz" ? "dBZ" : "km/h")));
 
     var barHtml = "";
     for (var i = colors.length - 1; i >= 0; i--) {
         var c = colors[i];
         var isTrans = (c === 'transparent' || c === '#ffffff00' || (c.length === 9 && c.endsWith('00')));
         var bg = isTrans ? 'transparent' : c;
-        var border = ((paletteType === "dbz" || paletteType === "cloud") && !isTrans) 
-            ? "border-bottom: 1px solid rgba(255,255,255,0.4);" 
-            : (c.toLowerCase() === "#ffffff" ? "border-top: 1px solid rgba(0,0,0,0.3); border-bottom: 1px solid rgba(0,0,0,0.3);" : "");
-        barHtml += `<div style="background-color: ${bg}; flex: 1; ${border}"></div>`;
+        barHtml += `<div style="background-color: ${bg}; flex: 1;"></div>`;
     }
 
-    var labelsHtml = "";
-    if (paletteType === "dbz") {
-        labelsHtml = `<div>64</div><div>61</div><div>60</div><div>59</div><div>58</div><div>57</div><div>56</div><div>55</div><div>54</div><div>53</div><div>52</div><div>51</div><div>49</div><div>47</div><div>45</div><div>41</div><div>31</div><div>24</div><div>19</div><div>7</div>`;
-    } else if (paletteType === "sun") {
-        labelsHtml = `<div>100</div><div>80</div><div>60</div><div>40</div><div>20</div><div>0</div>`;
-    } else if (paletteType === "cloud") {
-        labelsHtml = `<div>100</div><div>95</div><div>90</div><div>80</div><div>70</div><div>60</div><div>50</div><div>40</div><div>30</div><div>20</div><div>10</div>`;
-    } else if (paletteType === "iqr_dbz") {
-        labelsHtml = `<div>+</div><div>65</div><div>56</div><div>48</div><div>40</div><div>32</div><div>25</div><div>18</div><div>12</div><div>6</div><div>0</div>`;
-    } else if (paletteType === "iqr_sun" || paletteType === "iqr_cloud") {
-        labelsHtml = `<div>100</div><div>90</div><div>80</div><div>70</div><div>60</div><div>50</div><div>40</div><div>30</div><div>20</div><div>10</div><div>0</div>`;
-    } else if (paletteType === "iqr_wind") {
-        labelsHtml = `<div>+</div><div>30</div><div>24</div><div>18</div><div>14</div><div>10</div><div>8</div><div>6</div><div>4</div><div>2</div><div>0</div>`;
-    } else {
-        if (levels && levels.length > 15) {
-            labelsHtml = `<div>+</div><div>135</div><div>125</div><div>115</div><div>105</div><div>95</div><div>85</div><div>75</div><div>65</div><div>55</div><div>45</div><div>36</div><div>27</div><div>23</div><div>18</div><div>14</div><div>11</div><div>7</div><div>4</div><div>0</div>`;
-        } else {
-            labelsHtml = `<div>+</div><div>45</div><div>36</div><div>27</div><div>23</div><div>18</div><div>14</div><div>11</div><div>7</div><div>4</div><div>0</div>`;
-        }
-    }
+    var labelsHtml = (paletteType === "dbz") ? `<div>64</div><div>60</div><div>55</div><div>50</div><div>45</div><div>30</div><div>15</div><div>7</div>`
+                   : (paletteType === "sun") ? `<div>100</div><div>80</div><div>60</div><div>40</div><div>20</div><div>0</div>`
+                   : (paletteType === "cloud") ? `<div>100</div><div>80</div><div>60</div><div>40</div><div>20</div><div>0</div>`
+                   : `<div>+</div><div>115</div><div>85</div><div>65</div><div>45</div><div>27</div><div>14</div><div>4</div><div>0</div>`;
 
     return `
         <div class="legend-column">
@@ -918,14 +896,16 @@ function renderSingleLegendCol(varName, isIQR) {
 
 function updateLegend() {
     var box = document.getElementById("legendBox");
-    var hasMultiple = config.member_names.length > 1;
-    var iqrIdx = config.member_names.length - 1;
-    var isIQR1 = (hasMultiple && currentMemberIdx === iqrIdx);
+    var cfg = modelsState.left.config;
+    if (!cfg) return;
+    var hasMultiple = cfg.member_names.length > 1;
+    var iqrIdx = cfg.member_names.length - 1;
+    var isIQR1 = (hasMultiple && modelsState.left.currentMemberIdx === iqrIdx);
     
     var html = renderSingleLegendCol(layer1Var, isIQR1);
     if (layer2Var && layer2Var !== layer1Var) {
-        var vCfg2 = config.variables_config[layer2Var] || {};
-        var isIQR2 = (hasMultiple && vCfg2.has_ensemble && currentMemberIdx === iqrIdx);
+        var vCfg2 = cfg.variables_config[layer2Var] || {};
+        var isIQR2 = (hasMultiple && vCfg2.has_ensemble && modelsState.left.currentMemberIdx === iqrIdx);
         html += renderSingleLegendCol(layer2Var, isIQR2);
     }
     box.innerHTML = html;
@@ -939,64 +919,45 @@ async function fetchAndDecompress(url) {
     return await new Response(decompressedStream).arrayBuffer();
 }
 
-function decodeBinaryGrid(buffer) {
-    const totalPoints = config.nx * config.ny;
-
+function decodeBinaryGrid(buffer, cfg) {
+    const totalPoints = cfg.nx * cfg.ny;
     const lowBytes = new Uint8Array(buffer, 0, totalPoints);
     const highBytes = new Uint8Array(buffer, totalPoints, totalPoints);
-
     const s = new Int16Array(totalPoints);
-    for (let i = 0; i < totalPoints; i++) {
-        s[i] = (highBytes[i] << 8) | lowBytes[i];
-    }
-
+    for (let i = 0; i < totalPoints; i++) s[i] = (highBytes[i] << 8) | lowBytes[i];
     let d = null;
     if (buffer.byteLength >= (totalPoints * 3)) {
         d = new Uint8Array(buffer, totalPoints * 2, totalPoints);
     }
-
     return { s: s, d: d };
 }
 
-function generateContoursClient(gridObj, paletteType) {
-    const p = config.palettes[paletteType] || config.palettes["wind"];
+function generateContoursClient(gridObj, paletteType, cfg) {
+    const p = cfg.palettes[paletteType] || cfg.palettes["wind"];
     const levels = p.levels;
     const colors = p.colors;
-    
     const s = gridObj.s;
     const values = new Float32Array(s.length);
 
-    for (let i = 0; i < s.length; i++) {
-        values[i] = (s[i] < 0) ? NaN : (s[i] / 10.0);
-    }
+    for (let i = 0; i < s.length; i++) values[i] = (s[i] < 0) ? NaN : (s[i] / 10.0);
     
     const thresholds = levels.slice(0, levels.length - 1);
-    const contourGen = d3.contours()
-        .size([config.nx, config.ny])
-        .smooth(true)
-        .thresholds(thresholds);
-                
+    const contourGen = d3.contours().size([cfg.nx, cfg.ny]).smooth(true).thresholds(thresholds);
     const rawContours = contourGen(values);
-    const xMin = config.xmin, xMax = config.xmax;
-    const yMin = config.ymin, yMax = config.ymax;
-    const dx = (xMax - xMin) / (config.nx - 1);
-    const dy = (yMax - yMin) / (config.ny - 1);
+    const xMin = cfg.xmin, xMax = cfg.xmax, yMin = cfg.ymin, yMax = cfg.ymax;
+    const dx = (xMax - xMin) / (cfg.nx - 1);
+    const dy = (yMax - yMin) / (cfg.ny - 1);
     
     const features = [];
     for (let i = 0; i < rawContours.length; i++) {
         const c = rawContours[i];
         if (!c.coordinates || c.coordinates.length === 0) continue;
         const color = colors[i] || colors[colors.length - 1];
-        
         const geoCoords = c.coordinates.map(polygon => 
             polygon.map(ring => 
-                ring.map(pt => [
-                    xMin + (pt[0] - 0.5) * dx,
-                    yMin + (pt[1] - 0.5) * dy
-                ])
+                ring.map(pt => [xMin + (pt[0] - 0.5) * dx, yMin + (pt[1] - 0.5) * dy])
             )
         );
-        
         features.push({
             type: "Feature",
             properties: { fill: color, stroke: color },
@@ -1006,139 +967,89 @@ function generateContoursClient(gridObj, paletteType) {
     return { type: "FeatureCollection", features: features };
 }
 
-async function ensureDataLoaded(varName, memberIdx, stepIdx) {
-    const cacheKey = `${currentModel}_${currentRunId}_${varName}_${memberIdx}_${stepIdx}`;
-    const vCfg = config.variables_config[varName] || {};
-    var hasMultiple = config.member_names.length > 1;
-    var iqrIdx = config.member_names.length - 1;
+async function ensureDataLoaded(side, varName, memberIdx, stepIdx) {
+    var st = modelsState[side];
+    const cacheKey = `${st.currentModel}_${st.currentRunId}_${varName}_${memberIdx}_${stepIdx}`;
+    const vCfg = (st.config && st.config.variables_config[varName]) || {};
+    var hasMultiple = st.config && st.config.member_names.length > 1;
+    var iqrIdx = st.config ? st.config.member_names.length - 1 : 0;
     const isIQR = (hasMultiple && vCfg.has_ensemble && memberIdx === iqrIdx);
     const paletteType = isIQR ? ("iqr_" + (vCfg.palette || "wind")) : (vCfg.palette || "wind");
 
     if (!cacheContours[cacheKey]) {
-        const runBuster = encodeURIComponent(config.ref_time_utc);
-        const basePath = currentRunId ? `data/${currentModel}/${currentRunId}` : `data/${currentModel}`;
+        const runBuster = encodeURIComponent(st.config.ref_time_utc);
+        const basePath = st.currentRunId ? `data/${st.currentModel}/${st.currentRunId}` : `data/${st.currentModel}`;
         if (!cacheGrid[cacheKey]) {
             const rawBuffer = await fetchAndDecompress(`${basePath}/grid_${varName}_m${memberIdx}_s${stepIdx}.bin.gz?v=${runBuster}`);
-            cacheGrid[cacheKey] = decodeBinaryGrid(rawBuffer);
+            cacheGrid[cacheKey] = decodeBinaryGrid(rawBuffer, st.config);
         }
-        cacheContours[cacheKey] = generateContoursClient(cacheGrid[cacheKey], paletteType);
+        cacheContours[cacheKey] = generateContoursClient(cacheGrid[cacheKey], paletteType, st.config);
     }
     return cacheKey;
 }
 
+function initMapInstance(domId) {
+    var swisstopo_relief_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissalti3d-reliefschattierung/default/current/3857/{z}/{x}/{y}.png";
+    var swisstopo_lakes_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-seen/default/current/3857/{z}/{x}/{y}.png";
+    var swisstopo_rivers_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-gewaessernetz_2000/default/current/3857/{z}/{x}/{y}.png";
+    var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
+
+    var m = L.map(domId, {
+        center: [46.8182, 8.2275],
+        zoom: 9, minZoom: 7, maxZoom: 15,
+        zoomControl: false, preferCanvas: true
+    });
+
+    m.createPane('reliefPane'); m.getPane('reliefPane').style.zIndex = '200'; m.getPane('reliefPane').style.opacity = baseMapOpacity;
+    m.createPane('waterPane'); m.getPane('waterPane').style.zIndex = '250'; m.getPane('waterPane').style.opacity = baseMapOpacity;
+    m.createPane('boundaryPane'); m.getPane('boundaryPane').style.zIndex = '280'; m.getPane('boundaryPane').style.pointerEvents = 'none';
+    m.createPane('contourPane1'); m.getPane('contourPane1').style.opacity = layer1Opacity; m.getPane('contourPane1').style.zIndex = '400';
+    m.createPane('contourPane2'); m.getPane('contourPane2').style.opacity = layer2Opacity; m.getPane('contourPane2').style.zIndex = '450';
+    m.createPane('arrowPane'); m.getPane('arrowPane').style.zIndex = '500';
+    m.createPane('cityPane'); m.getPane('cityPane').style.zIndex = '520'; m.getPane('cityPane').style.pointerEvents = 'none';
+
+    var relief = L.tileLayer(swisstopo_relief_url, { pane: 'reliefPane', maxZoom: 15, maxNativeZoom: 14 }).addTo(m);
+    L.tileLayer(swisstopo_lakes_url, { pane: 'waterPane', maxZoom: 15, maxNativeZoom: 14, opacity: 0.85 }).addTo(m);
+    var rivers = L.tileLayer(swisstopo_rivers_url, { pane: 'waterPane', maxZoom: 15, maxNativeZoom: 14, opacity: 0.35 }).addTo(m);
+    L.tileLayer(swisstopo_boundary_url, { pane: 'boundaryPane', className: 'boundary-national', maxZoom: 15, maxNativeZoom: 14 }).addTo(m);
+
+    var cantons = L.layerGroup();
+    fetch("https://cdn.jsdelivr.net/gh/empet/Datasets@master/swiss-cantons.geojson")
+        .then(res => res.json())
+        .then(geojson => {
+            L.geoJSON(geojson, { pane: 'boundaryPane', interactive: false, style: { color: "#111111", weight: 0.7, opacity: 1.0, fill: false } }).addTo(cantons);
+        }).catch(() => {});
+
+    var cityGroup = L.layerGroup([], { pane: 'cityPane' }).addTo(m);
+
+    m.on('move', () => { if (domId === 'mapLeft') syncMap(mapLeft, mapRight); else syncMap(mapRight, mapLeft); });
+    m.on('moveend', scheduleMapUpdates);
+    m.on('zoomend', scheduleMapUpdates);
+    m.on('click', closeAllPopups);
+
+    return { map: m, relief: relief, rivers: rivers, cantons: cantons, cities: cityGroup };
+}
+
 async function init() {
     try {
-        var swisstopo_relief_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissalti3d-reliefschattierung/default/current/3857/{z}/{x}/{y}.png";
-        var swisstopo_lakes_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-seen/default/current/3857/{z}/{x}/{y}.png";
-        var swisstopo_rivers_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-gewaessernetz_2000/default/current/3857/{z}/{x}/{y}.png";
+        var leftInit = initMapInstance('mapLeft');
+        mapLeft = leftInit.map;
+        baseReliefLayerLeft = leftInit.relief;
+        riversLayerLeft = leftInit.rivers;
+        cantonalBoundaryLayerLeft = leftInit.cantons;
+        cityLayerGroupLeft = leftInit.cities;
 
-        var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
-        var swisstopo_cantons_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-kanton-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
+        var rightInit = initMapInstance('mapRight');
+        mapRight = rightInit.map;
+        baseReliefLayerRight = rightInit.relief;
+        riversLayerRight = rightInit.rivers;
+        cantonalBoundaryLayerRight = rightInit.cantons;
+        cityLayerGroupRight = rightInit.cities;
 
-        map = L.map('map', {
-            center: [46.8182, 8.2275],
-            zoom: 9, minZoom: 7, maxZoom: 15,
-            zoomControl: false,
-            preferCanvas: true
-        });
-
-        map.createPane('reliefPane');
-        map.getPane('reliefPane').style.zIndex = '200';
-        map.getPane('reliefPane').style.opacity = baseMapOpacity;
-
-        map.createPane('waterPane');
-        map.getPane('waterPane').style.zIndex = '250';
-        map.getPane('waterPane').style.opacity = baseMapOpacity;
-
-        map.createPane('boundaryPane');
-        map.getPane('boundaryPane').style.zIndex = '280';
-        map.getPane('boundaryPane').style.opacity = '1.0';
-        map.getPane('boundaryPane').style.pointerEvents = 'none';
-
-        canvasRendererBoundary = L.canvas({ pane: 'boundaryPane', padding: 0.1 });
-
-        map.createPane('contourPane1');
-        map.getPane('contourPane1').style.opacity = layer1Opacity;
-        map.getPane('contourPane1').style.zIndex = '400';
-        canvasRenderer1 = L.canvas({ pane: 'contourPane1', padding: 0.1 });
-
-        map.createPane('contourPane2');
-        map.getPane('contourPane2').style.opacity = layer2Opacity;
-        map.getPane('contourPane2').style.zIndex = '450';
-        canvasRenderer2 = L.canvas({ pane: 'contourPane2', padding: 0.1 });
-
-        map.createPane('arrowPane');
-        map.getPane('arrowPane').style.zIndex = '500';
-        map.getPane('arrowPane').style.transition = 'opacity 0.1s ease';
-
-        map.createPane('cityPane');
-        map.getPane('cityPane').style.zIndex = '520';
-        map.getPane('cityPane').style.pointerEvents = 'none';
-        map.getPane('cityPane').style.transition = 'opacity 0.1s ease';
-
-        baseReliefLayer = L.tileLayer(swisstopo_relief_url, {
-            pane: 'reliefPane',
-            attribution: '&copy; <a href="https://www.swisstopo.admin.ch/" target="_blank">swisstopo</a> | Wetterdaten: &copy; MeteoSchweiz & Météo-France',
-            maxZoom: 15, maxNativeZoom: 14
-        }).addTo(map);
-
-        lakesLayer = L.tileLayer(swisstopo_lakes_url, {
-            pane: 'waterPane',
-            maxZoom: 15, maxNativeZoom: 14,
-            opacity: 0.85
-        }).addTo(map);
-
-        riversLayer = L.tileLayer(swisstopo_rivers_url, {
-            pane: 'waterPane',
-            maxZoom: 15, maxNativeZoom: 14,
-            opacity: 0.35
-        }).addTo(map);
-
-        nationalBoundaryLayer = L.tileLayer(swisstopo_boundary_url, {
-            pane: 'boundaryPane',
-            className: 'boundary-national',
-            maxZoom: 15, maxNativeZoom: 14
-        }).addTo(map);
-
-        cantonalBoundaryLayer = L.layerGroup();
-        
-        fetch("https://cdn.jsdelivr.net/gh/empet/Datasets@master/swiss-cantons.geojson")
-            .then(res => res.json())
-            .then(geojson => {
-                L.geoJSON(geojson, {
-                    pane: 'boundaryPane',
-                    renderer: canvasRendererBoundary,
-                    interactive: false,
-                    style: {
-                        color: "#111111",
-                        weight: 0.7,
-                        opacity: 1.0,
-                        fill: false
-                    }
-                }).addTo(cantonalBoundaryLayer);
-            })
-            .catch(() => {
-                L.tileLayer(swisstopo_cantons_url, {
-                    pane: 'boundaryPane',
-                    className: 'boundary-cantonal',
-                    maxZoom: 15, maxNativeZoom: 14
-                }).addTo(cantonalBoundaryLayer);
-            });
-
-        map.on('zoomstart', function() {
-            setOverlaysVisible(false);
-            if (mapSafetyTimer) clearTimeout(mapSafetyTimer);
-            mapSafetyTimer = setTimeout(function() {
-                setOverlaysVisible(true);
-            }, 1000);
-        });
-
-        map.on('moveend', scheduleMapUpdates);
-        map.on('zoomend', scheduleMapUpdates);
-
-        map.on('click', function() {
-            closeAllPopups();
-        });
+        modelsState.left.canvasRenderer1 = L.canvas({ pane: 'contourPane1', padding: 0.1 });
+        modelsState.left.canvasRenderer2 = L.canvas({ pane: 'contourPane2', padding: 0.1 });
+        modelsState.right.canvasRenderer1 = L.canvas({ pane: 'contourPane1', padding: 0.1 });
+        modelsState.right.canvasRenderer2 = L.canvas({ pane: 'contourPane2', padding: 0.1 });
 
         var slider = document.getElementById("timeSlider");
         slider.addEventListener("input", function() {
@@ -1147,17 +1058,16 @@ async function init() {
             var steps = dayTimesteps[curDay] || [];
             if (steps.length === 0) return;
 
+            var times = modelsState.left.times;
             var bestIdx = steps[0];
             var minDiff = 999;
             steps.forEach(idx => {
                 var h = parseInt(times[idx].local_str.split(" ")[1].split(":")[0]);
                 var diff = Math.abs(h - targetHour);
-                if (diff < minDiff) { 
-                    minDiff = diff; 
-                    bestIdx = idx; 
-                }
+                if (diff < minDiff) { minDiff = diff; bestIdx = idx; }
             });
-            updateForecast(currentMemberIdx, bestIdx);
+            currentStepIdx = bestIdx;
+            updateForecast();
         });
 
         document.addEventListener('keydown', function(event) {
@@ -1171,7 +1081,7 @@ async function init() {
             closeAllPopups();
             updateModelButtonLabels();
             initMemberPanel();
-            updateForecast(currentMemberIdx, currentStepIdx);
+            updateForecast();
             scheduleMapUpdates();
         };
 
@@ -1181,38 +1091,41 @@ async function init() {
         await fetchAvailableRuns("icon-ch2");
         await fetchAvailableRuns("arome");
 
-        await switchModel("icon-ch1");
+        await loadModelAndRun('left', 'icon-ch1');
+        await loadModelAndRun('right', 'arome');
         updateCityLabels();
     } catch (err) {
-        console.error("Fehler beim Laden:", err);
+        console.error("Fehler bei init():", err);
     }
 }
 
-async function updateForecast(newMemberIdx, newStepIdx) {
-    currentMemberIdx = parseInt(newMemberIdx);
-    currentStepIdx = parseInt(newStepIdx);
+async function updateForecast() {
+    var sidesToUpdate = isSplitActive ? ['left', 'right'] : ['left'];
+    var times = modelsState.left.times;
+    if (!times || !times[currentStepIdx]) return;
 
     var currentDayName = getDayNameForStep(currentStepIdx);
     var currentHour = parseInt(times[currentStepIdx].local_str.split(" ")[1].split(":")[0]);
     var slider = document.getElementById("timeSlider");
-    
-    slider.min = 0;
-    slider.max = 23;
-    slider.value = currentHour;
+    slider.min = 0; slider.max = 23; slider.value = currentHour;
 
     document.getElementById("loadingIndicator").style.display = "block";
     try {
-        await ensureDataLoaded(layer1Var, currentMemberIdx, currentStepIdx);
+        for (const side of sidesToUpdate) {
+            var st = modelsState[side];
+            if (!st.config) continue;
+            var maxSteps = (st.times ? st.times.length : 100);
+            var stepForSide = Math.min(currentStepIdx, maxSteps - 1);
 
-        if (layer2Var) {
-            var vCfg2 = config.variables_config[layer2Var] || {};
-            var m2 = (vCfg2.has_ensemble) ? currentMemberIdx : 0;
-            await ensureDataLoaded(layer2Var, m2, currentStepIdx);
+            await ensureDataLoaded(side, layer1Var, st.currentMemberIdx, stepForSide);
+            if (layer2Var) {
+                var vCfg2 = st.config.variables_config[layer2Var] || {};
+                var m2 = vCfg2.has_ensemble ? st.currentMemberIdx : 0;
+                await ensureDataLoaded(side, layer2Var, m2, stepForSide);
+            }
         }
     } catch (err) {
-        console.error("Fehler beim Laden:", err);
-        document.getElementById("loadingIndicator").style.display = "none";
-        return;
+        console.error("Fehler beim Laden von Forecast-Daten:", err);
     }
     document.getElementById("loadingIndicator").style.display = "none";
 
@@ -1220,114 +1133,132 @@ async function updateForecast(newMemberIdx, newStepIdx) {
     var parts = tInfo.local_str.split(" ")[0].split(".");
     var hourMin = tInfo.local_str.split(" ")[1].substring(0, 5);
     document.getElementById("currentStepLabel").innerText = parts[0] + "." + parts[1] + " " + hourMin + " LT";
-    
-    var refParts = config.ref_time_utc.split(" ");
+
+    var cfgL = modelsState.left.config;
+    var refParts = cfgL ? cfgL.ref_time_utc.split(" ") : ["01.01.", "00:00"];
     var refDateParts = refParts[0].split(".");
     var refTimeHour = refParts[1].split(":")[0];
-    var modShort = (currentModel === "icon-ch2") ? "CH2" : (currentModel === "arome" ? "AROME" : "CH1");
-    document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z ${modShort}`;
+    
+    if (isSplitActive) {
+        var modL = modelsState.left.currentModel === "arome" ? "AROME" : (modelsState.left.currentModel === "icon-ch2" ? "CH2" : "CH1");
+        var modR = modelsState.right.currentModel === "arome" ? "AROME" : (modelsState.right.currentModel === "icon-ch2" ? "CH2" : "CH1");
+        document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z | L: ${modL} | R: ${modR}`;
+    } else {
+        var modShort = modelsState.left.currentModel === "arome" ? "AROME" : (modelsState.left.currentModel === "icon-ch2" ? "CH2" : "CH1");
+        document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z ${modShort}`;
+    }
 
     uniqueDays.forEach(d => {
         var btn = document.getElementById("day-btn-" + d);
         if (btn) btn.classList.toggle("active", d === currentDayName);
     });
 
-    var hasMultiple = config.member_names.length > 1;
-    var statOffset = config.member_names.length - 6;
-    if (hasMultiple && currentMemberIdx >= 1 && currentMemberIdx < statOffset && !isEnsembleOpen) {
-        toggleEnsembleAccordion(true);
-    }
-
-    for (var i = 0; i < config.member_names.length; i++) {
-        var btn = document.getElementById("member-btn-" + i);
-        if (btn) btn.classList.toggle("active", i === currentMemberIdx);
+    if (cfgL) {
+        for (var i = 0; i < cfgL.member_names.length; i++) {
+            var btn = document.getElementById("member-btn-" + i);
+            if (btn) btn.classList.toggle("active", i === modelsState.left.currentMemberIdx);
+        }
     }
 
     updateEnsembleToggleState();
     updateLegend();
-    renderContours();
-    drawVisibleArrows();
+    renderContours('left');
+    drawVisibleArrows('left');
+
+    if (isSplitActive) {
+        renderContours('right');
+        drawVisibleArrows('right');
+    }
     updateCityLabels();
 }
 
-function renderContours() {
-    if (contourLayer1) map.removeLayer(contourLayer1);
-    const key1 = `${currentModel}_${currentRunId}_${layer1Var}_${currentMemberIdx}_${currentStepIdx}`;
+function renderContours(side) {
+    var st = modelsState[side];
+    var targetMap = (side === 'left') ? mapLeft : mapRight;
+    if (!st.config || !targetMap) return;
+
+    if (st.contourLayer1) targetMap.removeLayer(st.contourLayer1);
+    var maxSteps = (st.times ? st.times.length : 100);
+    var stepForSide = Math.min(currentStepIdx, maxSteps - 1);
+
+    const key1 = `${st.currentModel}_${st.currentRunId}_${layer1Var}_${st.currentMemberIdx}_${stepForSide}`;
     
-    contourLayer1 = L.geoJson(cacheContours[key1], {
+    st.contourLayer1 = L.geoJson(cacheContours[key1], {
         pane: 'contourPane1',
-        renderer: canvasRenderer1,
+        renderer: st.canvasRenderer1,
         smoothFactor: 1.0,
         style: function(feature) {
             var fill = feature.properties.fill;
             var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
-            
             if (layer1Mode === 'line') {
                 return { fill: false, color: isTrans ? 'transparent' : fill, weight: 1.8, opacity: 1.0 };
             } else {
                 return { fillColor: fill, color: isTrans ? 'transparent' : fill, weight: 0.5, fillOpacity: isTrans ? 0 : 1.0 };
             }
         }
-    }).addTo(map);
+    }).addTo(targetMap);
 
-    if (contourLayer2) { map.removeLayer(contourLayer2); contourLayer2 = null; }
+    if (st.contourLayer2) { targetMap.removeLayer(st.contourLayer2); st.contourLayer2 = null; }
     if (layer2Var) {
-        var vCfg2 = config.variables_config[layer2Var] || {};
-        var m2 = (vCfg2.has_ensemble) ? currentMemberIdx : 0;
-        const key2 = `${currentModel}_${currentRunId}_${layer2Var}_${m2}_${currentStepIdx}`;
+        var vCfg2 = st.config.variables_config[layer2Var] || {};
+        var m2 = vCfg2.has_ensemble ? st.currentMemberIdx : 0;
+        const key2 = `${st.currentModel}_${st.currentRunId}_${layer2Var}_${m2}_${stepForSide}`;
 
-        contourLayer2 = L.geoJson(cacheContours[key2], {
+        st.contourLayer2 = L.geoJson(cacheContours[key2], {
             pane: 'contourPane2',
-            renderer: canvasRenderer2,
+            renderer: st.canvasRenderer2,
             smoothFactor: 1.0,
             style: function(feature) {
                 var fill = feature.properties.fill;
                 var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
-
                 if (layer2Mode === 'line') {
                     return { fill: false, color: isTrans ? 'transparent' : fill, weight: 2.2, opacity: 1.0 };
                 } else {
                     return { fillColor: fill, color: isTrans ? 'transparent' : fill, weight: 0.5, fillOpacity: isTrans ? 0 : 1.0 };
                 }
             }
-        }).addTo(map);
+        }).addTo(targetMap);
     }
 }
 
-function drawVisibleArrows() {
-    if (!map || !config) return;
-    if (!activeMarkers) { 
-        activeMarkers = L.layerGroup([], { pane: 'arrowPane' }).addTo(map); 
+function drawVisibleArrows(side) {
+    var st = modelsState[side];
+    var targetMap = (side === 'left') ? mapLeft : mapRight;
+    if (!targetMap || !st.config) return;
+
+    if (!st.activeMarkers) { 
+        st.activeMarkers = L.layerGroup([], { pane: 'arrowPane' }).addTo(targetMap); 
     } else { 
-        activeMarkers.clearLayers(); 
+        st.activeMarkers.clearLayers(); 
     }
 
     var arrowVar = null;
     var arrowMember = 0;
-
-    var vCfg1 = config.variables_config[layer1Var];
-    var hasMultiple = config.member_names.length > 1;
-    var iqrIdx = config.member_names.length - 1;
+    var vCfg1 = st.config.variables_config[layer1Var];
+    var hasMultiple = st.config.member_names.length > 1;
+    var iqrIdx = st.config.member_names.length - 1;
     
-    if (vCfg1 && vCfg1.has_arrows && (!hasMultiple || currentMemberIdx < iqrIdx - 5)) {
+    if (vCfg1 && vCfg1.has_arrows && (!hasMultiple || st.currentMemberIdx < iqrIdx - 5)) {
         arrowVar = layer1Var;
-        arrowMember = currentMemberIdx;
+        arrowMember = st.currentMemberIdx;
     } else if (layer2Var) {
-        var vCfg2 = config.variables_config[layer2Var];
+        var vCfg2 = st.config.variables_config[layer2Var];
         if (vCfg2 && vCfg2.has_arrows) {
             arrowVar = layer2Var;
-            arrowMember = vCfg2.has_ensemble ? currentMemberIdx : 0;
+            arrowMember = vCfg2.has_ensemble ? st.currentMemberIdx : 0;
         }
     }
 
     if (!arrowVar) return;
 
-    const cacheKey = `${currentModel}_${currentRunId}_${arrowVar}_${arrowMember}_${currentStepIdx}`;
+    var maxSteps = (st.times ? st.times.length : 100);
+    var stepForSide = Math.min(currentStepIdx, maxSteps - 1);
+    const cacheKey = `${st.currentModel}_${st.currentRunId}_${arrowVar}_${arrowMember}_${stepForSide}`;
     const gridData = cacheGrid[cacheKey];
     if (!gridData || !gridData.s || !gridData.d) return;
 
-    var bounds = map.getBounds();
-    var zoom = map.getZoom();
+    var bounds = targetMap.getBounds();
+    var zoom = targetMap.getZoom();
 
     var step = 16;
     if (zoom >= 9 && zoom <= 10) step = 7;
@@ -1338,12 +1269,11 @@ function drawVisibleArrows() {
 
     var speeds = gridData.s;
     var dirs_half = gridData.d;
-    var labelType = config.variables_config[arrowVar].label || "Wind";
+    var labelType = st.config.variables_config[arrowVar].label || "Wind";
 
-    var nx = config.nx;
-    var ny = config.ny;
-    var xmin = config.xmin, xmax = config.xmax;
-    var ymin = config.ymin, ymax = config.ymax;
+    var nx = st.config.nx, ny = st.config.ny;
+    var xmin = st.config.xmin, xmax = st.config.xmax;
+    var ymin = st.config.ymin, ymax = st.config.ymax;
 
     var bNorth = bounds.getNorth(), bSouth = bounds.getSouth();
     var bWest = bounds.getWest(), bEast = bounds.getEast();
@@ -1370,7 +1300,6 @@ function drawVisibleArrows() {
 
             var lon = xmin + c * (xmax - xmin) / (nx - 1);
             var latlng = L.latLng(lat, lon);
-
             var speed = sVal / 10.0;
             var dir = dirVal * 2.0;
 
@@ -1383,14 +1312,14 @@ function drawVisibleArrows() {
                       '</svg></div>';
 
             var icon = L.divIcon({ html: svg, iconSize: [70, 70], iconAnchor: [35, 35], className: 'wind-arrow-icon' });
-            var modLabel = (currentModel === "icon-ch2") ? "ICON-CH2" : (currentModel === "arome" ? "AROME-HD" : "ICON-CH1");
+            var modLabel = st.config.model_label || st.currentModel;
             
             (function(sp, dr, ml, lt, pos, ic) {
                 var marker = L.marker(pos, { icon: ic, pane: 'arrowPane' });
                 marker.on('click', function(e) {
                     marker.bindPopup(`<b>${lt} (${ml}):</b><br>Stärke: ${sp.toFixed(1)} km/h<br>Richtung: ${dr.toFixed(0)}°`).openPopup();
                 });
-                marker.addTo(activeMarkers);
+                marker.addTo(st.activeMarkers);
             })(speed, dir, modLabel, labelType, latlng, icon);
         }
     }
