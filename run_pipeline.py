@@ -34,11 +34,29 @@ def load_existing_runs(model_name):
     return valid_runs
 
 def check_model_new_data(model_name):
-    from meteodatalab import ogd_api
-
-    model_cfg = config.MODELS_CONFIG[model_name]
     existing_runs = load_existing_runs(model_name)
     latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
+
+    if model_name == "ecmwf":
+        try:
+            from ecmwf.opendata import Client
+            client = Client(source="azure", model="ifs")
+            latest_dt = client.latest()
+            run_id = latest_dt.strftime("%Y%m%d_%H")
+            latest_ref_str = latest_dt.strftime("%d.%m.%Y %H:00 UTC")
+            iso_str = latest_dt.strftime("%Y-%m-%dT%H:00:00Z")
+            is_new = (latest_known_id != run_id)
+            if is_new:
+                print(f"✓ [ecmwf] Neuer ECMWF Lauf {run_id} ist verfügbar!", flush=True)
+            else:
+                print(f"-> [ecmwf] Lauf {run_id} ist bereits aktuell.", flush=True)
+            return is_new, latest_ref_str, iso_str, run_id, latest_dt
+        except Exception as e:
+            print(f"-> Hinweis: [ecmwf] Konnte Status nicht abrufen ({e}).", flush=True)
+            return False, None, "latest", None, None
+
+    from meteodatalab import ogd_api
+    model_cfg = config.MODELS_CONFIG[model_name]
 
     try:
         check_pilot = ogd_api.Request(
@@ -104,6 +122,7 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
     model_cfg = config.MODELS_CONFIG[model_name]
     nx = model_cfg.get("nx", config.NX)
     ny = model_cfg.get("ny", config.NY)
+    step_interval = model_cfg.get("step_interval", 1)
     
     for base_folder in ["dist/data", "dist-meta/data"]:
         model_base_dir = f"{base_folder}/{model_name}"
@@ -116,8 +135,10 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
         else:
             ref_dt = datetime.now(ZoneInfo("UTC"))
 
+        total_steps = (model_cfg["hours"] // step_interval) + 1
         times_by_step = []
-        for h in range(model_cfg["hours"] + 1):
+        for idx in range(total_steps):
+            h = idx * step_interval
             valid_local = (ref_dt + timedelta(hours=h)).astimezone(local_tz)
             times_by_step.append({
                 "step_hours": h,
@@ -128,11 +149,14 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
             json.dump(times_by_step, f)
 
         num_ens = model_cfg["max_members"] - 1
-        member_names = (
-            ["Hauptlauf"] + 
-            [f"Ens Member {m}" for m in range(1, num_ens + 1)] + 
-            ["Median", "Min", "Max", "25% Quantil", "75% Quantil", "Interquantilabstand"]
-        )
+        if num_ens > 0:
+            member_names = (
+                ["Hauptlauf"] + 
+                [f"Ens Member {m}" for m in range(1, num_ens + 1)] + 
+                ["Median", "Min", "Max", "25% Quantil", "75% Quantil", "Interquantilabstand"]
+            )
+        else:
+            member_names = ["Hauptlauf"]
 
         active_cfg = {}
         for v in model_cfg["active_variables"]:
@@ -176,7 +200,7 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
             "ref_time_utc": ref_time_str
         }
         updated_runs = [new_entry] + existing_runs
-        max_runs = model_cfg.get("max_runs", 8)
+        max_runs = model_cfg.get("max_runs", 4)
         valid_runs = updated_runs[:max_runs]
 
         with open(f"{model_base_dir}/runs.json", "w") as f:
@@ -204,7 +228,7 @@ def prune_old_runs():
 
         valid_ids = [r["id"] for r in valid_runs]
         latest_run_id = valid_ids[0] if valid_ids else None
-        num_ens = m_cfg["max_members"] - 1  # z.B. 10 bei CH1, 20 bei CH2
+        num_ens = m_cfg["max_members"] - 1
 
         for entry in os.listdir(model_base_dir):
             entry_path = os.path.join(model_base_dir, entry)
@@ -212,25 +236,22 @@ def prune_old_runs():
                 if entry != "runs.json":
                     os.remove(entry_path)
             elif os.path.isdir(entry_path):
-                # 1. Läufe älter als 24h komplett entfernen
                 if entry not in valid_ids:
                     print(f"-> Entferne Lauf älter als 24h ({m_name}): {entry}", flush=True)
                     shutil.rmtree(entry_path, ignore_errors=True)
-                # 2. Historische Läufe: Nur Hauptlauf (m0) & Statistiken behalten, Einzel-Member (m1..mN) löschen!
-                elif entry != latest_run_id:
+                elif entry != latest_run_id and num_ens > 0:
                     pruned_count = 0
                     for fname in os.listdir(entry_path):
                         if fname.startswith("grid_") and "_m" in fname:
                             try:
                                 m_idx = int(fname.split("_m")[1].split("_s")[0])
-                                # Wenn es ein einzelner Ensemble-Member ist (1 <= m_idx <= num_ens): LÖSCHEN
                                 if 1 <= m_idx <= num_ens:
                                     os.remove(os.path.join(entry_path, fname))
                                     pruned_count += 1
                             except Exception:
                                 pass
                     if pruned_count > 0:
-                        print(f"✓ Historischer Lauf {entry} ({m_name}): {pruned_count} Einzel-Member-Dateien entfernt (HL & Statistiken behalten).", flush=True)
+                        print(f"✓ Historischer Lauf {entry} ({m_name}): {pruned_count} Einzel-Member entfernt.", flush=True)
 
 def process_single_local_step(args):
     import stats
@@ -246,7 +267,7 @@ def process_single_local_step(args):
         for m_idx, d in d_by_member.items():
             exporter.export_variable_step(model_name, run_id, var_name, m_idx, global_step_idx, d)
 
-    print(f"✓ [{model_name}/{run_id}] Fertig Zeitschritt +{global_step_idx}h", flush=True)
+    print(f"✓ [{model_name}/{run_id}] Fertig Zeitschritt Index {global_step_idx}", flush=True)
     return global_step_idx
 
 def run_chunk(model_name, run_id, start_step, end_step, ref_time_str):
@@ -311,7 +332,8 @@ def main():
             if should_run_m and run_id:
                 any_new = True
                 prepare_model_base_site(m_name, latest_ref_str, iso_str, run_id, run_dt)
-                total_steps = m_cfg["hours"] + 1
+                step_interval = m_cfg.get("step_interval", 1)
+                total_steps = (m_cfg["hours"] // step_interval) + 1
                 c_list = get_dynamic_chunks(total_steps, max_chunks=m_cfg.get("max_chunks", 4))
                 for c in c_list:
                     all_chunks.append({
