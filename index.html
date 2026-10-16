@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ICON & ECMWF Wetter & Ensembles</title>
+    <title>ICON & ECMWF Wetterprognosen</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=29" />
+    <link rel="stylesheet" href="style.css?v=30" />
 </head>
 <body>
 
@@ -34,16 +34,16 @@
         </div>
     </div>
 
-    <!-- MODELL-AUSWAHL RECHTS: ECMWF OBEN RECHTS ÜBER CH2, DARUNTER CH1 & CH2 -->
+    <!-- MODELL-AUSWAHL RECHTS: ECMWF VOLLFLÄCHIG OBEN, DARUNTER CH1 & CH2 -->
     <div class="model-select-header">
-        <div class="model-toggle-container">
-            <div class="model-row-top">
+        <div class="model-toggle-box">
+            <div class="model-row-ecmwf">
                 <button class="model-btn" id="btnModel-ecmwf" onclick="handleModelButtonClick('ecmwf')">
                     <span class="model-title">ECMWF ▾</span>
                     <span class="model-time">--</span>
                 </button>
             </div>
-            <div class="model-row-bottom">
+            <div class="model-row-ch">
                 <button class="model-btn active" id="btnModel-icon-ch1" onclick="handleModelButtonClick('icon-ch1')">
                     <span class="model-title">CH1 ▾</span>
                     <span class="model-time">--</span>
@@ -155,11 +155,10 @@
         </div>
     </div>
 
-    <!-- DYNAMISCHE LEGENDE -->
     <div class="legend-box" id="legendBox"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=29"></script>
+    <script src="app.js?v=30"></script>
 </body>
 </html>
