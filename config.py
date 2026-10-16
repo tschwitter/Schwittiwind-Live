@@ -35,13 +35,10 @@ MODELS_CONFIG = {
         "nx": 400,
         "ny": 240,
         "hours": 33,
-        "step_interval": 1,
         "max_members": 11,
         "max_runs": 8,
         "active_variables": ["wind"],
-        #, "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
         "ensemble_variables": ["wind"],
-        #, "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"
         "max_chunks": 4
     },
     "icon-ch2": {
@@ -51,26 +48,21 @@ MODELS_CONFIG = {
         "nx": 200,
         "ny": 120,
         "hours": 120,
-        "step_interval": 1,
         "max_members": 21,
         "max_runs": 4,
         "active_variables": ["wind"],
-        #, "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"
         "ensemble_variables": ["wind"],
-        #, "gust", "sun", "dbz"
         "max_chunks": 4
     },
     "ecmwf": {
         "name": "ECMWF IFS (9km)",
-        "nx": 50,           # Exakte 9-km-Auflösung über der Schweiz
-        "ny": 32,
-        "hours": 90,
-        "step_interval": 3,
-        "max_members": 1,   # HRES 9km Hauptlauf
+        "nx": 42,           # Natives 9-km-Gitter Ost-West
+        "ny": 26,           # Natives 9-km-Gitter Nord-Süd (1092 Punkte)
+        "max_members": 1,   # HRES Hauptlauf
         "max_runs": 4,      # 4 Läufe pro Tag
         "active_variables": ["wind"],
         "ensemble_variables": [],
-        "max_chunks": 1
+        "max_chunks": 1     # 1 einziger Runner verhindert API-Kollisionen
     }
 }
 
