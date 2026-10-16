@@ -1,11 +1,14 @@
 import os
 import gc
 import time
+import tempfile
 import threading
 from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import xarray as xr
+import requests
+import cfgrib
 from meteodatalab import ogd_api, grib_decoder, data_source
 import config
 
@@ -232,7 +235,132 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
             results_by_alt[alt] = slices[0].expand_dims("lead_time")
     return results_by_alt
 
+# ================= AROME HD (MÉTÉO-FRANCE) FETCHER =================
+def fetch_arome_single_hour(ref_iso, lead_hour):
+    """
+    Lädt das stündliche SP1-GRIB2-Paket von Météo-France herunter
+    und extrahiert u10 sowie v10 für den Schweizer Ausschnitt.
+    """
+    urls = [
+        f"https://meteofrance-pnt.s3.rbx.io.cloud.ovh.net/pnt/{ref_iso}/arome/001/SP1/arome__001__SP1__{lead_hour:02d}H__{ref_iso}.grib2",
+        f"https://object.data.gouv.fr/meteofrance-pnt/pnt/{ref_iso}/arome/001/SP1/arome__001__SP1__{lead_hour:02d}H__{ref_iso}.grib2"
+    ]
+
+    resp = None
+    for url in urls:
+        for attempt in range(1, 4):
+            try:
+                r = requests.get(url, timeout=30)
+                if r.status_code == 200 and len(r.content) > 10000:
+                    resp = r
+                    break
+            except Exception:
+                time.sleep(2 * attempt)
+        if resp is not None:
+            break
+
+    if resp is None:
+        print(f"⚠️ AROME Stunde +{lead_hour}h konnte nicht geladen werden.", flush=True)
+        return None, None, None, None
+
+    with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp:
+        tmp.write(resp.content)
+        tmp_path = tmp.name
+
+    try:
+        datasets = cfgrib.open_datasets(tmp_path)
+        u10_da, v10_da = None, None
+
+        for ds in datasets:
+            if 'u10' in ds:
+                u10_da = ds['u10']
+            elif '10u' in ds:
+                u10_da = ds['10u']
+            if 'v10' in ds:
+                v10_da = ds['v10']
+            elif '10v' in ds:
+                v10_da = ds['10v']
+
+        if u10_da is None or v10_da is None:
+            for ds in datasets:
+                for var_name in ds.data_vars:
+                    v = ds[var_name]
+                    if getattr(v, 'standard_name', '') == 'eastward_wind':
+                        u10_da = v
+                    elif getattr(v, 'standard_name', '') == 'northward_wind':
+                        v10_da = v
+
+        lat_coord = 'latitude' if 'latitude' in u10_da.coords else 'lat'
+        lon_coord = 'longitude' if 'longitude' in u10_da.coords else 'lon'
+
+        # Zuschneiden auf Schweiz
+        lat_vals = u10_da[lat_coord].values
+        if lat_vals[0] > lat_vals[-1]:
+            lat_slice = slice(config.LAT_MAX, config.LAT_MIN)
+        else:
+            lat_slice = slice(config.LAT_MIN, config.LAT_MAX)
+
+        lon_slice = slice(config.LON_MIN, config.LON_MAX)
+        u_sub = u10_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
+        v_sub = v10_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
+
+        sub_lats = u10_da[lat_coord].sel({lat_coord: lat_slice}).values
+        sub_lons = u10_da[lon_coord].sel({lon_coord: lon_slice}).values
+
+        glon, glat = np.meshgrid(sub_lons, sub_lats)
+        return u_sub.ravel(), v_sub.ravel(), glon.ravel(), glat.ravel()
+    except Exception as e:
+        print(f"Fehler beim Dekodieren von AROME GRIB2 (+{lead_hour}h): {e}", flush=True)
+        return None, None, None, None
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+def fetch_arome_hd_data(start_step, end_step, ref_time_str):
+    print(f"-> Lade AROME HD (10m Wind) für Schritte {start_step} bis {end_step} ({ref_time_str})...", flush=True)
+    lead_hours = list(range(start_step, end_step + 1))
+
+    u_list, v_list = [], []
+    ref_lon, ref_lat = None, None
+
+    for h in lead_hours:
+        u_arr, v_arr, lons, lats = fetch_arome_single_hour(ref_time_str, h)
+        if u_arr is not None:
+            u_list.append(u_arr)
+            v_list.append(v_arr)
+            if ref_lon is None:
+                ref_lon = lons
+                ref_lat = lats
+        else:
+            # Fallback mit Nans
+            dummy_len = len(ref_lon) if ref_lon is not None else 1000
+            u_list.append(np.full(dummy_len, np.nan, dtype=np.float32))
+            v_list.append(np.full(dummy_len, np.nan, dtype=np.float32))
+
+    u_stack = np.stack(u_list, axis=0)  # Shape: (lead_time, cell)
+    v_stack = np.stack(v_list, axis=0)
+
+    u_da = xr.DataArray(u_stack, dims=["lead_time", "cell"])
+    v_da = xr.DataArray(v_stack, dims=["lead_time", "cell"])
+
+    return {
+        "surface": {
+            "u_h": u_da,
+            "v_h": v_da
+        },
+        "altitude_hl": {},
+        "altitude_ens": {},
+        "ref_lon": ref_lon,
+        "ref_lat": ref_lat
+    }
+
 def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
+    if model_name == "arome":
+        return fetch_arome_hd_data(start_step, end_step, ref_time_str)
+
     model_cfg = config.MODELS_CONFIG[model_name]
     collection = model_cfg["collection"]
     active_vars = model_cfg["active_variables"]
