@@ -3,18 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ICON & ECMWF Wetterprognosen</title>
+    <title>ICON & ECMWF Wetter & Ensembles</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=28" />
+    <link rel="stylesheet" href="style.css?v=29" />
 </head>
 <body>
 
+    <!-- Die Karte -->
     <div id="map"></div>
 
+    <!-- EINSTELLUNGS-BUTTON OBEN LINKS -->
     <div class="custom-settings-control">
         <a href="#" class="settings-control-btn" id="settingsBtn" onclick="toggleSettings(event)" title="Karten- & Ebenen-Optionen">⚙</a>
     </div>
 
+    <!-- OBERES KONTROLL-PANEL (MITTE) -->
     <div class="top-control-panel">
         <div class="top-row">
             <button class="nav-toggle-btn" id="btnToggleWetter" onclick="toggleWetterMenu()">Wetter ▾</button>
@@ -31,29 +34,35 @@
         </div>
     </div>
 
-    <!-- MODELL-AUSWAHL RECHTS ÜBER DEM LÄUFE-PANEL (CH1, CH2, ECMWF) -->
+    <!-- MODELL-AUSWAHL RECHTS: ECMWF OBEN RECHTS ÜBER CH2, DARUNTER CH1 & CH2 -->
     <div class="model-select-header">
-        <div class="model-toggle-group">
-            <button class="model-btn active" id="btnModel-icon-ch1" onclick="handleModelButtonClick('icon-ch1')">
-                <span class="model-title">CH1 ▾</span>
-                <span class="model-time">--</span>
-            </button>
-            <button class="model-btn" id="btnModel-icon-ch2" onclick="handleModelButtonClick('icon-ch2')">
-                <span class="model-title">CH2 ▾</span>
-                <span class="model-time">--</span>
-            </button>
-            <button class="model-btn" id="btnModel-ecmwf" onclick="handleModelButtonClick('ecmwf')">
-                <span class="model-title">ECMWF ▾</span>
-                <span class="model-time">--</span>
-            </button>
+        <div class="model-toggle-container">
+            <div class="model-row-top">
+                <button class="model-btn" id="btnModel-ecmwf" onclick="handleModelButtonClick('ecmwf')">
+                    <span class="model-title">ECMWF ▾</span>
+                    <span class="model-time">--</span>
+                </button>
+            </div>
+            <div class="model-row-bottom">
+                <button class="model-btn active" id="btnModel-icon-ch1" onclick="handleModelButtonClick('icon-ch1')">
+                    <span class="model-title">CH1 ▾</span>
+                    <span class="model-time">--</span>
+                </button>
+                <button class="model-btn" id="btnModel-icon-ch2" onclick="handleModelButtonClick('icon-ch2')">
+                    <span class="model-title">CH2 ▾</span>
+                    <span class="model-time">--</span>
+                </button>
+            </div>
         </div>
     </div>
 
+    <!-- SCHWEBENDE POPUPS & DROPDOWNS -->
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-icon-ch1"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-icon-ch2"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-ecmwf"></div>
     <div class="floating-popup layer2-dropdown-popup" id="layer2Dropdown"></div>
 
+    <!-- EINSTELLUNGEN-POPUP -->
     <div class="floating-popup settings-popup" id="settingsPopup">
         <div class="settings-title">⚙ Karten- & Ebenen-Optionen</div>
         
@@ -108,6 +117,7 @@
 
     <div id="loadingIndicator">Lade Wetterdaten...</div>
 
+    <!-- RECHTES PANEL (LÄUFE) -->
     <div class="member-panel" id="memberPanel">
         <div class="member-panel-title">LÄUFE</div>
         <div class="member-section-title">Hauptlauf</div>
@@ -126,6 +136,7 @@
         <div id="onlyHlNotice" class="only-hl-info">Nur Hauptlauf verfügbar</div>
     </div>
 
+    <!-- UNTERES KONTROLLZENTRUM -->
     <div class="control-panel">
         <div class="day-buttons-row" id="dayButtonsContainer"></div>
         <div class="main-controls-row">
@@ -144,10 +155,11 @@
         </div>
     </div>
 
+    <!-- DYNAMISCHE LEGENDE -->
     <div class="legend-box" id="legendBox"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=28"></script>
+    <script src="app.js?v=29"></script>
 </body>
 </html>
