@@ -38,8 +38,10 @@ MODELS_CONFIG = {
         "step_interval": 1,
         "max_members": 11,
         "max_runs": 8,
-        "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"],
-        "ensemble_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"],
+        "active_variables": [],
+        #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
+        "ensemble_variables": [],
+        #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"
         "max_chunks": 4
     },
     "icon-ch2": {
@@ -52,8 +54,10 @@ MODELS_CONFIG = {
         "step_interval": 1,
         "max_members": 21,
         "max_runs": 4,
-        "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"],
-        "ensemble_variables": ["wind", "gust", "sun", "dbz"],
+        "active_variables": [],
+        #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"
+        "ensemble_variables": [],
+        #"wind", "gust", "sun", "dbz"
         "max_chunks": 4
     },
     "ecmwf": {
@@ -66,7 +70,7 @@ MODELS_CONFIG = {
         "max_runs": 4,      # 4 Läufe pro Tag (00Z, 06Z, 12Z, 18Z)
         "active_variables": ["wind"],
         "ensemble_variables": [],
-        "max_chunks": 3
+        "max_chunks": 4
     }
 }
 
