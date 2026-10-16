@@ -1373,14 +1373,13 @@ function drawVisibleArrows() {
     var zoom = map.getZoom();
 
     // Schrittweiten-Steuerung:
-    // ECMWF (nx <= 60): Natives 9-km-Gitter harmonisch staffeln
-    // ICON (1-2 km Gitter): Wie gewohnt dicht
+    // ECMWF (nx <= 60): Natives 9-km-Gitter
+    // ICON (nx = 200/400): 1-2 km Gitter
     var step = 16;
     if (config.nx <= 60) {
-        if (zoom <= 7) step = 4;        // Weit raus: ca. alle 36 km ein Pfeil
-        else if (zoom === 8) step = 3;  // ca. alle 27 km ein Pfeil
-        else if (zoom === 9) step = 2;  // ca. alle 18 km ein Pfeil
-        else step = 1;                  // ab Zoom 10: jeder Punkt des echten 9-km-Gitters
+        if (zoom <= 7) step = 3;        // ca. alle 27 km ein Pfeil
+        else if (zoom <= 8) step = 2;   // ca. alle 18 km ein Pfeil
+        else step = 1;                  // ab Zoom 9: jeder einzelne 9-km-Gitterpunkt!
     } else {
         if (zoom >= 9 && zoom <= 10) step = 7;
         else if (zoom === 11) step = 4;
@@ -1436,7 +1435,7 @@ function drawVisibleArrows() {
                       '</svg></div>';
 
             var icon = L.divIcon({ html: svg, iconSize: [70, 70], iconAnchor: [35, 35], className: 'wind-arrow-icon' });
-            var modLabel = (currentModel === "icon-ch2") ? "ICON-CH2" : ((currentModel === "ecmwf") ? "ECMWF IFS" : "ICON-CH1");
+            var modLabel = (currentModel === "icon-ch2") ? "ICON-CH2" : ((currentModel === "ecmwf") ? "ECMWF IFS (9km)" : "ICON-CH1");
             
             (function(sp, dr, ml, lt, pos, ic) {
                 var marker = L.marker(pos, { icon: ic, pane: 'arrowPane' });
