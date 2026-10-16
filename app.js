@@ -188,7 +188,7 @@ function closeAllPopups() {
     setPopupsDimmed(false);
 }
 
-// ================= HINTERGRUNDKARTE: TRANSPARENZ & STIL =================
+// ================= HINTERGRUNDKARTE =================
 function setBaseMapOpacity(val) {
     var op = val / 100.0;
     baseMapOpacity = op;
@@ -223,7 +223,7 @@ function setBaseMapStyle(style) {
     }
 }
 
-// ================= VERTIKAL-MODUS (MEMBER VS. LÄUFE) =================
+// ================= VERTIKAL-MODUS =================
 function toggleNavMode() {
     verticalNavMode = (verticalNavMode === 'member') ? 'run' : 'member';
     updateNavModeButton();
@@ -661,42 +661,16 @@ function updateMemberPanelVisibility(hasEns) {
     if (notice) notice.style.display = hasEns ? "none" : "block";
 }
 
-// ================= INTELLIGENTE VERTIKAL- & HORIZONTAL-NAVIGATION =================
+// ================= INTELLIGENTE NAVIGATION =================
 function navLeft() {
-    var curDay = getDayNameForStep(currentStepIdx);
-    var steps = dayTimesteps[curDay] || [];
-    var pos = steps.indexOf(currentStepIdx);
-
-    if (pos > 0) {
-        updateForecast(currentMemberIdx, steps[pos - 1]);
-    } else {
-        var dIdx = uniqueDays.indexOf(curDay);
-        if (dIdx > 0) {
-            var prevDay = uniqueDays[dIdx - 1];
-            var prevSteps = dayTimesteps[prevDay];
-            if (prevSteps && prevSteps.length > 0) {
-                updateForecast(currentMemberIdx, prevSteps[prevSteps.length - 1]);
-            }
-        }
+    if (currentStepIdx > 0) {
+        updateForecast(currentMemberIdx, currentStepIdx - 1);
     }
 }
 
 function navRight() {
-    var curDay = getDayNameForStep(currentStepIdx);
-    var steps = dayTimesteps[curDay] || [];
-    var pos = steps.indexOf(currentStepIdx);
-
-    if (pos < steps.length - 1) {
-        updateForecast(currentMemberIdx, steps[pos + 1]);
-    } else {
-        var dIdx = uniqueDays.indexOf(curDay);
-        if (dIdx < uniqueDays.length - 1) {
-            var nextDay = uniqueDays[dIdx + 1];
-            var nextSteps = dayTimesteps[nextDay];
-            if (nextSteps && nextSteps.length > 0) {
-                updateForecast(currentMemberIdx, nextSteps[0]);
-            }
-        }
+    if (times && currentStepIdx < times.length - 1) {
+        updateForecast(currentMemberIdx, currentStepIdx + 1);
     }
 }
 
@@ -705,9 +679,6 @@ function navUp() {
         navRun(-1);
         return;
     }
-
-    var vCfg = config.variables_config[layer1Var];
-    if (vCfg && !vCfg.has_ensemble) return;
 
     var numMembers = config.member_names ? config.member_names.length : 1;
     if (numMembers <= 1) return;
@@ -728,11 +699,8 @@ function navUp() {
 
     if (!isEnsembleOpen) {
         if (currentMemberIdx >= statOffset) {
-            if (currentMemberIdx === statOffset) {
-                updateForecast(0, currentStepIdx);
-            } else {
-                updateForecast(currentMemberIdx - 1, currentStepIdx);
-            }
+            if (currentMemberIdx === statOffset) updateForecast(0, currentStepIdx);
+            else updateForecast(currentMemberIdx - 1, currentStepIdx);
         } else {
             updateForecast(0, currentStepIdx);
         }
@@ -746,9 +714,6 @@ function navDown() {
         navRun(1);
         return;
     }
-
-    var vCfg = config.variables_config[layer1Var];
-    if (vCfg && !vCfg.has_ensemble) return;
 
     var numMembers = config.member_names ? config.member_names.length : 1;
     if (numMembers <= 1) return;
@@ -789,27 +754,29 @@ function initDayButtons() {
     times.forEach((t, idx) => {
         var parts = t.local_str.split(" ")[0].split(".");
         var dateObj = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-        var dayName = weekdays[dateObj.getDay()];
-        if (!uniqueDays.includes(dayName)) {
-            uniqueDays.push(dayName);
-            dayTimesteps[dayName] = [];
+        // Eindeutiger Tag-Key inklusive Datum, damit 10-Tage-Läufe nicht überlappen!
+        var dayKey = `${weekdays[dateObj.getDay()]} ${parts[0]}.${parts[1]}.`;
+        if (!uniqueDays.includes(dayKey)) {
+            uniqueDays.push(dayKey);
+            dayTimesteps[dayKey] = [];
         }
-        dayTimesteps[dayName].push(idx);
+        dayTimesteps[dayKey].push(idx);
     });
     
-    uniqueDays.forEach(dayName => {
+    uniqueDays.forEach(dayKey => {
         var btn = document.createElement("button");
         btn.className = "day-btn";
-        btn.id = "day-btn-" + dayName;
-        btn.innerText = dayName;
-        btn.onclick = function() { jumpToDaySameHour(dayName); };
+        btn.id = "day-btn-" + dayKey.replace(/[^a-zA-Z0-9]/g, "_");
+        btn.innerText = dayKey.split(" ")[0]; // Zeigt z.B. "Mo", "Di"
+        btn.title = dayKey;
+        btn.onclick = function() { jumpToDaySameHour(dayKey); };
         container.appendChild(btn);
     });
 }
 
-function jumpToDaySameHour(targetDayName) {
+function jumpToDaySameHour(targetDayKey) {
     var currentHour = parseInt(times[currentStepIdx].local_str.split(" ")[1].split(":")[0]);
-    var targetIndices = dayTimesteps[targetDayName];
+    var targetIndices = dayTimesteps[targetDayKey];
     if (!targetIndices || targetIndices.length === 0) return;
 
     var bestIdx = targetIndices[0];
@@ -1183,22 +1150,10 @@ async function init() {
 
         var slider = document.getElementById("timeSlider");
         slider.addEventListener("input", function() {
-            var targetHour = parseInt(this.value);
-            var curDay = getDayNameForStep(currentStepIdx);
-            var steps = dayTimesteps[curDay] || [];
-            if (steps.length === 0) return;
-
-            var bestIdx = steps[0];
-            var minDiff = 999;
-            steps.forEach(idx => {
-                var h = parseInt(times[idx].local_str.split(" ")[1].split(":")[0]);
-                var diff = Math.abs(h - targetHour);
-                if (diff < minDiff) { 
-                    minDiff = diff; 
-                    bestIdx = idx; 
-                }
-            });
-            updateForecast(currentMemberIdx, bestIdx);
+            var targetIdx = parseInt(this.value);
+            if (times && targetIdx >= 0 && targetIdx < times.length) {
+                updateForecast(currentMemberIdx, targetIdx);
+            }
         });
 
         document.addEventListener('keydown', function(event) {
@@ -1233,13 +1188,12 @@ async function updateForecast(newMemberIdx, newStepIdx) {
     currentMemberIdx = parseInt(newMemberIdx);
     currentStepIdx = parseInt(newStepIdx);
 
-    var currentDayName = getDayNameForStep(currentStepIdx);
-    var currentHour = parseInt(times[currentStepIdx].local_str.split(" ")[1].split(":")[0]);
     var slider = document.getElementById("timeSlider");
-    
-    slider.min = 0;
-    slider.max = 23;
-    slider.value = currentHour;
+    if (times && times.length > 0) {
+        slider.min = 0;
+        slider.max = times.length - 1;
+        slider.value = currentStepIdx;
+    }
 
     document.getElementById("loadingIndicator").style.display = "block";
     try {
@@ -1260,7 +1214,10 @@ async function updateForecast(newMemberIdx, newStepIdx) {
     var tInfo = times[currentStepIdx];
     var parts = tInfo.local_str.split(" ")[0].split(".");
     var hourMin = tInfo.local_str.split(" ")[1].substring(0, 5);
-    document.getElementById("currentStepLabel").innerText = parts[0] + "." + parts[1] + " " + hourMin + " LT";
+    
+    // Label zeigt z.B.: "16.10. 14:00 LT (+14h)"
+    var stepHoursTxt = (tInfo.step_hours !== undefined) ? ` (+${tInfo.step_hours}h)` : "";
+    document.getElementById("currentStepLabel").innerText = parts[0] + "." + parts[1] + " " + hourMin + " LT" + stepHoursTxt;
     
     var refParts = config.ref_time_utc.split(" ");
     var refDateParts = refParts[0].split(".");
@@ -1268,9 +1225,13 @@ async function updateForecast(newMemberIdx, newStepIdx) {
     var modShort = (currentModel === "icon-ch2") ? "CH2" : ((currentModel === "ecmwf") ? "ECMWF" : "CH1");
     document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z ${modShort}`;
 
-    uniqueDays.forEach(d => {
-        var btn = document.getElementById("day-btn-" + d);
-        if (btn) btn.classList.toggle("active", d === currentDayName);
+    // Aktiven Tag-Button markieren
+    var currentDayName = getDayNameForStep(currentStepIdx);
+    var currentDayKey = `${currentDayName} ${parts[0]}.${parts[1]}.`;
+    uniqueDays.forEach(dKey => {
+        var btnId = "day-btn-" + dKey.replace(/[^a-zA-Z0-9]/g, "_");
+        var btn = document.getElementById(btnId);
+        if (btn) btn.classList.toggle("active", dKey === currentDayKey);
     });
 
     var numMembers = config.member_names ? config.member_names.length : 1;
@@ -1379,7 +1340,7 @@ function drawVisibleArrows() {
     if (config.nx <= 60) {
         if (zoom <= 7) step = 3;        // ca. alle 27 km ein Pfeil
         else if (zoom <= 8) step = 2;   // ca. alle 18 km ein Pfeil
-        else step = 1;                  // ab Zoom 9: jeder einzelne 9-km-Gitterpunkt!
+        else step = 1;                  // ab Zoom 9: jeder einzelne 9-km-Punkt
     } else {
         if (zoom >= 9 && zoom <= 10) step = 7;
         else if (zoom === 11) step = 4;
