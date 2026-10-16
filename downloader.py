@@ -241,7 +241,7 @@ def fetch_ecmwf_wind(start_step, end_step, ref_time_str):
 
     print(f"-> Lade natives ECMWF IFS (9 km) über Open-Meteo API ({len(forecast_hours)} Schritte)...", flush=True)
 
-    # 50 x 32 Punkte über der Schweizer Bounding Box
+    # 42 x 26 = 1092 Punkte über der Schweizer Bounding Box
     lats = np.linspace(config.LAT_MIN, config.LAT_MAX, config.MODELS_CONFIG["ecmwf"]["ny"])
     lons = np.linspace(config.LON_MIN, config.LON_MAX, config.MODELS_CONFIG["ecmwf"]["nx"])
     grid_lon, grid_lat = np.meshgrid(lons, lats)
@@ -249,10 +249,12 @@ def fetch_ecmwf_wind(start_step, end_step, ref_time_str):
     flat_lons = grid_lon.ravel()
     total_pts = len(flat_lats)
 
-    # 100 Koordinaten pro Batch (offizielles Open-Meteo Limit)
-    batch_size = 100
+    # 250 Punkte pro Batch -> nur 5 Requests total für die gesamte Schweiz!
+    batch_size = 250
     all_u = []
     all_v = []
+
+    headers = {"User-Agent": "WeatherDashboard/1.0 (GitHubActions)"}
 
     for b in range(0, total_pts, batch_size):
         b_lats = flat_lats[b:b+batch_size]
@@ -271,9 +273,10 @@ def fetch_ecmwf_wind(start_step, end_step, ref_time_str):
         }
 
         success = False
+        last_err = ""
         for attempt in range(1, 6):
             try:
-                res = requests.get(url, params=params, timeout=30)
+                res = requests.get(url, params=params, headers=headers, timeout=40)
                 if res.status_code == 200:
                     data = res.json()
                     loc_list = data if isinstance(data, list) else [data]
@@ -290,23 +293,24 @@ def fetch_ecmwf_wind(start_step, end_step, ref_time_str):
                     success = True
                     break
                 elif res.status_code == 429:
-                    # Rate limit -> 3 bis 5 Sekunden warten und wiederholen
-                    time.sleep(3 * attempt)
+                    last_err = f"HTTP 429 Rate Limit"
+                    time.sleep(5 * attempt)
                 else:
-                    time.sleep(2 * attempt)
-            except Exception:
-                time.sleep(2 * attempt)
+                    last_err = f"HTTP {res.status_code}: {res.text[:100]}"
+                    time.sleep(3 * attempt)
+            except Exception as e:
+                last_err = str(e)
+                time.sleep(3 * attempt)
 
         if not success:
-            raise RuntimeError(f"Konnte ECMWF Batch {b} auch nach 5 Versuchen nicht abholen!")
+            raise RuntimeError(f"Konnte ECMWF Batch {b} nicht abholen ({last_err})")
 
-        # Minimale Pause zwischen den Batches, um Rate-Limits zu verhindern
-        time.sleep(0.1)
+        # Pause zwischen den 5 Requests, um die API sauber zu schonen
+        time.sleep(0.3)
 
     u_all = np.array(all_u) # Shape: (points, lead_time)
     v_all = np.array(all_v)
 
-    # Transponieren zu: (lead_time, points)
     u_matrix = u_all.T
     v_matrix = v_all.T
 
