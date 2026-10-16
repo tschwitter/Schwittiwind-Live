@@ -232,7 +232,85 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
             results_by_alt[alt] = slices[0].expand_dims("lead_time")
     return results_by_alt
 
+# ================= ECMWF IFS OPEN DATA DOWNLOADER =================
+def fetch_ecmwf_wind(start_step, end_step, ref_time_str):
+    from ecmwf.opendata import Client
+    from datetime import datetime
+    import tempfile
+
+    step_interval = config.MODELS_CONFIG["ecmwf"].get("step_interval", 3)
+    forecast_steps = [s * step_interval for s in range(start_step, end_step + 1)]
+
+    print(f"-> Lade ECMWF IFS 10m Wind für Schritte {forecast_steps}h...", flush=True)
+
+    client = Client(source="azure", model="ifs") # Schneller Cloud-Mirror
+    dt = datetime.fromisoformat(ref_time_str.replace("Z", ""))
+    run_date = dt.strftime("%Y%m%d")
+    run_time = dt.hour
+
+    u_slices = []
+    v_slices = []
+    ref_lons = None
+    ref_lats = None
+
+    for step_h in forecast_steps:
+        with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            client.retrieve(
+                date=run_date,
+                time=run_time,
+                step=step_h,
+                stream="oper",
+                type="fc",
+                param=["10u", "10v"],
+                target=tmp_path
+            )
+
+            ds = xr.open_dataset(tmp_path, engine="cfgrib")
+            
+            # Schweizer Bounding Box sauber herausfiltern
+            sub = ds.where(
+                (ds.latitude >= config.LAT_MIN) & (ds.latitude <= config.LAT_MAX) &
+                (ds.longitude >= config.LON_MIN) & (ds.longitude <= config.LON_MAX),
+                drop=True
+            )
+
+            if ref_lons is None:
+                mesh_lon, mesh_lat = np.meshgrid(sub.longitude.values, sub.latitude.values)
+                ref_lons = mesh_lon.ravel()
+                ref_lats = mesh_lat.ravel()
+
+            u_flat = sub['u10'].values.ravel()
+            v_flat = sub['v10'].values.ravel()
+
+            u_slices.append(u_flat)
+            v_slices.append(v_flat)
+            ds.close()
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    u_all = np.array(u_slices) # Shape: (steps, cells)
+    v_all = np.array(v_slices)
+
+    da_u = xr.DataArray(u_all, dims=["lead_time", "cell"])
+    da_v = xr.DataArray(v_all, dims=["lead_time", "cell"])
+
+    print(f"✓ ECMWF IFS 10m Wind ({len(forecast_steps)} Schritte) bereitgestellt!", flush=True)
+    return {
+        "surface": {"u_h": da_u, "v_h": da_v},
+        "altitude_hl": {},
+        "altitude_ens": {},
+        "ref_lon": ref_lons,
+        "ref_lat": ref_lats
+    }
+
 def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
+    if model_name == "ecmwf":
+        return fetch_ecmwf_wind(start_step, end_step, ref_time_str)
+
     model_cfg = config.MODELS_CONFIG[model_name]
     collection = model_cfg["collection"]
     active_vars = model_cfg["active_variables"]
