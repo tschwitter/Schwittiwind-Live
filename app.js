@@ -163,11 +163,11 @@ function parseLocalStr(str) {
     );
 }
 
-function getDayNameForStep(stepIdx) {
+function getDayKeyForStep(stepIdx) {
     if (!times || !times[stepIdx]) return "";
     var parts = times[stepIdx].local_str.split(" ")[0].split(".");
     var dateObj = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-    return weekdays[dateObj.getDay()];
+    return `${weekdays[dateObj.getDay()]} ${parts[0]}.${parts[1]}.`;
 }
 
 function setPopupsDimmed(dimmed) {
@@ -345,8 +345,9 @@ async function switchModel(newModel) {
 function updateEnsembleToggleState() {
     var btn = document.getElementById("btnToggleEnsemble");
     if (!btn || !config) return;
-    var statOffset = config.member_names.length - 6;
-    var isMemberActive = (currentMemberIdx >= 1 && currentMemberIdx < statOffset);
+    var numMembers = config.member_names ? config.member_names.length : 1;
+    var statOffset = numMembers - 6;
+    var isMemberActive = (numMembers > 6 && currentMemberIdx >= 1 && currentMemberIdx < statOffset);
     btn.classList.toggle("active-indicator", isMemberActive && !isEnsembleOpen);
 }
 
@@ -661,16 +662,42 @@ function updateMemberPanelVisibility(hasEns) {
     if (notice) notice.style.display = hasEns ? "none" : "block";
 }
 
-// ================= INTELLIGENTE NAVIGATION =================
+// ================= INTELLIGENTE ZEIT-NAVIGATION (STUNDEN IM TAG) =================
 function navLeft() {
-    if (currentStepIdx > 0) {
-        updateForecast(currentMemberIdx, currentStepIdx - 1);
+    var curDayKey = getDayKeyForStep(currentStepIdx);
+    var steps = dayTimesteps[curDayKey] || [];
+    var pos = steps.indexOf(currentStepIdx);
+
+    if (pos > 0) {
+        updateForecast(currentMemberIdx, steps[pos - 1]);
+    } else {
+        var dIdx = uniqueDays.indexOf(curDayKey);
+        if (dIdx > 0) {
+            var prevDayKey = uniqueDays[dIdx - 1];
+            var prevSteps = dayTimesteps[prevDayKey];
+            if (prevSteps && prevSteps.length > 0) {
+                updateForecast(currentMemberIdx, prevSteps[prevSteps.length - 1]);
+            }
+        }
     }
 }
 
 function navRight() {
-    if (times && currentStepIdx < times.length - 1) {
-        updateForecast(currentMemberIdx, currentStepIdx + 1);
+    var curDayKey = getDayKeyForStep(currentStepIdx);
+    var steps = dayTimesteps[curDayKey] || [];
+    var pos = steps.indexOf(currentStepIdx);
+
+    if (pos < steps.length - 1) {
+        updateForecast(currentMemberIdx, steps[pos + 1]);
+    } else {
+        var dIdx = uniqueDays.indexOf(curDayKey);
+        if (dIdx < uniqueDays.length - 1) {
+            var nextDayKey = uniqueDays[dIdx + 1];
+            var nextSteps = dayTimesteps[nextDayKey];
+            if (nextSteps && nextSteps.length > 0) {
+                updateForecast(currentMemberIdx, nextSteps[0]);
+            }
+        }
     }
 }
 
@@ -755,9 +782,7 @@ function initDayButtons() {
     dayTimesteps = {};
     
     times.forEach((t, idx) => {
-        var parts = t.local_str.split(" ")[0].split(".");
-        var dateObj = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-        var dayKey = `${weekdays[dateObj.getDay()]} ${parts[0]}.${parts[1]}.`;
+        var dayKey = getDayKeyForStep(idx);
         if (!uniqueDays.includes(dayKey)) {
             uniqueDays.push(dayKey);
             dayTimesteps[dayKey] = [];
@@ -769,7 +794,7 @@ function initDayButtons() {
         var btn = document.createElement("button");
         btn.className = "day-btn";
         btn.id = "day-btn-" + dayKey.replace(/[^a-zA-Z0-9]/g, "_");
-        btn.innerText = dayKey.split(" ")[0];
+        btn.innerText = dayKey.split(" ")[0]; // "Mo", "Di" etc.
         btn.title = dayKey;
         btn.onclick = function() { jumpToDaySameHour(dayKey); };
         container.appendChild(btn);
@@ -1150,12 +1175,29 @@ async function init() {
             closeAllPopups();
         });
 
+        // ================= 24-STUNDEN-SLIDER (0 BIS 23 UHR) =================
         var slider = document.getElementById("timeSlider");
+        slider.min = 0;
+        slider.max = 23;
+
         slider.addEventListener("input", function() {
-            var targetIdx = parseInt(this.value);
-            if (times && targetIdx >= 0 && targetIdx < times.length) {
-                updateForecast(currentMemberIdx, targetIdx);
-            }
+            var targetHour = parseInt(this.value);
+            var curDayKey = getDayKeyForStep(currentStepIdx);
+            var steps = dayTimesteps[curDayKey] || [];
+            if (steps.length === 0) return;
+
+            // Sucht im aktuell ausgewählten Tag den Zeitschritt, der der Slider-Stunde am nächsten liegt
+            var bestIdx = steps[0];
+            var minDiff = 999;
+            steps.forEach(idx => {
+                var h = parseInt(times[idx].local_str.split(" ")[1].split(":")[0]);
+                var diff = Math.abs(h - targetHour);
+                if (diff < minDiff) { 
+                    minDiff = diff; 
+                    bestIdx = idx; 
+                }
+            });
+            updateForecast(currentMemberIdx, bestIdx);
         });
 
         document.addEventListener('keydown', function(event) {
@@ -1190,11 +1232,13 @@ async function updateForecast(newMemberIdx, newStepIdx) {
     currentMemberIdx = parseInt(newMemberIdx);
     currentStepIdx = parseInt(newStepIdx);
 
+    // Slider-Position synchronisieren: zeigt die Tagesstunde (0..23) des aktiven Zeitschritts
     var slider = document.getElementById("timeSlider");
-    if (times && times.length > 0) {
+    if (times && times[currentStepIdx]) {
+        var curHour = parseInt(times[currentStepIdx].local_str.split(" ")[1].split(":")[0]);
         slider.min = 0;
-        slider.max = times.length - 1;
-        slider.value = currentStepIdx;
+        slider.max = 23;
+        slider.value = curHour;
     }
 
     document.getElementById("loadingIndicator").style.display = "block";
@@ -1226,12 +1270,12 @@ async function updateForecast(newMemberIdx, newStepIdx) {
     var modShort = (currentModel === "icon-ch2") ? "CH2" : ((currentModel === "ecmwf") ? "ECMWF" : "CH1");
     document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z ${modShort}`;
 
-    var currentDayName = getDayNameForStep(currentStepIdx);
-    var currentDayKey = `${currentDayName} ${parts[0]}.${parts[1]}.`;
+    // Aktiven Tag-Button markieren
+    var activeDayKey = getDayKeyForStep(currentStepIdx);
     uniqueDays.forEach(dKey => {
         var btnId = "day-btn-" + dKey.replace(/[^a-zA-Z0-9]/g, "_");
         var btn = document.getElementById(btnId);
-        if (btn) btn.classList.toggle("active", dKey === currentDayKey);
+        if (btn) btn.classList.toggle("active", dKey === activeDayKey);
     });
 
     var numMembers = config.member_names ? config.member_names.length : 1;
@@ -1335,9 +1379,9 @@ function drawVisibleArrows() {
 
     var step = 16;
     if (config.nx <= 60) {
-        if (zoom <= 7) step = 3;
-        else if (zoom <= 8) step = 2;
-        else step = 1;
+        if (zoom <= 7) step = 3;        // ca. alle 27 km ein Pfeil
+        else if (zoom <= 8) step = 2;   // ca. alle 18 km ein Pfeil
+        else step = 1;                  // ab Zoom 9: jeder einzelne 9-km-Punkt
     } else {
         if (zoom >= 9 && zoom <= 10) step = 7;
         else if (zoom === 11) step = 4;
