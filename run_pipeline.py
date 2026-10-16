@@ -8,6 +8,7 @@ import urllib.request
 from datetime import timedelta, datetime
 from zoneinfo import ZoneInfo
 from multiprocessing import get_context
+import requests
 import config
 
 SHARED_DATA = {}
@@ -33,7 +34,49 @@ def load_existing_runs(model_name):
 
     return valid_runs
 
+def check_arome_new_data():
+    """Prüft die Verfügbarkeit des neuesten 3-stündigen AROME-Laufs auf Open Data."""
+    now_utc = datetime.now(ZoneInfo("UTC"))
+    existing_runs = load_existing_runs("arome")
+    latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
+
+    # Prüfe die letzten 4 möglichen Modell-Runs (00, 03, 06, 09, 12, 15, 18, 21 UTC)
+    candidate_hours = [0, 3, 6, 9, 12, 15, 18, 21]
+    candidates = []
+    for days_back in [0, 1]:
+        d = now_utc.date() - timedelta(days=days_back)
+        for h in candidate_hours:
+            dt = datetime(d.year, d.month, d.day, h, 0, 0, tzinfo=ZoneInfo("UTC"))
+            if dt <= now_utc:
+                candidates.append(dt)
+
+    candidates.sort(reverse=True)
+
+    for run_dt in candidates[:4]:
+        iso_str = run_dt.strftime("%Y-%m-%dT%H:00:00Z")
+        run_id = run_dt.strftime("%Y%m%d_%H")
+        ref_str = run_dt.strftime("%d.%m.%Y %H:00 UTC")
+
+        # Teste, ob Stunde 42 (Ende des Laufs) publiziert wurde
+        test_url = f"https://meteofrance-pnt.s3.rbx.io.cloud.ovh.net/pnt/{iso_str}/arome/001/SP1/arome__001__SP1__42H__{iso_str}.grib2"
+        try:
+            r = requests.head(test_url, timeout=5)
+            if r.status_code == 200:
+                is_new = (latest_known_id != run_id)
+                if not is_new:
+                    print(f"-> [arome] Lauf {run_id} ist bereits aktuell.", flush=True)
+                    return False, ref_str, iso_str, run_id, run_dt
+                print(f"✓ [arome] Neuer Lauf {run_id} ist vollständig bereit!", flush=True)
+                return True, ref_str, iso_str, run_id, run_dt
+        except Exception:
+            pass
+
+    return False, None, "latest", None, None
+
 def check_model_new_data(model_name):
+    if model_name == "arome":
+        return check_arome_new_data()
+
     from meteodatalab import ogd_api
 
     model_cfg = config.MODELS_CONFIG[model_name]
@@ -128,11 +171,14 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
             json.dump(times_by_step, f)
 
         num_ens = model_cfg["max_members"] - 1
-        member_names = (
-            ["Hauptlauf"] + 
-            [f"Ens Member {m}" for m in range(1, num_ens + 1)] + 
-            ["Median", "Min", "Max", "25% Quantil", "75% Quantil", "Interquantilabstand"]
-        )
+        if num_ens > 0:
+            member_names = (
+                ["Hauptlauf"] + 
+                [f"Ens Member {m}" for m in range(1, num_ens + 1)] + 
+                ["Median", "Min", "Max", "25% Quantil", "75% Quantil", "Interquantilabstand"]
+            )
+        else:
+            member_names = ["Hauptlauf"]
 
         active_cfg = {}
         for v in model_cfg["active_variables"]:
@@ -204,7 +250,7 @@ def prune_old_runs():
 
         valid_ids = [r["id"] for r in valid_runs]
         latest_run_id = valid_ids[0] if valid_ids else None
-        num_ens = m_cfg["max_members"] - 1  # z.B. 10 bei CH1, 20 bei CH2
+        num_ens = m_cfg["max_members"] - 1
 
         for entry in os.listdir(model_base_dir):
             entry_path = os.path.join(model_base_dir, entry)
@@ -212,25 +258,22 @@ def prune_old_runs():
                 if entry != "runs.json":
                     os.remove(entry_path)
             elif os.path.isdir(entry_path):
-                # 1. Läufe älter als 24h komplett entfernen
                 if entry not in valid_ids:
                     print(f"-> Entferne Lauf älter als 24h ({m_name}): {entry}", flush=True)
                     shutil.rmtree(entry_path, ignore_errors=True)
-                # 2. Historische Läufe: Nur Hauptlauf (m0) & Statistiken behalten, Einzel-Member (m1..mN) löschen!
-                elif entry != latest_run_id:
+                elif entry != latest_run_id and num_ens > 0:
                     pruned_count = 0
                     for fname in os.listdir(entry_path):
                         if fname.startswith("grid_") and "_m" in fname:
                             try:
                                 m_idx = int(fname.split("_m")[1].split("_s")[0])
-                                # Wenn es ein einzelner Ensemble-Member ist (1 <= m_idx <= num_ens): LÖSCHEN
                                 if 1 <= m_idx <= num_ens:
                                     os.remove(os.path.join(entry_path, fname))
                                     pruned_count += 1
                             except Exception:
                                 pass
                     if pruned_count > 0:
-                        print(f"✓ Historischer Lauf {entry} ({m_name}): {pruned_count} Einzel-Member-Dateien entfernt (HL & Statistiken behalten).", flush=True)
+                        print(f"✓ Historischer Lauf {entry} ({m_name}): {pruned_count} Einzel-Member-Dateien entfernt.", flush=True)
 
 def process_single_local_step(args):
     import stats
