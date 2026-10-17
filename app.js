@@ -176,6 +176,9 @@ function toggleSplitScreen(e) {
         }
         btn.blur();
     }
+    if (document.activeElement && document.activeElement.blur) {
+        document.activeElement.blur();
+    }
 
     if (isSplitActive) {
         wrapper.classList.remove("single-view");
@@ -1392,7 +1395,7 @@ function renderContours(side) {
     }
 }
 
-// CANVAS-ZEICHNER: HARMONISCH DEZENT SKALIERTE PFEILE
+// CANVAS-ZEICHNER: SCHLANKE, DISKRETE PFEILE
 function drawVisibleArrows(side) {
     var st = modelsState[side];
     var targetMap = (side === 'left') ? mapLeft : mapRight;
@@ -1501,16 +1504,16 @@ function drawVisibleArrows(side) {
             var speed = sVal / 10.0;
             var dir = dirVal * 2.0;
 
-            // Perfekt harmonische Pfeilskalierung (ca. 18% kleiner als zuvor)
-            var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
-            var scale = (arrow_w / 11.6) * dpr;
+            // Harmonisch verkleinerte Pfeilskalierung:
+            var arrow_w = Math.min(20, Math.max(4.5, 3.2 + Math.pow(speed, 0.58) * 1.2));
+            var scale = (arrow_w / 15.0) * dpr;
 
             ctx.save();
             ctx.translate(px, py);
             ctx.rotate(dir * Math.PI / 180.0);
             ctx.scale(scale, scale);
 
-            // Exakte Geometrie aus dem Original-SVG:
+            // Exakte Vektorgeometrie aus dem Original-SVG:
             ctx.beginPath();
             ctx.moveTo(0, -10.5);   // Spitze
             ctx.lineTo(4.2, -3.0);  // Flügel rechts
