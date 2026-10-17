@@ -15,6 +15,7 @@ var modelsState = {
         contourLayer2: null,
         arrowCanvas: null,
         arrowCtx: null,
+        canvasOrigin: null,
         canvasRenderer1: null,
         canvasRenderer2: null
     },
@@ -28,6 +29,7 @@ var modelsState = {
         contourLayer2: null,
         arrowCanvas: null,
         arrowCtx: null,
+        canvasOrigin: null,
         canvasRenderer1: null,
         canvasRenderer2: null
     }
@@ -70,7 +72,6 @@ var dayTimesteps = {};
 var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
 var mapUpdateTimer = null;
-var mapSafetyTimer = null;
 
 var CITIES = [
     { name: "Zürich", lat: 47.3769, lon: 8.5417, minZoom: 7 },
@@ -124,26 +125,13 @@ var CITIES = [
     { name: "Glarus", lat: 47.0406, lon: 9.0678, minZoom: 10 }
 ];
 
-function setOverlaysVisible(visible) {
-    var op = visible ? "1" : "0";
-    [ { map: mapLeft, st: modelsState.left }, { map: mapRight, st: modelsState.right } ].forEach(item => {
-        if (!item.map) return;
-        var cp = item.map.getPane('cityPane');
-        if (cp) cp.style.opacity = op;
-        if (item.st && item.st.arrowCanvas) item.st.arrowCanvas.style.opacity = op;
-    });
-}
-
 function scheduleMapUpdates() {
-    if (mapSafetyTimer) clearTimeout(mapSafetyTimer);
     if (mapUpdateTimer) clearTimeout(mapUpdateTimer);
-    
     mapUpdateTimer = setTimeout(function() {
-        setOverlaysVisible(true);
         drawVisibleArrows('left');
         if (isSplitActive) drawVisibleArrows('right');
         updateCityLabels();
-    }, 120);
+    }, 60);
 }
 
 function syncMap(sourceMap, targetMap) {
@@ -1093,23 +1081,22 @@ function initMapInstance(domId) {
     m.createPane('contourPane1'); m.getPane('contourPane1').style.opacity = layer1Opacity; m.getPane('contourPane1').style.zIndex = '400';
     m.createPane('contourPane2'); m.getPane('contourPane2').style.opacity = layer2Opacity; m.getPane('contourPane2').style.zIndex = '450';
     
+    m.createPane('arrowPane'); 
+    m.getPane('arrowPane').style.zIndex = '500';
+    m.getPane('arrowPane').style.pointerEvents = 'none';
+
     m.createPane('cityPane'); 
     m.getPane('cityPane').style.zIndex = '520'; 
     m.getPane('cityPane').style.pointerEvents = 'none';
     m.getPane('cityPane').style.transition = 'opacity 0.1s ease';
 
-    // HARDWARE-BESCHLEUNIGTES CANVAS FÜR DIE WINDPFEILE (1 CANVAS STATT 500 DOM-MARKER)
-    var container = m.getContainer();
+    // Canvas direkt in die transformierbare arrowPane einhängen:
+    // Dadurch bewegt sich die Leinwand beim Ziehen & Zoomen automatisch flüssig mit!
+    var arrowPane = m.getPane('arrowPane');
     var arrowCanvas = document.createElement('canvas');
     arrowCanvas.style.position = 'absolute';
-    arrowCanvas.style.top = '0';
-    arrowCanvas.style.left = '0';
-    arrowCanvas.style.width = '100%';
-    arrowCanvas.style.height = '100%';
-    arrowCanvas.style.zIndex = '500';
-    arrowCanvas.style.pointerEvents = 'none'; // Keine Klick-Blockaden auf Touch!
-    arrowCanvas.style.transition = 'opacity 0.1s ease';
-    container.appendChild(arrowCanvas);
+    arrowCanvas.style.pointerEvents = 'none';
+    arrowPane.appendChild(arrowCanvas);
     var arrowCtx = arrowCanvas.getContext('2d');
 
     var relief = L.tileLayer(swisstopo_relief_url, {
@@ -1143,14 +1130,6 @@ function initMapInstance(domId) {
         });
 
     var cityGroup = L.layerGroup([], { pane: 'cityPane' }).addTo(m);
-
-    m.on('zoomstart', function() {
-        setOverlaysVisible(false);
-        if (mapSafetyTimer) clearTimeout(mapSafetyTimer);
-        mapSafetyTimer = setTimeout(function() {
-            setOverlaysVisible(true);
-        }, 1000);
-    });
 
     m.on('move', () => { if (domId === 'mapLeft') syncMap(mapLeft, mapRight); else syncMap(mapRight, mapLeft); });
     m.on('moveend', scheduleMapUpdates);
@@ -1381,7 +1360,7 @@ function renderContours(side) {
     }
 }
 
-// ULTRA-PERFORMANTER 2D-CANVAS ZEICHNER (KEIN DOM-OVERHEAD)
+// PERFORMANTER CANVAS-ZEICHNER MIT ECHTEM MITBEWEGEN BEIM PAN/ZOOM
 function drawVisibleArrows(side) {
     var st = modelsState[side];
     var targetMap = (side === 'left') ? mapLeft : mapRight;
@@ -1392,12 +1371,21 @@ function drawVisibleArrows(side) {
     var size = targetMap.getSize();
     var dpr = window.devicePixelRatio || 1;
 
+    // Aktueller Leaflet-Pixeloffset der oberen linken Ecke des Bildschirms
+    var topLeft = targetMap.getPixelBounds().min;
+    st.canvasOrigin = topLeft;
+
+    // Canvas genau über den sichtbaren Kartenausschnitt der Pane legen
+    L.DomUtil.setPosition(canvas, topLeft);
+
     var targetW = Math.round(size.x * dpr);
     var targetH = Math.round(size.y * dpr);
 
     if (canvas.width !== targetW || canvas.height !== targetH) {
         canvas.width = targetW;
         canvas.height = targetH;
+        canvas.style.width = size.x + 'px';
+        canvas.style.height = size.y + 'px';
     }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1468,38 +1456,45 @@ function drawVisibleArrows(side) {
             if (dirVal === 255) continue;
 
             var lon = xmin + c * (xmax - xmin) / (nx - 1);
-            var pt = targetMap.latLngToContainerPoint(L.latLng(lat, lon));
-            var px = pt.x * dpr;
-            var py = pt.y * dpr;
+            var layerPt = targetMap.project(L.latLng(lat, lon));
+            
+            // Punkt relativ zum aktuellen Canvas-Ursprung
+            var px = (layerPt.x - topLeft.x) * dpr;
+            var py = (layerPt.y - topLeft.y) * dpr;
 
             if (px < -60 || px > canvas.width + 60 || py < -60 || py > canvas.height + 60) continue;
 
             var speed = sVal / 10.0;
             var dir = dirVal * 2.0;
 
+            // EXAKT PROPORTIONALE SKALIERUNG (WIE IM ORIGINALEN SVG)
             var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
             var arrow_h = Math.min(62, Math.max(13, 8.5 + Math.pow(speed, 0.80) * 1.6));
+            
+            // Einheitliche Skalierung über die Box verhindert unnatürliches Verzerren
+            var uniformScale = (arrow_h / 24.0) * dpr;
+            var widthCorrection = (arrow_w / arrow_h) * (24.0 / 14.0);
 
             ctx.save();
             ctx.translate(px, py);
             ctx.rotate(dir * Math.PI / 180.0);
-            ctx.scale((arrow_w / 24.0) * dpr, (arrow_h / 24.0) * dpr);
+            ctx.scale(uniformScale * widthCorrection, uniformScale);
 
-            // Exakter SVG-Pfad: M11.2 23 H12.8 V9 H16.2 L12 1.5 L7.8 9 H11.2 Z zentriert um (12, 12)
+            // Exakte Geometrie aus: M11.2 23 H12.8 V9 H16.2 L12 1.5 L7.8 9 H11.2 Z
             ctx.beginPath();
-            ctx.moveTo(0, -10.5);
-            ctx.lineTo(4.2, -3);
-            ctx.lineTo(0.8, -3);
-            ctx.lineTo(0.8, 11);
-            ctx.lineTo(-0.8, 11);
-            ctx.lineTo(-0.8, -3);
-            ctx.lineTo(-4.2, -3);
+            ctx.moveTo(0, -10.5);   // L12 1.5 (Spitze)
+            ctx.lineTo(4.2, -3);    // H16.2 V9 (Flügel rechts)
+            ctx.lineTo(0.8, -3);    // H12.8 (Schaftansatz rechts)
+            ctx.lineTo(0.8, 11);    // V23 (Schaftende rechts)
+            ctx.lineTo(-0.8, 11);   // H11.2 (Schaftende links)
+            ctx.lineTo(-0.8, -3);   // V9 (Schaftansatz links)
+            ctx.lineTo(-4.2, -3);   // L7.8 9 (Flügel links)
             ctx.closePath();
 
             ctx.fillStyle = '#111111';
             ctx.fill();
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 0.5;
+            ctx.lineWidth = 0.6 / uniformScale;
             ctx.stroke();
 
             ctx.restore();
