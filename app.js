@@ -2,6 +2,7 @@ var mapLeft, mapRight;
 var isSplitActive = false;
 var isSyncingMaps = false;
 var isSplitLegendOpen = false;
+var syncRafId = null;
 
 var modelsState = {
     left: {
@@ -121,6 +122,41 @@ var CITIES = [
     { name: "Glarus", lat: 47.0406, lon: 9.0678, minZoom: 10 }
 ];
 
+// PERFORMANCE-BOOST: Schaltet Overlays bei Zoom sofort stumm
+function setOverlaysVisible(visible) {
+    var op = visible ? "1" : "0";
+    [mapLeft, mapRight].forEach(m => {
+        if (!m) return;
+        var ap = m.getPane('arrowPane');
+        var cp = m.getPane('cityPane');
+        if (ap) ap.style.opacity = op;
+        if (cp) cp.style.opacity = op;
+    });
+}
+
+function scheduleMapUpdates() {
+    if (mapSafetyTimer) clearTimeout(mapSafetyTimer);
+    if (mapUpdateTimer) clearTimeout(mapUpdateTimer);
+    
+    mapUpdateTimer = setTimeout(function() {
+        setOverlaysVisible(true);
+        drawVisibleArrows('left');
+        if (isSplitActive) drawVisibleArrows('right');
+        updateCityLabels();
+    }, 120);
+}
+
+function syncMap(sourceMap, targetMap) {
+    if (!sourceMap || !targetMap || !isSplitActive || isSyncingMaps) return;
+    if (syncRafId) cancelAnimationFrame(syncRafId);
+    
+    syncRafId = requestAnimationFrame(() => {
+        isSyncingMaps = true;
+        targetMap.setView(sourceMap.getCenter(), sourceMap.getZoom(), { animate: false });
+        isSyncingMaps = false;
+    });
+}
+
 function toggleSplitScreen(e) {
     if (e) e.preventDefault();
     isSplitActive = !isSplitActive;
@@ -178,24 +214,6 @@ function toggleEnsembleAccordionLocal(side) {
     var isOpen = (cont.style.display !== "none");
     cont.style.display = isOpen ? "none" : "block";
     if (btn) btn.classList.toggle("open", !isOpen);
-}
-
-function syncMap(sourceMap, targetMap) {
-    if (!sourceMap || !targetMap || !isSplitActive || isSyncingMaps) return;
-    isSyncingMaps = true;
-    targetMap.setView(sourceMap.getCenter(), sourceMap.getZoom(), { animate: false });
-    isSyncingMaps = false;
-}
-
-function scheduleMapUpdates() {
-    if (mapSafetyTimer) clearTimeout(mapSafetyTimer);
-    if (mapUpdateTimer) clearTimeout(mapUpdateTimer);
-    
-    mapUpdateTimer = setTimeout(function() {
-        drawVisibleArrows('left');
-        if (isSplitActive) drawVisibleArrows('right');
-        updateCityLabels();
-    }, 120);
 }
 
 function updateCityLabels() {
@@ -342,7 +360,6 @@ function navRun(dir) {
 }
 
 async function handleModelButtonClick(modelName, side) {
-    // Im Single-Modus steuert die rechte Box direkt die aktive Hauptkarte (left)!
     var effectiveSide = isSplitActive ? side : 'left';
     var st = modelsState[effectiveSide];
 
@@ -1075,8 +1092,16 @@ function initMapInstance(domId) {
 
     m.createPane('contourPane1'); m.getPane('contourPane1').style.opacity = layer1Opacity; m.getPane('contourPane1').style.zIndex = '400';
     m.createPane('contourPane2'); m.getPane('contourPane2').style.opacity = layer2Opacity; m.getPane('contourPane2').style.zIndex = '450';
-    m.createPane('arrowPane'); m.getPane('arrowPane').style.zIndex = '500';
-    m.createPane('cityPane'); m.getPane('cityPane').style.zIndex = '520'; m.getPane('cityPane').style.pointerEvents = 'none';
+    
+    // Performance: Transition für sanftes Einblenden der Pfeile
+    m.createPane('arrowPane'); 
+    m.getPane('arrowPane').style.zIndex = '500';
+    m.getPane('arrowPane').style.transition = 'opacity 0.1s ease';
+
+    m.createPane('cityPane'); 
+    m.getPane('cityPane').style.zIndex = '520'; 
+    m.getPane('cityPane').style.pointerEvents = 'none';
+    m.getPane('cityPane').style.transition = 'opacity 0.1s ease';
 
     var relief = L.tileLayer(swisstopo_relief_url, {
         pane: 'reliefPane',
@@ -1087,7 +1112,6 @@ function initMapInstance(domId) {
     L.tileLayer(swisstopo_lakes_url, { pane: 'waterPane', maxZoom: 15, maxNativeZoom: 14, opacity: 0.85 }).addTo(m);
     var rivers = L.tileLayer(swisstopo_rivers_url, { pane: 'waterPane', maxZoom: 15, maxNativeZoom: 14, opacity: 0.35 }).addTo(m);
 
-    // GESTOCHEN SCHARFE SCHWEIZER LANDESGRENZE (ORIGINAL)
     L.tileLayer(swisstopo_boundary_url, {
         pane: 'boundaryPane',
         className: 'boundary-national',
@@ -1110,6 +1134,15 @@ function initMapInstance(domId) {
         });
 
     var cityGroup = L.layerGroup([], { pane: 'cityPane' }).addTo(m);
+
+    // PERFORMANCE: Sofort ausblenden bei Zoomstart
+    m.on('zoomstart', function() {
+        setOverlaysVisible(false);
+        if (mapSafetyTimer) clearTimeout(mapSafetyTimer);
+        mapSafetyTimer = setTimeout(function() {
+            setOverlaysVisible(true);
+        }, 1000);
+    });
 
     m.on('move', () => { if (domId === 'mapLeft') syncMap(mapLeft, mapRight); else syncMap(mapRight, mapLeft); });
     m.on('moveend', scheduleMapUpdates);
