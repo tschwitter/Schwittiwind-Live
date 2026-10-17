@@ -13,7 +13,8 @@ var modelsState = {
         times: null,
         contourLayer1: null,
         contourLayer2: null,
-        activeMarkers: null,
+        arrowCanvas: null,
+        arrowCtx: null,
         canvasRenderer1: null,
         canvasRenderer2: null
     },
@@ -25,7 +26,8 @@ var modelsState = {
         times: null,
         contourLayer1: null,
         contourLayer2: null,
-        activeMarkers: null,
+        arrowCanvas: null,
+        arrowCtx: null,
         canvasRenderer1: null,
         canvasRenderer2: null
     }
@@ -122,15 +124,13 @@ var CITIES = [
     { name: "Glarus", lat: 47.0406, lon: 9.0678, minZoom: 10 }
 ];
 
-// PERFORMANCE-BOOST: Schaltet Overlays bei Zoom sofort stumm
 function setOverlaysVisible(visible) {
     var op = visible ? "1" : "0";
-    [mapLeft, mapRight].forEach(m => {
-        if (!m) return;
-        var ap = m.getPane('arrowPane');
-        var cp = m.getPane('cityPane');
-        if (ap) ap.style.opacity = op;
+    [ { map: mapLeft, st: modelsState.left }, { map: mapRight, st: modelsState.right } ].forEach(item => {
+        if (!item.map) return;
+        var cp = item.map.getPane('cityPane');
         if (cp) cp.style.opacity = op;
+        if (item.st && item.st.arrowCanvas) item.st.arrowCanvas.style.opacity = op;
     });
 }
 
@@ -1093,15 +1093,24 @@ function initMapInstance(domId) {
     m.createPane('contourPane1'); m.getPane('contourPane1').style.opacity = layer1Opacity; m.getPane('contourPane1').style.zIndex = '400';
     m.createPane('contourPane2'); m.getPane('contourPane2').style.opacity = layer2Opacity; m.getPane('contourPane2').style.zIndex = '450';
     
-    // Performance: Transition für sanftes Einblenden der Pfeile
-    m.createPane('arrowPane'); 
-    m.getPane('arrowPane').style.zIndex = '500';
-    m.getPane('arrowPane').style.transition = 'opacity 0.1s ease';
-
     m.createPane('cityPane'); 
     m.getPane('cityPane').style.zIndex = '520'; 
     m.getPane('cityPane').style.pointerEvents = 'none';
     m.getPane('cityPane').style.transition = 'opacity 0.1s ease';
+
+    // HARDWARE-BESCHLEUNIGTES CANVAS FÜR DIE WINDPFEILE (1 CANVAS STATT 500 DOM-MARKER)
+    var container = m.getContainer();
+    var arrowCanvas = document.createElement('canvas');
+    arrowCanvas.style.position = 'absolute';
+    arrowCanvas.style.top = '0';
+    arrowCanvas.style.left = '0';
+    arrowCanvas.style.width = '100%';
+    arrowCanvas.style.height = '100%';
+    arrowCanvas.style.zIndex = '500';
+    arrowCanvas.style.pointerEvents = 'none'; // Keine Klick-Blockaden auf Touch!
+    arrowCanvas.style.transition = 'opacity 0.1s ease';
+    container.appendChild(arrowCanvas);
+    var arrowCtx = arrowCanvas.getContext('2d');
 
     var relief = L.tileLayer(swisstopo_relief_url, {
         pane: 'reliefPane',
@@ -1135,7 +1144,6 @@ function initMapInstance(domId) {
 
     var cityGroup = L.layerGroup([], { pane: 'cityPane' }).addTo(m);
 
-    // PERFORMANCE: Sofort ausblenden bei Zoomstart
     m.on('zoomstart', function() {
         setOverlaysVisible(false);
         if (mapSafetyTimer) clearTimeout(mapSafetyTimer);
@@ -1149,7 +1157,15 @@ function initMapInstance(domId) {
     m.on('zoomend', scheduleMapUpdates);
     m.on('click', closeAllPopups);
 
-    return { map: m, relief: relief, rivers: rivers, cantons: cantons, cities: cityGroup };
+    return { 
+        map: m, 
+        relief: relief, 
+        rivers: rivers, 
+        cantons: cantons, 
+        cities: cityGroup,
+        arrowCanvas: arrowCanvas,
+        arrowCtx: arrowCtx
+    };
 }
 
 async function init() {
@@ -1160,6 +1176,8 @@ async function init() {
         riversLayerLeft = leftInit.rivers;
         cantonalBoundaryLayerLeft = leftInit.cantons;
         cityLayerGroupLeft = leftInit.cities;
+        modelsState.left.arrowCanvas = leftInit.arrowCanvas;
+        modelsState.left.arrowCtx = leftInit.arrowCtx;
 
         var rightInit = initMapInstance('mapRight');
         mapRight = rightInit.map;
@@ -1167,6 +1185,8 @@ async function init() {
         riversLayerRight = rightInit.rivers;
         cantonalBoundaryLayerRight = rightInit.cantons;
         cityLayerGroupRight = rightInit.cities;
+        modelsState.right.arrowCanvas = rightInit.arrowCanvas;
+        modelsState.right.arrowCtx = rightInit.arrowCtx;
 
         modelsState.left.canvasRenderer1 = L.canvas({ pane: 'contourPane1', padding: 0.1 });
         modelsState.left.canvasRenderer2 = L.canvas({ pane: 'contourPane2', padding: 0.1 });
@@ -1361,16 +1381,26 @@ function renderContours(side) {
     }
 }
 
+// ULTRA-PERFORMANTER 2D-CANVAS ZEICHNER (KEIN DOM-OVERHEAD)
 function drawVisibleArrows(side) {
     var st = modelsState[side];
     var targetMap = (side === 'left') ? mapLeft : mapRight;
-    if (!targetMap || !st.config) return;
+    if (!targetMap || !st.config || !st.arrowCanvas || !st.arrowCtx) return;
 
-    if (!st.activeMarkers) { 
-        st.activeMarkers = L.layerGroup([], { pane: 'arrowPane' }).addTo(targetMap); 
-    } else { 
-        st.activeMarkers.clearLayers(); 
+    var canvas = st.arrowCanvas;
+    var ctx = st.arrowCtx;
+    var size = targetMap.getSize();
+    var dpr = window.devicePixelRatio || 1;
+
+    var targetW = Math.round(size.x * dpr);
+    var targetH = Math.round(size.y * dpr);
+
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
     }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     var arrowVar = null;
     var arrowMember = 0;
@@ -1409,7 +1439,6 @@ function drawVisibleArrows(side) {
 
     var speeds = gridData.s;
     var dirs_half = gridData.d;
-    var labelType = st.config.variables_config[arrowVar].label || "Wind";
 
     var nx = st.config.nx, ny = st.config.ny;
     var xmin = st.config.xmin, xmax = st.config.xmax;
@@ -1439,28 +1468,41 @@ function drawVisibleArrows(side) {
             if (dirVal === 255) continue;
 
             var lon = xmin + c * (xmax - xmin) / (nx - 1);
-            var latlng = L.latLng(lat, lon);
+            var pt = targetMap.latLngToContainerPoint(L.latLng(lat, lon));
+            var px = pt.x * dpr;
+            var py = pt.y * dpr;
+
+            if (px < -60 || px > canvas.width + 60 || py < -60 || py > canvas.height + 60) continue;
+
             var speed = sVal / 10.0;
             var dir = dirVal * 2.0;
 
             var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
             var arrow_h = Math.min(62, Math.max(13, 8.5 + Math.pow(speed, 0.80) * 1.6));
 
-            var svg = '<div style="transform: rotate(' + dir + 'deg); width: 70px; height: 70px; display: flex; align-items: center; justify-content: center; pointer-events: none;">' +
-                      '<svg viewBox="0 0 24 24" width="' + arrow_w.toFixed(1) + 'px" height="' + arrow_h.toFixed(1) + 'px" style="pointer-events: auto;">' +
-                      '<path d="M11.2 23 H12.8 V9 H16.2 L12 1.5 L7.8 9 H11.2 Z" fill="#111111" stroke="#ffffff" stroke-width="0.5"/>' +
-                      '</svg></div>';
+            ctx.save();
+            ctx.translate(px, py);
+            ctx.rotate(dir * Math.PI / 180.0);
+            ctx.scale((arrow_w / 24.0) * dpr, (arrow_h / 24.0) * dpr);
 
-            var icon = L.divIcon({ html: svg, iconSize: [70, 70], iconAnchor: [35, 35], className: 'wind-arrow-icon' });
-            var modLabel = st.config.model_label || st.currentModel;
-            
-            (function(sp, dr, ml, lt, pos, ic) {
-                var marker = L.marker(pos, { icon: ic, pane: 'arrowPane' });
-                marker.on('click', function(e) {
-                    marker.bindPopup(`<b>${lt} (${ml}):</b><br>Stärke: ${sp.toFixed(1)} km/h<br>Richtung: ${dr.toFixed(0)}°`).openPopup();
-                });
-                marker.addTo(st.activeMarkers);
-            })(speed, dir, modLabel, labelType, latlng, icon);
+            // Exakter SVG-Pfad: M11.2 23 H12.8 V9 H16.2 L12 1.5 L7.8 9 H11.2 Z zentriert um (12, 12)
+            ctx.beginPath();
+            ctx.moveTo(0, -10.5);
+            ctx.lineTo(4.2, -3);
+            ctx.lineTo(0.8, -3);
+            ctx.lineTo(0.8, 11);
+            ctx.lineTo(-0.8, 11);
+            ctx.lineTo(-0.8, -3);
+            ctx.lineTo(-4.2, -3);
+            ctx.closePath();
+
+            ctx.fillStyle = '#111111';
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+
+            ctx.restore();
         }
     }
 }
