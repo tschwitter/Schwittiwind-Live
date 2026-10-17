@@ -98,14 +98,14 @@ html, body {
 .city-dot { width: 3.5px; height: 3.5px; background-color: #111111; border: 0.8px solid #ffffff; border-radius: 50%; box-shadow: 0 0 1px rgba(0,0,0,0.5); flex-shrink: 0; }
 .city-name { font-family: Arial, sans-serif; font-size: 10.5px; font-weight: 500; color: #111111; text-shadow: -1px -1px 0 #ffffff, 1px -1px 0 #ffffff, -1px 1px 0 #ffffff, 1px 1px 0 #ffffff, 0 0 2px #ffffff; letter-spacing: 0.2px; white-space: nowrap; }
 
-/* --- GRENZEN (KEIN AUSGRAUEN DES AUSLANDS MEHR!) --- */
+/* --- GRENZEN (ORIGINAL SCHWARZE LANDESGRENZE OHNE AUSGRAUEN) --- */
 .boundary-national {
     filter: grayscale(100%) brightness(0) !important;
-    opacity: 0.85 !important;
+    opacity: 1.0 !important;
 }
 .boundary-cantonal {
     filter: grayscale(100%) brightness(0) !important;
-    opacity: 0.55 !important;
+    opacity: 0.60 !important;
 }
 .simple-gray-background { background-color: #e9ecef !important; }
 
@@ -316,17 +316,18 @@ body.split-active .model-select-left { display: block; }
 body.split-active .split-member-toggle-btn { display: block; }
 body.split-active .single-member-panel { display: none !important; }
 
+/* EXAKTE PLATZIERUNG DIREKT UNTER DEM BUTTON */
 .split-member-dropdown {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    width: 155px;
-    margin-top: 4px;
-    box-shadow: 0 8px 25px rgba(0,0,0,0.85);
-    z-index: 100010;
+    position: absolute !important;
+    top: calc(100% + 4px) !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 155px !important;
+    max-height: calc(100vh - 120px) !important;
+    z-index: 100010 !important;
 }
 
-/* --- MEMBER PANEL --- */
+/* --- HAUPT MEMBER-PANEL (SINGLE MODUS) --- */
 .member-panel {
     position: fixed;
     top: 84px; right: 10px;
@@ -534,9 +535,13 @@ body.split-active .single-member-panel { display: none !important; }
 }
 .split-legend-btn:hover { background-color: #007ab7; color: #ffffff; }
 
+#legendBox {
+    display: flex;
+}
+
 body.split-active .split-legend-btn { display: block; }
-body.split-active .legend-box { display: none; margin-bottom: 4px; }
-body.split-active .legend-box.open { display: flex !important; }
+body.split-active #legendBox { display: none; margin-bottom: 4px; }
+body.split-active #legendBox.open { display: flex !important; }
 
 .legend-box { 
     background-color: rgba(24, 33, 42, 0.94); 
@@ -572,6 +577,7 @@ body.split-active .legend-box.open { display: flex !important; }
 
     .control-panel { bottom: 6px; left: 6px; right: 6px; width: auto; transform: none; padding: 6px 8px; border-radius: 10px; }
     .member-panel { top: 70px; right: 6px; width: 62px; padding: 6px 2px; border-radius: 10px; max-height: calc(100vh - 180px); }
+    .split-member-dropdown { width: 62px !important; }
     .legend-wrapper { bottom: 105px; left: 6px; }
     .legend-box { padding: 4px; }
     .legend-column { width: 50px; }
