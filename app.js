@@ -148,6 +148,7 @@ function toggleSplitScreen(e) {
             if (mapLeft) mapRight.setView(mapLeft.getCenter(), mapLeft.getZoom(), { animate: false });
         }
         initMemberPanelsAll();
+        updateModelButtonLabels();
         await updateForecast();
     }, 150);
 }
@@ -159,25 +160,14 @@ function toggleSplitLegend() {
 }
 
 function toggleSplitMemberPanel(side) {
-    var pLeft = document.getElementById("memberPanelLeft");
-    var pRight = document.getElementById("memberPanelRight");
-    var bLeft = document.getElementById("btnToggleMemberLeft");
-    var bRight = document.getElementById("btnToggleMemberRight");
-
-    if (side === 'left') {
-        var isOpen = (pLeft.style.display === "flex");
-        closeAllPopups();
-        if (!isOpen) {
-            pLeft.style.display = "flex";
-            bLeft.classList.add("active");
-        }
-    } else {
-        var isOpen = (pRight.style.display === "flex");
-        closeAllPopups();
-        if (!isOpen) {
-            pRight.style.display = "flex";
-            bRight.classList.add("active");
-        }
+    var p = document.getElementById(side === 'left' ? "memberPanelLeft" : "memberPanelRight");
+    var b = document.getElementById(side === 'left' ? "btnToggleMemberLeft" : "btnToggleMemberRight");
+    if (!p) return;
+    var isOpen = (p.style.display === "flex");
+    closeAllPopups();
+    if (!isOpen) {
+        p.style.display = "flex";
+        if (b) b.classList.add("active");
     }
 }
 
@@ -352,15 +342,17 @@ function navRun(dir) {
 }
 
 async function handleModelButtonClick(modelName, side) {
-    var st = modelsState[side];
+    var effectiveSide = isSplitActive ? side : 'left';
+    var st = modelsState[effectiveSide];
+
     if (st.currentModel !== modelName) {
         closeAllPopups();
         st.currentModel = modelName;
         var runs = availableRuns[modelName] || [];
-        var runId = selectedRuns[side][modelName] || (runs.length > 0 ? runs[0].id : null);
-        await loadModelAndRun(side, modelName, runId);
+        var runId = selectedRuns[effectiveSide][modelName] || (runs.length > 0 ? runs[0].id : null);
+        await loadModelAndRun(effectiveSide, modelName, runId);
     } else {
-        toggleRunDropdown(side, modelName);
+        toggleRunDropdown(effectiveSide, modelName);
     }
 }
 
@@ -378,14 +370,15 @@ async function fetchAvailableRuns(modelName) {
 
 function updateModelButtonLabels() {
     ['left', 'right'].forEach(side => {
-        var st = modelsState[side];
+        var effectiveStateSide = isSplitActive ? side : 'left';
+        var st = modelsState[effectiveStateSide];
         ["icon-ch1", "icon-ch2", "arome"].forEach(m => {
             var btn = document.getElementById(`btnModel-${side}-${m}`);
             if (!btn) return;
             var runs = availableRuns[m] || [];
-            var activeRun = (st.currentModel === m) ? st.currentRunId : (selectedRuns[side][m] || (runs[0] ? runs[0].id : null));
+            var activeRun = (st.currentModel === m) ? st.currentRunId : (selectedRuns[effectiveStateSide][m] || (runs[0] ? runs[0].id : null));
             var activeObj = runs.find(r => r.id === activeRun) || runs[0];
-            var modName = (m === "icon-ch1") ? "CH1" : (m === "icon-ch2" ? "CH2" : "AROME HD");
+            var modName = (m === "icon-ch1") ? "CH1" : (m === "icon-ch2") ? "CH2" : "AROME HD";
             var timeTxt = activeObj ? activeObj.label : "--";
             btn.innerHTML = `<span class="model-title">${modName} ▾</span><span class="model-time">${timeTxt}</span>`;
             btn.classList.toggle("active", st.currentModel === m);
@@ -394,7 +387,9 @@ function updateModelButtonLabels() {
 }
 
 function toggleRunDropdown(side, modelName) {
-    var el = document.getElementById(`runDropdown-${side}-${modelName}`);
+    var effectiveSide = isSplitActive ? side : 'left';
+    var elId = `runDropdown-${effectiveSide}-${modelName}`;
+    var el = document.getElementById(elId);
     if (!el) return;
     var isAlreadyOpen = (el.style.display === "flex");
     closeAllPopups();
@@ -408,20 +403,20 @@ function toggleRunDropdown(side, modelName) {
     } else {
         runs.forEach((r) => {
             var item = document.createElement("button");
-            item.className = "run-item" + (r.id === modelsState[side].currentRunId ? " active" : "");
+            item.className = "run-item" + (r.id === modelsState[effectiveSide].currentRunId ? " active" : "");
             item.innerHTML = `<span>${r.label}</span>`;
             item.onclick = function(e) {
                 e.stopPropagation();
-                selectRun(side, modelName, r.id);
+                selectRun(effectiveSide, modelName, r.id);
             };
             el.appendChild(item);
         });
     }
 
-    var header = document.getElementById(`modelSelect${side === 'left' ? 'Left' : 'Right'}`);
+    var header = document.getElementById(`modelSelect${effectiveSide === 'left' ? (isSplitActive ? 'Left' : 'Right') : 'Right'}`);
     var rect = header.getBoundingClientRect();
     el.style.top = (rect.bottom + 5) + "px";
-    if (side === 'left') {
+    if (isSplitActive && effectiveSide === 'left') {
         el.style.left = rect.left + "px";
         el.style.right = "auto";
     } else {
@@ -1062,6 +1057,8 @@ function initMapInstance(domId) {
     var swisstopo_relief_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissalti3d-reliefschattierung/default/current/3857/{z}/{x}/{y}.png";
     var swisstopo_lakes_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-seen/default/current/3857/{z}/{x}/{y}.png";
     var swisstopo_rivers_url = "https://wmts.geo.admin.ch/1.0.0/ch.bafu.vec25-gewaessernetz_2000/default/current/3857/{z}/{x}/{y}.png";
+    var swisstopo_boundary_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-land-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
+    var swisstopo_cantons_url = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissboundaries3d-kanton-flaeche.fill/default/current/3857/{z}/{x}/{y}.png";
 
     var m = L.map(domId, {
         center: [46.8182, 8.2275],
@@ -1071,22 +1068,45 @@ function initMapInstance(domId) {
 
     m.createPane('reliefPane'); m.getPane('reliefPane').style.zIndex = '200'; m.getPane('reliefPane').style.opacity = baseMapOpacity;
     m.createPane('waterPane'); m.getPane('waterPane').style.zIndex = '250'; m.getPane('waterPane').style.opacity = baseMapOpacity;
-    m.createPane('boundaryPane'); m.getPane('boundaryPane').style.zIndex = '280'; m.getPane('boundaryPane').style.pointerEvents = 'none';
+    m.createPane('boundaryPane'); m.getPane('boundaryPane').style.zIndex = '280'; m.getPane('boundaryPane').style.opacity = '1.0'; m.getPane('boundaryPane').style.pointerEvents = 'none';
+
+    var canvasRendererBoundary = L.canvas({ pane: 'boundaryPane', padding: 0.1 });
+
     m.createPane('contourPane1'); m.getPane('contourPane1').style.opacity = layer1Opacity; m.getPane('contourPane1').style.zIndex = '400';
     m.createPane('contourPane2'); m.getPane('contourPane2').style.opacity = layer2Opacity; m.getPane('contourPane2').style.zIndex = '450';
     m.createPane('arrowPane'); m.getPane('arrowPane').style.zIndex = '500';
     m.createPane('cityPane'); m.getPane('cityPane').style.zIndex = '520'; m.getPane('cityPane').style.pointerEvents = 'none';
 
-    var relief = L.tileLayer(swisstopo_relief_url, { pane: 'reliefPane', maxZoom: 15, maxNativeZoom: 14 }).addTo(m);
+    var relief = L.tileLayer(swisstopo_relief_url, {
+        pane: 'reliefPane',
+        attribution: '&copy; swisstopo | Wetterdaten: &copy; MeteoSchweiz & Météo-France',
+        maxZoom: 15, maxNativeZoom: 14
+    }).addTo(m);
+
     L.tileLayer(swisstopo_lakes_url, { pane: 'waterPane', maxZoom: 15, maxNativeZoom: 14, opacity: 0.85 }).addTo(m);
     var rivers = L.tileLayer(swisstopo_rivers_url, { pane: 'waterPane', maxZoom: 15, maxNativeZoom: 14, opacity: 0.35 }).addTo(m);
+
+    // GESTOCHEN SCHARFE SCHWEIZER LANDESGRENZE (ORIGINAL)
+    L.tileLayer(swisstopo_boundary_url, {
+        pane: 'boundaryPane',
+        className: 'boundary-national',
+        maxZoom: 15, maxNativeZoom: 14
+    }).addTo(m);
 
     var cantons = L.layerGroup();
     fetch("https://cdn.jsdelivr.net/gh/empet/Datasets@master/swiss-cantons.geojson")
         .then(res => res.json())
         .then(geojson => {
-            L.geoJSON(geojson, { pane: 'boundaryPane', interactive: false, style: { color: "#111111", weight: 0.7, opacity: 0.8, fill: false } }).addTo(cantons);
-        }).catch(() => {});
+            L.geoJSON(geojson, {
+                pane: 'boundaryPane',
+                renderer: canvasRendererBoundary,
+                interactive: false,
+                style: { color: "#111111", weight: 0.7, opacity: 1.0, fill: false }
+            }).addTo(cantons);
+        })
+        .catch(() => {
+            L.tileLayer(swisstopo_cantons_url, { pane: 'boundaryPane', className: 'boundary-cantonal', maxZoom: 15, maxNativeZoom: 14 }).addTo(cantons);
+        });
 
     var cityGroup = L.layerGroup([], { pane: 'cityPane' }).addTo(m);
 
