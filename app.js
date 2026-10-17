@@ -1392,7 +1392,7 @@ function renderContours(side) {
     }
 }
 
-// PERFORMANTER CANVAS-ZEICHNER MIT ORIGINAL-PFEILPROPORTIONEN
+// CANVAS-ZEICHNER: HARMONISCH DEZENT SKALIERTE PFEILE
 function drawVisibleArrows(side) {
     var st = modelsState[side];
     var targetMap = (side === 'left') ? mapLeft : mapRight;
@@ -1501,16 +1501,16 @@ function drawVisibleArrows(side) {
             var speed = sVal / 10.0;
             var dir = dirVal * 2.0;
 
-            // Exakt dieselbe Pfeilgrösse und Proportionen wie im vorletzten Code:
+            // Perfekt harmonische Pfeilskalierung (ca. 18% kleiner als zuvor)
             var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
-            var scale = (arrow_w / 9.5) * dpr;
+            var scale = (arrow_w / 11.6) * dpr;
 
             ctx.save();
             ctx.translate(px, py);
             ctx.rotate(dir * Math.PI / 180.0);
             ctx.scale(scale, scale);
 
-            // Exakte Vektorgeometrie aus dem Original-SVG:
+            // Exakte Geometrie aus dem Original-SVG:
             ctx.beginPath();
             ctx.moveTo(0, -10.5);   // Spitze
             ctx.lineTo(4.2, -3.0);  // Flügel rechts
