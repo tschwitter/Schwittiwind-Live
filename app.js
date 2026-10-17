@@ -342,6 +342,7 @@ function navRun(dir) {
 }
 
 async function handleModelButtonClick(modelName, side) {
+    // Im Single-Modus steuert die rechte Box direkt die aktive Hauptkarte (left)!
     var effectiveSide = isSplitActive ? side : 'left';
     var st = modelsState[effectiveSide];
 
@@ -352,7 +353,7 @@ async function handleModelButtonClick(modelName, side) {
         var runId = selectedRuns[effectiveSide][modelName] || (runs.length > 0 ? runs[0].id : null);
         await loadModelAndRun(effectiveSide, modelName, runId);
     } else {
-        toggleRunDropdown(effectiveSide, modelName);
+        toggleRunDropdown(side, modelName);
     }
 }
 
@@ -388,7 +389,7 @@ function updateModelButtonLabels() {
 
 function toggleRunDropdown(side, modelName) {
     var effectiveSide = isSplitActive ? side : 'left';
-    var elId = `runDropdown-${effectiveSide}-${modelName}`;
+    var elId = `runDropdown-${side}-${modelName}`;
     var el = document.getElementById(elId);
     if (!el) return;
     var isAlreadyOpen = (el.style.display === "flex");
@@ -413,10 +414,10 @@ function toggleRunDropdown(side, modelName) {
         });
     }
 
-    var header = document.getElementById(`modelSelect${effectiveSide === 'left' ? (isSplitActive ? 'Left' : 'Right') : 'Right'}`);
+    var header = document.getElementById(`modelSelect${side === 'left' ? 'Left' : 'Right'}`);
     var rect = header.getBoundingClientRect();
     el.style.top = (rect.bottom + 5) + "px";
-    if (isSplitActive && effectiveSide === 'left') {
+    if (side === 'left') {
         el.style.left = rect.left + "px";
         el.style.right = "auto";
     } else {
