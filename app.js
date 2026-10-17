@@ -15,6 +15,8 @@ var modelsState = {
         contourLayer2: null,
         arrowCanvas: null,
         arrowCtx: null,
+        drawnZoom: null,
+        drawnTopLeftLatLng: null,
         canvasRenderer1: null,
         canvasRenderer2: null
     },
@@ -28,6 +30,8 @@ var modelsState = {
         contourLayer2: null,
         arrowCanvas: null,
         arrowCtx: null,
+        drawnZoom: null,
+        drawnTopLeftLatLng: null,
         canvasRenderer1: null,
         canvasRenderer2: null
     }
@@ -123,9 +127,19 @@ var CITIES = [
     { name: "Glarus", lat: 47.0406, lon: 9.0678, minZoom: 10 }
 ];
 
+function setOverlaysVisible(visible) {
+    var op = visible ? "1" : "0";
+    [mapLeft, mapRight].forEach(m => {
+        if (!m) return;
+        var cp = m.getPane('cityPane');
+        if (cp) cp.style.opacity = op;
+    });
+}
+
 function scheduleMapUpdates() {
     if (mapUpdateTimer) clearTimeout(mapUpdateTimer);
     mapUpdateTimer = setTimeout(function() {
+        setOverlaysVisible(true);
         drawVisibleArrows('left');
         if (isSplitActive) drawVisibleArrows('right');
         updateCityLabels();
@@ -1088,12 +1102,13 @@ function initMapInstance(domId) {
     m.getPane('cityPane').style.pointerEvents = 'none';
     m.getPane('cityPane').style.transition = 'opacity 0.1s ease';
 
-    // Canvas direkt in die transformierte arrowPane einhängen
+    // Canvas in die transformierte arrowPane hängen mit transformOrigin 0 0
     var arrowPane = m.getPane('arrowPane');
     var arrowCanvas = document.createElement('canvas');
     arrowCanvas.style.position = 'absolute';
     arrowCanvas.style.left = '0';
     arrowCanvas.style.top = '0';
+    arrowCanvas.style.transformOrigin = '0 0';
     arrowCanvas.style.pointerEvents = 'none';
     arrowPane.appendChild(arrowCanvas);
     var arrowCtx = arrowCanvas.getContext('2d');
@@ -1129,6 +1144,19 @@ function initMapInstance(domId) {
         });
 
     var cityGroup = L.layerGroup([], { pane: 'cityPane' }).addTo(m);
+
+    // ECHTZEIT-ZOOM: Pfeile bleiben verankert und skalieren flüssig mit!
+    m.on('zoomanim', function(e) {
+        var st = (domId === 'mapLeft') ? modelsState.left : modelsState.right;
+        if (!st.arrowCanvas || !st.drawnTopLeftLatLng || st.drawnZoom === undefined) return;
+        var scale = m.getZoomScale(e.zoom, st.drawnZoom);
+        var newPos = m._latLngToNewLayerPoint(st.drawnTopLeftLatLng, e.zoom, e.center);
+        L.DomUtil.setTransform(st.arrowCanvas, newPos, scale);
+    });
+
+    m.on('zoomstart', function() {
+        setOverlaysVisible(false); // blendet nur Städte kurz aus
+    });
 
     m.on('move', () => { if (domId === 'mapLeft') syncMap(mapLeft, mapRight); else syncMap(mapRight, mapLeft); });
     m.on('moveend', scheduleMapUpdates);
@@ -1359,7 +1387,7 @@ function renderContours(side) {
     }
 }
 
-// PERFORMANTER CANVAS-ZEICHNER MIT ECHTEM MITBEWEGEN BEIM PAN/ZOOM
+// CANVAS-ZEICHNER: SCHLANKE PROPORTIONEN & ECHTZEIT-MITBEWEGEN
 function drawVisibleArrows(side) {
     var st = modelsState[side];
     var targetMap = (side === 'left') ? mapLeft : mapRight;
@@ -1372,12 +1400,16 @@ function drawVisibleArrows(side) {
     var ctx = st.arrowCtx;
     var dpr = window.devicePixelRatio || 1;
 
-    // 140px Puffer rund um den Bildschirm: Pfeile sind beim Verschieben bereits da!
-    var pad = 140;
+    // 160px Puffer rundum: verhindert jedes Aufblitzen beim Ziehen
+    var pad = 160;
     var topLeft = targetMap.containerPointToLayerPoint([-pad, -pad]);
 
-    // Canvas genau über den sichtbaren Bereich der transformierten Pane positionieren
-    L.DomUtil.setPosition(canvas, topLeft);
+    // Für das Zoomanim-Event merken:
+    st.drawnTopLeftLatLng = targetMap.layerPointToLatLng(topLeft);
+    st.drawnZoom = targetMap.getZoom();
+
+    // Canvas genau über den Pufferbereich platzieren und Skalierung auf 1 zurücksetzen
+    L.DomUtil.setTransform(canvas, topLeft, 1);
 
     var totalW = size.x + pad * 2;
     var totalH = size.y + pad * 2;
@@ -1436,7 +1468,6 @@ function drawVisibleArrows(side) {
     var xmin = st.config.xmin, xmax = st.config.xmax;
     var ymin = st.config.ymin, ymax = st.config.ymax;
 
-    // Etwas weiterer Radius für den Pufferbereich
     var bNorth = bounds.getNorth() + 0.15, bSouth = bounds.getSouth() - 0.15;
     var bWest = bounds.getWest() - 0.20, bEast = bounds.getEast() + 0.20;
 
@@ -1463,39 +1494,40 @@ function drawVisibleArrows(side) {
             var lon = xmin + c * (xmax - xmin) / (nx - 1);
             var layerPt = targetMap.latLngToLayerPoint(L.latLng(lat, lon));
             
-            // Punkt exakt im Canvas-System
             var px = (layerPt.x - topLeft.x) * dpr;
             var py = (layerPt.y - topLeft.y) * dpr;
 
-            if (px < -50 || px > canvas.width + 50 || py < -50 || py > canvas.height + 50) continue;
+            if (px < -40 || px > canvas.width + 40 || py < -40 || py > canvas.height + 40) continue;
 
             var speed = sVal / 10.0;
             var dir = dirVal * 2.0;
 
-            // Harmonisch abgestimmte Original-Proportionen (keine Nadelform!)
-            var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
-            var scale = (arrow_w / 9.5) * dpr;
+            // Schlanke, wohlproportionierte Pfeilskalierung
+            var arrow_w = Math.min(20, Math.max(5.0, 3.8 + Math.pow(speed, 0.55) * 1.2));
+            var scale = arrow_w / 12.5;
 
             ctx.save();
             ctx.translate(px, py);
             ctx.rotate(dir * Math.PI / 180.0);
-            ctx.scale(scale, scale);
+            ctx.scale(scale * dpr, scale * dpr);
 
-            // Exakte Vektorgeometrie aus dem Original-SVG:
+            // Exakte Geometrie mit schlankem Schaft:
             ctx.beginPath();
             ctx.moveTo(0, -10.5);   // Spitze
             ctx.lineTo(4.2, -3.0);  // Flügel rechts
-            ctx.lineTo(0.9, -3.0);  // Schaftansatz rechts
-            ctx.lineTo(0.9, 11.0);  // Schaftende rechts
-            ctx.lineTo(-0.9, 11.0); // Schaftende links
-            ctx.lineTo(-0.9, -3.0); // Schaftansatz links
+            ctx.lineTo(0.8, -3.0);  // Schaftansatz rechts
+            ctx.lineTo(0.8, 11.0);  // Schaftende rechts
+            ctx.lineTo(-0.8, 11.0); // Schaftende links
+            ctx.lineTo(-0.8, -3.0); // Schaftansatz links
             ctx.lineTo(-4.2, -3.0); // Flügel links
             ctx.closePath();
 
             ctx.fillStyle = '#111111';
             ctx.fill();
+
+            // Feine, gestochen scharfe Haarlinie (bleibt immer dünn!)
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 0.55;
+            ctx.lineWidth = 0.45 / scale;
             ctx.stroke();
 
             ctx.restore();
