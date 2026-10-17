@@ -158,13 +158,24 @@ function syncMap(sourceMap, targetMap) {
 }
 
 function toggleSplitScreen(e) {
-    if (e) e.preventDefault();
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
     isSplitActive = !isSplitActive;
 
     var wrapper = document.getElementById("mapsWrapper");
     var btn = document.getElementById("splitBtn");
     document.body.classList.toggle("split-active", isSplitActive);
-    btn.classList.toggle("active", isSplitActive);
+    
+    if (btn) {
+        if (isSplitActive) {
+            btn.classList.add("active");
+        } else {
+            btn.classList.remove("active");
+        }
+        btn.blur();
+    }
 
     if (isSplitActive) {
         wrapper.classList.remove("single-view");
@@ -1102,7 +1113,6 @@ function initMapInstance(domId) {
     m.getPane('cityPane').style.pointerEvents = 'none';
     m.getPane('cityPane').style.transition = 'opacity 0.1s ease';
 
-    // Canvas in die mitbewegte Pane hängen mit schneller Transition
     var arrowPane = m.getPane('arrowPane');
     var arrowCanvas = document.createElement('canvas');
     arrowCanvas.style.position = 'absolute';
@@ -1145,7 +1155,6 @@ function initMapInstance(domId) {
 
     var cityGroup = L.layerGroup([], { pane: 'cityPane' }).addTo(m);
 
-    // BEIM ZOOMEN: Pfeile sofort sanft ausblenden (verhindert Riesenpfeile und Hänger)
     m.on('zoomstart', function() {
         setOverlaysVisible(false);
         if (mapSafetyTimer) clearTimeout(mapSafetyTimer);
@@ -1154,7 +1163,6 @@ function initMapInstance(domId) {
         }, 1200);
     });
 
-    // BEIM VERSCHIEBEN: Bleiben sichtbar und bewegen sich flüssig mit!
     m.on('move', () => { if (domId === 'mapLeft') syncMap(mapLeft, mapRight); else syncMap(mapRight, mapLeft); });
     m.on('moveend', scheduleMapUpdates);
     m.on('zoomend', scheduleMapUpdates);
@@ -1384,7 +1392,7 @@ function renderContours(side) {
     }
 }
 
-// FEINE, PROPORTIONALE PFEILE (PERFORMAT UND FLÜSSIG MITBEWEGT)
+// PERFORMANTER CANVAS-ZEICHNER MIT ORIGINAL-PFEILPROPORTIONEN
 function drawVisibleArrows(side) {
     var st = modelsState[side];
     var targetMap = (side === 'left') ? mapLeft : mapRight;
@@ -1397,7 +1405,6 @@ function drawVisibleArrows(side) {
     var ctx = st.arrowCtx;
     var dpr = window.devicePixelRatio || 1;
 
-    // 160px Puffer: Pfeile bleiben beim Ziehen lückenlos sichtbar
     var pad = 160;
     var topLeft = targetMap.containerPointToLayerPoint([-pad, -pad]);
 
@@ -1494,35 +1501,30 @@ function drawVisibleArrows(side) {
             var speed = sVal / 10.0;
             var dir = dirVal * 2.0;
 
-            // Harmonisch abgestimmte, schlanke Original-Proportionen
-            var arrow_w = Math.min(18, Math.max(5.0, 3.5 + Math.pow(speed, 0.55) * 1.1));
-            var arrow_h = Math.min(32, Math.max(10.0, 7.0 + Math.pow(speed, 0.65) * 1.3));
-
-            var sx = (arrow_w / 24.0) * dpr;
-            var sy = (arrow_h / 24.0) * dpr;
+            // Exakt dieselbe Pfeilgrösse und Proportionen wie im vorletzten Code:
+            var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
+            var scale = (arrow_w / 9.5) * dpr;
 
             ctx.save();
             ctx.translate(px, py);
             ctx.rotate(dir * Math.PI / 180.0);
-            ctx.scale(sx, sy);
+            ctx.scale(scale, scale);
 
-            // Exakte Vektorgeometrie aus Original-SVG (M11.2 23 H12.8 V9 H16.2 L12 1.5 L7.8 9 H11.2 Z)
+            // Exakte Vektorgeometrie aus dem Original-SVG:
             ctx.beginPath();
-            ctx.moveTo(0, -10.5);
-            ctx.lineTo(4.2, -3.0);
-            ctx.lineTo(0.8, -3.0);
-            ctx.lineTo(0.8, 11.0);
-            ctx.lineTo(-0.8, 11.0);
-            ctx.lineTo(-0.8, -3.0);
-            ctx.lineTo(-4.2, -3.0);
+            ctx.moveTo(0, -10.5);   // Spitze
+            ctx.lineTo(4.2, -3.0);  // Flügel rechts
+            ctx.lineTo(0.9, -3.0);  // Schaftansatz rechts
+            ctx.lineTo(0.9, 11.0);  // Schaftende rechts
+            ctx.lineTo(-0.9, 11.0); // Schaftende links
+            ctx.lineTo(-0.9, -3.0); // Schaftansatz links
+            ctx.lineTo(-4.2, -3.0); // Flügel links
             ctx.closePath();
 
             ctx.fillStyle = '#111111';
             ctx.fill();
-
-            // Feine weiße Außenlinie (bleibt immer ~0.55px dünn)
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 0.55 / ((sx + sy) / 2);
+            ctx.lineWidth = 0.55;
             ctx.stroke();
 
             ctx.restore();
