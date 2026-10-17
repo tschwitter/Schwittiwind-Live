@@ -15,8 +15,6 @@ var modelsState = {
         contourLayer2: null,
         arrowCanvas: null,
         arrowCtx: null,
-        drawnZoom: null,
-        drawnTopLeftLatLng: null,
         canvasRenderer1: null,
         canvasRenderer2: null
     },
@@ -30,8 +28,6 @@ var modelsState = {
         contourLayer2: null,
         arrowCanvas: null,
         arrowCtx: null,
-        drawnZoom: null,
-        drawnTopLeftLatLng: null,
         canvasRenderer1: null,
         canvasRenderer2: null
     }
@@ -74,6 +70,7 @@ var dayTimesteps = {};
 var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
 var mapUpdateTimer = null;
+var mapSafetyTimer = null;
 
 var CITIES = [
     { name: "Zürich", lat: 47.3769, lon: 8.5417, minZoom: 7 },
@@ -129,21 +126,24 @@ var CITIES = [
 
 function setOverlaysVisible(visible) {
     var op = visible ? "1" : "0";
-    [mapLeft, mapRight].forEach(m => {
-        if (!m) return;
-        var cp = m.getPane('cityPane');
+    [ { map: mapLeft, st: modelsState.left }, { map: mapRight, st: modelsState.right } ].forEach(item => {
+        if (!item.map) return;
+        var cp = item.map.getPane('cityPane');
         if (cp) cp.style.opacity = op;
+        if (item.st && item.st.arrowCanvas) item.st.arrowCanvas.style.opacity = op;
     });
 }
 
 function scheduleMapUpdates() {
+    if (mapSafetyTimer) clearTimeout(mapSafetyTimer);
     if (mapUpdateTimer) clearTimeout(mapUpdateTimer);
+    
     mapUpdateTimer = setTimeout(function() {
-        setOverlaysVisible(true);
         drawVisibleArrows('left');
         if (isSplitActive) drawVisibleArrows('right');
         updateCityLabels();
-    }, 50);
+        setOverlaysVisible(true);
+    }, 40);
 }
 
 function syncMap(sourceMap, targetMap) {
@@ -1102,14 +1102,14 @@ function initMapInstance(domId) {
     m.getPane('cityPane').style.pointerEvents = 'none';
     m.getPane('cityPane').style.transition = 'opacity 0.1s ease';
 
-    // Canvas in die transformierte arrowPane hängen mit transformOrigin 0 0
+    // Canvas in die mitbewegte Pane hängen mit schneller Transition
     var arrowPane = m.getPane('arrowPane');
     var arrowCanvas = document.createElement('canvas');
     arrowCanvas.style.position = 'absolute';
     arrowCanvas.style.left = '0';
     arrowCanvas.style.top = '0';
-    arrowCanvas.style.transformOrigin = '0 0';
     arrowCanvas.style.pointerEvents = 'none';
+    arrowCanvas.style.transition = 'opacity 0.12s ease';
     arrowPane.appendChild(arrowCanvas);
     var arrowCtx = arrowCanvas.getContext('2d');
 
@@ -1145,19 +1145,16 @@ function initMapInstance(domId) {
 
     var cityGroup = L.layerGroup([], { pane: 'cityPane' }).addTo(m);
 
-    // ECHTZEIT-ZOOM: Pfeile bleiben verankert und skalieren flüssig mit!
-    m.on('zoomanim', function(e) {
-        var st = (domId === 'mapLeft') ? modelsState.left : modelsState.right;
-        if (!st.arrowCanvas || !st.drawnTopLeftLatLng || st.drawnZoom === undefined) return;
-        var scale = m.getZoomScale(e.zoom, st.drawnZoom);
-        var newPos = m._latLngToNewLayerPoint(st.drawnTopLeftLatLng, e.zoom, e.center);
-        L.DomUtil.setTransform(st.arrowCanvas, newPos, scale);
-    });
-
+    // BEIM ZOOMEN: Pfeile sofort sanft ausblenden (verhindert Riesenpfeile und Hänger)
     m.on('zoomstart', function() {
-        setOverlaysVisible(false); // blendet nur Städte kurz aus
+        setOverlaysVisible(false);
+        if (mapSafetyTimer) clearTimeout(mapSafetyTimer);
+        mapSafetyTimer = setTimeout(function() {
+            setOverlaysVisible(true);
+        }, 1200);
     });
 
+    // BEIM VERSCHIEBEN: Bleiben sichtbar und bewegen sich flüssig mit!
     m.on('move', () => { if (domId === 'mapLeft') syncMap(mapLeft, mapRight); else syncMap(mapRight, mapLeft); });
     m.on('moveend', scheduleMapUpdates);
     m.on('zoomend', scheduleMapUpdates);
@@ -1387,7 +1384,7 @@ function renderContours(side) {
     }
 }
 
-// CANVAS-ZEICHNER: SCHLANKE PROPORTIONEN & ECHTZEIT-MITBEWEGEN
+// FEINE, PROPORTIONALE PFEILE (PERFORMAT UND FLÜSSIG MITBEWEGT)
 function drawVisibleArrows(side) {
     var st = modelsState[side];
     var targetMap = (side === 'left') ? mapLeft : mapRight;
@@ -1400,16 +1397,11 @@ function drawVisibleArrows(side) {
     var ctx = st.arrowCtx;
     var dpr = window.devicePixelRatio || 1;
 
-    // 160px Puffer rundum: verhindert jedes Aufblitzen beim Ziehen
+    // 160px Puffer: Pfeile bleiben beim Ziehen lückenlos sichtbar
     var pad = 160;
     var topLeft = targetMap.containerPointToLayerPoint([-pad, -pad]);
 
-    // Für das Zoomanim-Event merken:
-    st.drawnTopLeftLatLng = targetMap.layerPointToLatLng(topLeft);
-    st.drawnZoom = targetMap.getZoom();
-
-    // Canvas genau über den Pufferbereich platzieren und Skalierung auf 1 zurücksetzen
-    L.DomUtil.setTransform(canvas, topLeft, 1);
+    L.DomUtil.setPosition(canvas, topLeft);
 
     var totalW = size.x + pad * 2;
     var totalH = size.y + pad * 2;
@@ -1502,32 +1494,35 @@ function drawVisibleArrows(side) {
             var speed = sVal / 10.0;
             var dir = dirVal * 2.0;
 
-            // Schlanke, wohlproportionierte Pfeilskalierung
-            var arrow_w = Math.min(20, Math.max(5.0, 3.8 + Math.pow(speed, 0.55) * 1.2));
-            var scale = arrow_w / 12.5;
+            // Harmonisch abgestimmte, schlanke Original-Proportionen
+            var arrow_w = Math.min(18, Math.max(5.0, 3.5 + Math.pow(speed, 0.55) * 1.1));
+            var arrow_h = Math.min(32, Math.max(10.0, 7.0 + Math.pow(speed, 0.65) * 1.3));
+
+            var sx = (arrow_w / 24.0) * dpr;
+            var sy = (arrow_h / 24.0) * dpr;
 
             ctx.save();
             ctx.translate(px, py);
             ctx.rotate(dir * Math.PI / 180.0);
-            ctx.scale(scale * dpr, scale * dpr);
+            ctx.scale(sx, sy);
 
-            // Exakte Geometrie mit schlankem Schaft:
+            // Exakte Vektorgeometrie aus Original-SVG (M11.2 23 H12.8 V9 H16.2 L12 1.5 L7.8 9 H11.2 Z)
             ctx.beginPath();
-            ctx.moveTo(0, -10.5);   // Spitze
-            ctx.lineTo(4.2, -3.0);  // Flügel rechts
-            ctx.lineTo(0.8, -3.0);  // Schaftansatz rechts
-            ctx.lineTo(0.8, 11.0);  // Schaftende rechts
-            ctx.lineTo(-0.8, 11.0); // Schaftende links
-            ctx.lineTo(-0.8, -3.0); // Schaftansatz links
-            ctx.lineTo(-4.2, -3.0); // Flügel links
+            ctx.moveTo(0, -10.5);
+            ctx.lineTo(4.2, -3.0);
+            ctx.lineTo(0.8, -3.0);
+            ctx.lineTo(0.8, 11.0);
+            ctx.lineTo(-0.8, 11.0);
+            ctx.lineTo(-0.8, -3.0);
+            ctx.lineTo(-4.2, -3.0);
             ctx.closePath();
 
             ctx.fillStyle = '#111111';
             ctx.fill();
 
-            // Feine, gestochen scharfe Haarlinie (bleibt immer dünn!)
+            // Feine weiße Außenlinie (bleibt immer ~0.55px dünn)
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 0.45 / scale;
+            ctx.lineWidth = 0.55 / ((sx + sy) / 2);
             ctx.stroke();
 
             ctx.restore();
