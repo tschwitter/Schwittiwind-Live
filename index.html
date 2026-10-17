@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Wetter & Wind (ICON CH1, CH2 & AROME HD)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=31" />
+    <link rel="stylesheet" href="style.css?v=32" />
 </head>
 <body>
 
@@ -39,7 +39,7 @@
         </div>
     </div>
 
-    <!-- MODELL-AUSWAHL LINKS (SPLITSCREEN) -->
+    <!-- MODELL-AUSWAHL LINKS (NUR IM SPLITSCREEN SICHTBAR) -->
     <div class="model-select-header model-select-left" id="modelSelectLeft">
         <div class="model-toggle-column">
             <div class="model-toggle-row">
@@ -60,7 +60,7 @@
             </div>
         </div>
 
-        <!-- SPLIT-BUTTON: KLAPPBARES PANEL LINKS -->
+        <!-- BUTTON FÜR MEMBER-PANEL LINKS -->
         <button class="split-member-toggle-btn" id="btnToggleMemberLeft" onclick="toggleSplitMemberPanel('left')">
             <span id="lblMemberBtnLeft">HL ▾</span>
         </button>
@@ -83,7 +83,7 @@
         </div>
     </div>
 
-    <!-- MODELL-AUSWAHL RECHTS -->
+    <!-- MODELL-AUSWAHL RECHTS (IM SINGLE-MODUS = HAUPT-AUSWAHL, IM SPLIT = RECHTE KARTE) -->
     <div class="model-select-header model-select-right" id="modelSelectRight">
         <div class="model-toggle-column">
             <div class="model-toggle-row">
@@ -104,7 +104,7 @@
             </div>
         </div>
 
-        <!-- SPLIT-BUTTON: KLAPPBARES PANEL RECHTS -->
+        <!-- BUTTON FÜR MEMBER-PANEL RECHTS -->
         <button class="split-member-toggle-btn" id="btnToggleMemberRight" onclick="toggleSplitMemberPanel('right')">
             <span id="lblMemberBtnRight">HL ▾</span>
         </button>
@@ -239,6 +239,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=31"></script>
+    <script src="app.js?v=32"></script>
 </body>
 </html>
