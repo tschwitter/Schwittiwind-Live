@@ -74,7 +74,7 @@ MODELS_CONFIG = {
         "hours": 48,
         "max_members": 1,  # Deterministischer Hauptlauf
         "max_runs": 8,     # 8 Läufe à 3 Stunden im Archiv
-        "active_variables": ["wind"],
+        "active_variables": ["wind", "gust"],
         "ensemble_variables": [],
         "max_chunks": 4
     }
