@@ -39,13 +39,12 @@
         </div>
     </div>
 
-    <!-- MODELL-AUSWAHL LINKS (SPLITSCREEN) -->
+    <!-- MODELL-AUSWAHL LINKS (NUR IM SPLITSCREEN SICHTBAR) -->
     <div class="model-select-header model-select-left" id="modelSelectLeft">
         <div class="model-toggle-column">
-            <!-- ZEILE 1: AROME & D2 -->
             <div class="model-toggle-row">
                 <button class="model-btn" id="btnModel-left-arome" onclick="handleModelButtonClick('arome', 'left')">
-                    <span class="model-title">AROME HD ▾</span>
+                    <span class="model-title">AROME ▾</span>
                     <span class="model-time">--</span>
                 </button>
                 <button class="model-btn" id="btnModel-left-icon-d2" onclick="handleModelButtonClick('icon-d2', 'left')">
@@ -53,7 +52,6 @@
                     <span class="model-time">--</span>
                 </button>
             </div>
-            <!-- ZEILE 2: CH1 & CH2 -->
             <div class="model-toggle-row">
                 <button class="model-btn active" id="btnModel-left-icon-ch1" onclick="handleModelButtonClick('icon-ch1', 'left')">
                     <span class="model-title">CH1 ▾</span>
@@ -66,6 +64,7 @@
             </div>
         </div>
 
+        <!-- BUTTON FÜR MEMBER-PANEL LINKS -->
         <button class="split-member-toggle-btn" id="btnToggleMemberLeft" onclick="toggleSplitMemberPanel('left')">
             <span id="lblMemberBtnLeft">HL ▾</span>
         </button>
@@ -88,13 +87,12 @@
         </div>
     </div>
 
-    <!-- MODELL-AUSWAHL RECHTS -->
+    <!-- MODELL-AUSWAHL RECHTS (IM SINGLE-MODUS = HAUPT-AUSWAHL, IM SPLIT = RECHTE KARTE) -->
     <div class="model-select-header model-select-right" id="modelSelectRight">
         <div class="model-toggle-column">
-            <!-- ZEILE 1: AROME & D2 -->
             <div class="model-toggle-row">
                 <button class="model-btn" id="btnModel-right-arome" onclick="handleModelButtonClick('arome', 'right')">
-                    <span class="model-title">AROME HD ▾</span>
+                    <span class="model-title">AROME ▾</span>
                     <span class="model-time">--</span>
                 </button>
                 <button class="model-btn" id="btnModel-right-icon-d2" onclick="handleModelButtonClick('icon-d2', 'right')">
@@ -102,7 +100,6 @@
                     <span class="model-time">--</span>
                 </button>
             </div>
-            <!-- ZEILE 2: CH1 & CH2 -->
             <div class="model-toggle-row">
                 <button class="model-btn active" id="btnModel-right-icon-ch1" onclick="handleModelButtonClick('icon-ch1', 'right')">
                     <span class="model-title">CH1 ▾</span>
@@ -115,6 +112,7 @@
             </div>
         </div>
 
+        <!-- BUTTON FÜR MEMBER-PANEL RECHTS -->
         <button class="split-member-toggle-btn" id="btnToggleMemberRight" onclick="toggleSplitMemberPanel('right')">
             <span id="lblMemberBtnRight">HL ▾</span>
         </button>
