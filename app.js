@@ -33,10 +33,10 @@ var modelsState = {
     }
 };
 
-var availableRuns = { "icon-ch1": [], "icon-ch2": [], "arome": [] };
+var availableRuns = { "icon-ch1": [], "icon-ch2": [], "arome": [], "icon-d2": [] };
 var selectedRuns = {
-    left: { "icon-ch1": null, "icon-ch2": null, "arome": null },
-    right: { "icon-ch1": null, "icon-ch2": null, "arome": null }
+    left: { "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null },
+    right: { "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null }
 };
 
 var verticalNavMode = 'member';
@@ -281,7 +281,7 @@ function setPopupsDimmed(dimmed) {
 
 function closeAllPopups() {
     ['left', 'right'].forEach(side => {
-        ['icon-ch1', 'icon-ch2', 'arome'].forEach(m => {
+        ['icon-ch1', 'icon-ch2', 'arome', 'icon-d2'].forEach(m => {
             var el = document.getElementById(`runDropdown-${side}-${m}`);
             if (el) el.style.display = "none";
         });
@@ -404,13 +404,13 @@ function updateModelButtonLabels() {
     ['left', 'right'].forEach(side => {
         var effectiveStateSide = isSplitActive ? side : 'left';
         var st = modelsState[effectiveStateSide];
-        ["icon-ch1", "icon-ch2", "arome"].forEach(m => {
+        ["icon-ch1", "icon-ch2", "arome", "icon-d2"].forEach(m => {
             var btn = document.getElementById(`btnModel-${side}-${m}`);
             if (!btn) return;
             var runs = availableRuns[m] || [];
             var activeRun = (st.currentModel === m) ? st.currentRunId : (selectedRuns[effectiveStateSide][m] || (runs[0] ? runs[0].id : null));
             var activeObj = runs.find(r => r.id === activeRun) || runs[0];
-            var modName = (m === "icon-ch1") ? "CH1" : (m === "icon-ch2") ? "CH2" : "AROME HD";
+            var modName = (m === "icon-ch1") ? "CH1" : (m === "icon-ch2") ? "CH2" : (m === "arome" ? "AROME HD" : "D2");
             var timeTxt = activeObj ? activeObj.label : "--";
             btn.innerHTML = `<span class="model-title">${modName} ▾</span><span class="model-time">${timeTxt}</span>`;
             btn.classList.toggle("active", st.currentModel === m);
@@ -1128,7 +1128,7 @@ function initMapInstance(domId) {
 
     var relief = L.tileLayer(swisstopo_relief_url, {
         pane: 'reliefPane',
-        attribution: '&copy; swisstopo | Wetterdaten: &copy; MeteoSchweiz & Météo-France',
+        attribution: '&copy; swisstopo | Wetterdaten: &copy; MeteoSchweiz, Météo-France & DWD',
         maxZoom: 15, maxNativeZoom: 14
     }).addTo(m);
 
@@ -1246,6 +1246,7 @@ async function init() {
         await fetchAvailableRuns("icon-ch1");
         await fetchAvailableRuns("icon-ch2");
         await fetchAvailableRuns("arome");
+        await fetchAvailableRuns("icon-d2");
 
         await loadModelAndRun('left', 'icon-ch1');
         await loadModelAndRun('right', 'arome');
@@ -1295,12 +1296,19 @@ async function updateForecast() {
     var refDateParts = refParts[0].split(".");
     var refTimeHour = refParts[1].split(":")[0];
     
+    function getModShort(mKey) {
+        if (mKey === "arome") return "AROME";
+        if (mKey === "icon-ch2") return "CH2";
+        if (mKey === "icon-d2") return "D2";
+        return "CH1";
+    }
+
     if (isSplitActive) {
-        var modL = modelsState.left.currentModel === "arome" ? "AROME" : (modelsState.left.currentModel === "icon-ch2" ? "CH2" : "CH1");
-        var modR = modelsState.right.currentModel === "arome" ? "AROME" : (modelsState.right.currentModel === "icon-ch2" ? "CH2" : "CH1");
+        var modL = getModShort(modelsState.left.currentModel);
+        var modR = getModShort(modelsState.right.currentModel);
         document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z | L: ${modL} | R: ${modR}`;
     } else {
-        var modShort = modelsState.left.currentModel === "arome" ? "AROME" : (modelsState.left.currentModel === "icon-ch2" ? "CH2" : "CH1");
+        var modShort = getModShort(modelsState.left.currentModel);
         document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z ${modShort}`;
     }
 
@@ -1395,7 +1403,6 @@ function renderContours(side) {
     }
 }
 
-// CANVAS-ZEICHNER: SCHLANKE, DISKRETE PFEILE
 function drawVisibleArrows(side) {
     var st = modelsState[side];
     var targetMap = (side === 'left') ? mapLeft : mapRight;
@@ -1504,8 +1511,8 @@ function drawVisibleArrows(side) {
             var speed = sVal / 10.0;
             var dir = dirVal * 2.0;
 
-            // Harmonisch verkleinerte Pfeilskalierung:
-            var arrow_w = Math.min(20, Math.max(4.5, 3.2 + Math.pow(speed, 0.58) * 1.2));
+            // Harmonisch verkleinerte Pfeile
+            var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
             var scale = (arrow_w / 15.0) * dpr;
 
             ctx.save();
@@ -1513,7 +1520,6 @@ function drawVisibleArrows(side) {
             ctx.rotate(dir * Math.PI / 180.0);
             ctx.scale(scale, scale);
 
-            // Exakte Vektorgeometrie aus dem Original-SVG:
             ctx.beginPath();
             ctx.moveTo(0, -10.5);   // Spitze
             ctx.lineTo(4.2, -3.0);  // Flügel rechts
