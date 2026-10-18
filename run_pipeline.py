@@ -73,7 +73,7 @@ def check_arome_new_data():
     return False, None, "latest", None, None
 
 def check_icond2_new_data():
-    """Prüft die Verfügbarkeit des neuesten 3-stündigen ICON-D2-Laufs auf DWD Open Data."""
+    """Prüft die Verfügbarkeit des neuesten 3-stündigen ICON-D2-EPS-Laufs auf DWD Open Data."""
     import requests
 
     now_utc = datetime.now(ZoneInfo("UTC"))
@@ -98,7 +98,8 @@ def check_icond2_new_data():
         run_id = run_dt.strftime("%Y%m%d_%H")
         ref_str = run_dt.strftime("%d.%m.%Y %H:00 UTC")
 
-        test_url = f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/{cycle_hh}/u_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_048_2d_u_10m.grib2.bz2"
+        # Prüfung auf die 48h-Ensemble-Datei von DWD Open Data
+        test_url = f"https://opendata.dwd.de/weather/nwp/icon-d2-eps/grib/{cycle_hh}/u_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_048_2d_u_10m.grib2.bz2"
         try:
             r = requests.head(test_url, timeout=5)
             if r.status_code == 200:
@@ -106,7 +107,7 @@ def check_icond2_new_data():
                 if not is_new:
                     print(f"-> [icon-d2] Lauf {run_id} ist bereits aktuell.", flush=True)
                     return False, ref_str, iso_str, run_id, run_dt
-                print(f"✓ [icon-d2] Neuer Lauf {run_id} ist vollständig bis +48h bereit!", flush=True)
+                print(f"✓ [icon-d2] Neuer Ensemble-Lauf {run_id} ist vollständig bis +48h bereit!", flush=True)
                 return True, ref_str, iso_str, run_id, run_dt
         except Exception:
             pass
