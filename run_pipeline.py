@@ -34,7 +34,9 @@ def load_existing_runs(model_name):
     return valid_runs
 
 def check_arome_new_data():
+    """Prüft die Verfügbarkeit des neuesten 3-stündigen AROME-Laufs auf Open Data."""
     import requests
+
     now_utc = datetime.now(ZoneInfo("UTC"))
     existing_runs = load_existing_runs("arome")
     latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
@@ -71,7 +73,9 @@ def check_arome_new_data():
     return False, None, "latest", None, None
 
 def check_icond2_new_data():
+    """Prüft die Verfügbarkeit des neuesten 3-stündigen ICON-D2-Laufs auf DWD Open Data."""
     import requests
+
     now_utc = datetime.now(ZoneInfo("UTC"))
     existing_runs = load_existing_runs("icon-d2")
     latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
@@ -88,21 +92,21 @@ def check_icond2_new_data():
     candidates.sort(reverse=True)
 
     for run_dt in candidates[:4]:
-        hh = run_dt.strftime("%H")
-        dwd_id = run_dt.strftime("%Y%m%d%H")
+        cycle_hh = run_dt.strftime("%H")
+        date_ymd = run_dt.strftime("%Y%m%d")
+        iso_str = run_dt.strftime("%Y-%m-%dT%H:00:00Z")
         run_id = run_dt.strftime("%Y%m%d_%H")
         ref_str = run_dt.strftime("%d.%m.%Y %H:00 UTC")
-        iso_str = run_dt.strftime("%Y-%m-%dT%H:00:00Z")
 
-        test_url = f"https://opendata.dwd.de/weather/nwp/icon-d2-eps/grib/{hh}/u_10m/icon-d2-eps_germany_icosahedral_single-level_{dwd_id}_048_2d_u_10m.grib2.bz2"
+        test_url = f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/{cycle_hh}/u_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_048_2d_u_10m.grib2.bz2"
         try:
-            r = requests.head(test_url, timeout=6)
+            r = requests.head(test_url, timeout=5)
             if r.status_code == 200:
                 is_new = (latest_known_id != run_id)
                 if not is_new:
                     print(f"-> [icon-d2] Lauf {run_id} ist bereits aktuell.", flush=True)
                     return False, ref_str, iso_str, run_id, run_dt
-                print(f"✓ [icon-d2] Neuer Lauf {run_id} ist vollständig (+48h) bereit!", flush=True)
+                print(f"✓ [icon-d2] Neuer Lauf {run_id} ist vollständig bis +48h bereit!", flush=True)
                 return True, ref_str, iso_str, run_id, run_dt
         except Exception:
             pass
@@ -149,7 +153,10 @@ def check_model_new_data(model_name):
         print(f"-> [{model_name}] Lauf {run_id} ist bereits aktuell.", flush=True)
         return False, latest_ref_str, iso_str, run_id, latest_dt
 
-    required_hours = 33 if model_name == "icon-ch1" else (120 if latest_dt.hour in [0, 12] else 45)
+    if model_name == "icon-ch1":
+        required_hours = 33
+    else:
+        required_hours = 120 if latest_dt.hour in [0, 12] else 45
 
     try:
         check_final = ogd_api.Request(
