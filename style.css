@@ -81,7 +81,6 @@ html, body {
     outline: none;
 }
 
-/* Hover nur für echte Mausgeräte, um Touchscreen-Leuchten zu verhindern */
 @media (hover: hover) and (pointer: fine) {
     .settings-control-btn:hover {
         background-color: #007ab7 !important;
@@ -96,7 +95,6 @@ html, body {
     box-shadow: 0 0 10px rgba(0, 122, 183, 0.8) !important;
 }
 
-/* Erzwingt sofortige Deaktivierung ohne hängenden Touch-Hover */
 .split-toggle-btn:not(.active) {
     background-color: rgba(33, 43, 54, 0.95) !important;
     border-color: rgba(255, 255, 255, 0.2) !important;
@@ -294,7 +292,7 @@ html, body {
     box-shadow: 0 0 12px rgba(0, 122, 183, 0.75), 0 4px 10px rgba(0, 0, 0, 0.4) !important;
 }
 
-/* --- MODELL-AUSWAHLEN (2 ZEILEN) --- */
+/* --- MODELL-AUSWAHLEN (2x2 GRID) --- */
 .model-select-header {
     position: fixed;
     top: 10px;
@@ -369,7 +367,7 @@ body.split-active .model-select-left { display: block; }
     letter-spacing: -0.2px;
 }
 
-/* --- SPLITSCREEN MEMBER-BUTTONS & EXAKTE DROPDOWN-AUSRICHTUNG --- */
+/* --- SPLITSCREEN MEMBER-BUTTONS & DROPDOWN --- */
 .split-member-toggle-btn {
     display: none;
     width: 100%;
@@ -392,7 +390,6 @@ body.split-active .model-select-left { display: block; }
 body.split-active .split-member-toggle-btn { display: block; }
 body.split-active .single-member-panel { display: none !important; }
 
-/* Klappt exakt unter dem Button des jeweiligen Modells auf */
 .split-member-dropdown {
     position: absolute !important;
     top: calc(100% + 4px) !important;
@@ -493,7 +490,7 @@ body.split-active .single-member-panel { display: none !important; }
     margin-bottom: 6px; 
 }
 .settings-row {
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex align-items: center; justify-content: space-between;
     font-size: 11px; margin-bottom: 6px;
 }
 .mode-toggle-group {
@@ -753,7 +750,6 @@ body.split-active .split-legend-btn { display: block; }
 body.split-active #legendBox { display: none; margin-bottom: 4px; }
 body.split-active #legendBox.open { display: flex !important; }
 
-/* Legende mit allen Original-Abstufungen */
 .legend-box { 
     background-color: rgba(24, 33, 42, 0.94); 
     backdrop-filter: blur(8px); 
@@ -780,7 +776,7 @@ body.split-active #legendBox.open { display: flex !important; }
     .var-btn, .nav-toggle-btn { font-size: 10px; padding: 4px 6px; border-radius: 10px; }
     .layer2-btn { font-size: 9px; padding: 3px 16px 4px 16px; border-radius: 0 0 12px 12px; }
     
-    .model-select-header { top: 6px; width: 62px; }
+    .model-select-header { top: 6px; width: 84px; }
     .model-select-right { right: 6px; }
     .model-select-left { left: 82px; }
     .model-title { font-size: 8.5px; }
@@ -788,7 +784,6 @@ body.split-active #legendBox.open { display: flex !important; }
 
     .control-panel { bottom: 6px; left: 6px; right: 6px; width: auto; transform: none; padding: 6px 8px; border-radius: 10px; }
     
-    /* Sauberer Abstand: top auf 88px vergrößert, damit es nicht mehr an den Modell-Buttons klebt */
     .member-panel { 
         top: 88px; 
         right: 6px; 
@@ -797,7 +792,7 @@ body.split-active #legendBox.open { display: flex !important; }
         border-radius: 10px; 
         max-height: calc(100vh - 195px); 
     }
-    .split-member-dropdown { width: 62px !important; }
+    .split-member-dropdown { width: 84px !important; }
     .member-panel-title, .member-section-title { display: none; }
     .member-section-toggle { font-size: 8.5px; padding: 4px 2px; }
     .member-btn { font-size: 9.5px; padding: 5px 1px; border-radius: 8px; }
