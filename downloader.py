@@ -1,9 +1,10 @@
 import os
 import gc
+import bz2
 import time
 import tempfile
 import threading
-from datetime import timedelta
+from datetime import timedelta, datetime
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import xarray as xr
@@ -235,13 +236,8 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
             results_by_alt[alt] = slices[0].expand_dims("lead_time")
     return results_by_alt
 
-# ================= AROME HD (MÉTÉO-FRANCE) FETCHER =================
+# ================= AROME HD (MÉTÉO-FRANCE) =================
 def fetch_arome_single_hour(ref_iso, lead_hour):
-    """
-    Lädt das stündliche SP1-GRIB2-Paket von Météo-France herunter.
-    Bei Stunde 0 wird für Böen sauber NaN geliefert (weggelassen).
-    Ab Stunde 1 wird der echte Betrag der Böenvektoren berechnet.
-    """
     urls = [
         f"https://meteofrance-pnt.s3.rbx.io.cloud.ovh.net/pnt/{ref_iso}/arome/001/SP1/arome__001__SP1__{lead_hour:02d}H__{ref_iso}.grib2",
         f"https://object.data.gouv.fr/meteofrance-pnt/pnt/{ref_iso}/arome/001/SP1/arome__001__SP1__{lead_hour:02d}H__{ref_iso}.grib2"
@@ -274,74 +270,37 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
         u_gust_da, v_gust_da, scalar_gust_da = None, None, None
 
         for ds in datasets:
-            # 1. 10m Windkomponenten
-            if 'u10' in ds:
-                u10_da = ds['u10']
-            elif '10u' in ds:
-                u10_da = ds['10u']
-            if 'v10' in ds:
-                v10_da = ds['v10']
-            elif '10v' in ds:
-                v10_da = ds['10v']
+            if 'u10' in ds: u10_da = ds['u10']
+            elif '10u' in ds: u10_da = ds['10u']
+            if 'v10' in ds: v10_da = ds['v10']
+            elif '10v' in ds: v10_da = ds['10v']
 
-            # 2. Böenkomponenten (nur ab Stunde 1 suchen)
             if lead_hour > 0:
                 for k in ['fg10', '10fg', 'ff_raf', 'wsgsmax']:
-                    if k in ds:
-                        scalar_gust_da = ds[k]
-                        break
+                    if k in ds: scalar_gust_da = ds[k]; break
                 for ku in ['efg10', 'u10g', 'u_raf']:
-                    if ku in ds:
-                        u_gust_da = ds[ku]
-                        break
+                    if ku in ds: u_gust_da = ds[ku]; break
                 for kv in ['nfg10', 'v10g', 'v_raf']:
-                    if kv in ds:
-                        v_gust_da = ds[kv]
-                        break
+                    if kv in ds: v_gust_da = ds[kv]; break
 
-        # Fallback-Suche Wind
         if u10_da is None or v10_da is None:
             for ds in datasets:
                 for var_name in ds.data_vars:
                     v = ds[var_name]
                     std_n = getattr(v, 'standard_name', '').lower()
-                    if std_n == 'eastward_wind':
-                        u10_da = v
-                    elif std_n == 'northward_wind':
-                        v10_da = v
-
-        # Fallback-Suche Böen (nur ab Stunde 1)
-        if lead_hour > 0 and scalar_gust_da is None and (u_gust_da is None or v_gust_da is None):
-            for ds in datasets:
-                for var_name in ds.data_vars:
-                    v = ds[var_name]
-                    long_n = getattr(v, 'long_name', '').lower()
-                    grib_n = getattr(v, 'GRIB_name', '').lower()
-                    name_comb = f"{long_n} {grib_n}"
-                    if 'gust' in name_comb or 'rafale' in name_comb:
-                        if 'eastward' in name_comb or ' u ' in name_comb or name_comb.startswith('u '):
-                            u_gust_da = v
-                        elif 'northward' in name_comb or ' v ' in name_comb or name_comb.startswith('v '):
-                            v_gust_da = v
-                        elif 'maximum' in name_comb or 'speed' in name_comb:
-                            scalar_gust_da = v
+                    if std_n == 'eastward_wind': u10_da = v
+                    elif std_n == 'northward_wind': v10_da = v
 
         lat_coord = 'latitude' if 'latitude' in u10_da.coords else 'lat'
         lon_coord = 'longitude' if 'longitude' in u10_da.coords else 'lon'
 
-        # Schweizer Bounding Box
         lat_vals = u10_da[lat_coord].values
-        if lat_vals[0] > lat_vals[-1]:
-            lat_slice = slice(config.LAT_MAX, config.LAT_MIN)
-        else:
-            lat_slice = slice(config.LAT_MIN, config.LAT_MAX)
-
+        lat_slice = slice(config.LAT_MAX, config.LAT_MIN) if lat_vals[0] > lat_vals[-1] else slice(config.LAT_MIN, config.LAT_MAX)
         lon_slice = slice(config.LON_MIN, config.LON_MAX)
+
         u_sub = u10_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
         v_sub = v10_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
 
-        # Böenberechnung:
-        # Bei Stunde 0 existiert physikalisch noch kein 1-stündiger Rückblick -> NaN (weglassen)
         if lead_hour == 0:
             g_sub = np.full_like(u_sub, np.nan)
         elif scalar_gust_da is not None:
@@ -355,23 +314,20 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
 
         sub_lats = u10_da[lat_coord].sel({lat_coord: lat_slice}).values
         sub_lons = u10_da[lon_coord].sel({lon_coord: lon_slice}).values
-
         glon, glat = np.meshgrid(sub_lons, sub_lats)
+
         return u_sub.ravel(), v_sub.ravel(), g_sub.ravel(), glon.ravel(), glat.ravel()
     except Exception as e:
         print(f"Fehler beim Dekodieren von AROME GRIB2 (+{lead_hour}h): {e}", flush=True)
         return None, None, None, None, None
     finally:
         if os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except Exception:
-                pass
+            try: os.remove(tmp_path)
+            except Exception: pass
 
 def fetch_arome_hd_data(start_step, end_step, ref_time_str):
     print(f"-> Lade AROME HD (Wind & Böen) für Schritte {start_step} bis {end_step} ({ref_time_str})...", flush=True)
     lead_hours = list(range(start_step, end_step + 1))
-
     u_list, v_list, g_list = [], [], []
     ref_lon, ref_lat = None, None
 
@@ -394,15 +350,11 @@ def fetch_arome_hd_data(start_step, end_step, ref_time_str):
     v_stack = np.stack(v_list, axis=0)
     g_stack = np.stack(g_list, axis=0)
 
-    u_da = xr.DataArray(u_stack, dims=["lead_time", "cell"])
-    v_da = xr.DataArray(v_stack, dims=["lead_time", "cell"])
-    g_da = xr.DataArray(g_stack, dims=["lead_time", "cell"])
-
     return {
         "surface": {
-            "u_h": u_da,
-            "v_h": v_da,
-            "g_h": g_da
+            "u_h": xr.DataArray(u_stack, dims=["lead_time", "cell"]),
+            "v_h": xr.DataArray(v_stack, dims=["lead_time", "cell"]),
+            "g_h": xr.DataArray(g_stack, dims=["lead_time", "cell"])
         },
         "altitude_hl": {},
         "altitude_ens": {},
@@ -410,9 +362,145 @@ def fetch_arome_hd_data(start_step, end_step, ref_time_str):
         "ref_lat": ref_lat
     }
 
+# ================= ICON-D2-EPS (DWD OPEN DATA) =================
+def get_icond2_coords(hh_str, run_id_dwd):
+    cache_file = "dist/data/icon_d2_coords.npz"
+    if os.path.exists(cache_file):
+        data = np.load(cache_file)
+        return data["valid_cells"], data["ref_lon"], data["ref_lat"]
+
+    print("-> Lade ICON-D2 Gittergeometrie von DWD Open Data...", flush=True)
+    clat_url = f"https://opendata.dwd.de/weather/nwp/icon-d2-eps/grib/{hh_str}/clat/icon-d2-eps_germany_icosahedral_time-invariant_{run_id_dwd}_clat.grib2.bz2"
+    clon_url = f"https://opendata.dwd.de/weather/nwp/icon-d2-eps/grib/{hh_str}/clon/icon-d2-eps_germany_icosahedral_time-invariant_{run_id_dwd}_clon.grib2.bz2"
+
+    def _dl_coord(url):
+        r = requests.get(url, timeout=30)
+        decomp = bz2.decompress(r.content)
+        with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp:
+            tmp.write(decomp)
+            tmp_p = tmp.name
+        try:
+            ds = cfgrib.open_file(tmp_p)
+            vals = ds.first().values
+            return np.rad2deg(vals)
+        finally:
+            if os.path.exists(tmp_p): os.remove(tmp_p)
+
+    lats = _dl_coord(clat_url)
+    lons = _dl_coord(clon_url)
+
+    valid_cells = np.where(
+        (lats >= config.LAT_MIN) & (lats <= config.LAT_MAX) & 
+        (lons >= config.LON_MIN) & (lons <= config.LON_MAX)
+    )[0]
+
+    ref_lon = lons[valid_cells].astype(np.float32)
+    ref_lat = lats[valid_cells].astype(np.float32)
+
+    os.makedirs("dist/data", exist_ok=True)
+    np.savez_compressed(cache_file, valid_cells=valid_cells, ref_lon=ref_lon, ref_lat=ref_lat)
+    return valid_cells, ref_lon, ref_lat
+
+def fetch_icond2_file_members(hh_str, run_id_dwd, lead_hour, param, valid_cells):
+    url = f"https://opendata.dwd.de/weather/nwp/icon-d2-eps/grib/{hh_str}/{param}/icon-d2-eps_germany_icosahedral_single-level_{run_id_dwd}_{lead_hour:03d}_2d_{param}.grib2.bz2"
+    r = None
+    for attempt in range(1, 4):
+        try:
+            resp = requests.get(url, timeout=35)
+            if resp.status_code == 200 and len(resp.content) > 1000:
+                r = resp
+                break
+        except Exception:
+            time.sleep(2 * attempt)
+
+    if r is None:
+        return np.full((21, len(valid_cells)), np.nan, dtype=np.float32)
+
+    decomp = bz2.decompress(r.content)
+    with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp:
+        tmp.write(decomp)
+        tmp_p = tmp.name
+
+    try:
+        datasets = cfgrib.open_datasets(tmp_p)
+        da = None
+        for ds in datasets:
+            for v in ds.data_vars:
+                da = ds[v]
+                break
+            if da is not None: break
+
+        vals = da.values  # Shape: (members, total_cells)
+        if vals.ndim == 1:
+            vals = vals[np.newaxis, :]
+        sub = vals[:, valid_cells].astype(np.float32)
+
+        # Sicherstellen: 21 Members (Member 0 = HL, 1..20 = Ens)
+        if sub.shape[0] == 20:
+            sub = np.vstack([sub[0:1], sub])
+        return sub
+    except Exception as e:
+        print(f"Fehler bei ICON-D2 {param} (+{lead_hour}h): {e}", flush=True)
+        return np.full((21, len(valid_cells)), np.nan, dtype=np.float32)
+    finally:
+        if os.path.exists(tmp_p): os.remove(tmp_p)
+
+def fetch_icond2_eps_data(start_step, end_step, ref_time_str):
+    print(f"-> Lade ICON-D2 (Ensemble Wind & Böen) für Schritte {start_step} bis {end_step} ({ref_time_str})...", flush=True)
+    dt = datetime.fromisoformat(ref_time_str.replace("Z", ""))
+    hh_str = dt.strftime("%H")
+    run_id_dwd = dt.strftime("%Y%m%d%H")
+
+    valid_cells, ref_lon, ref_lat = get_icond2_coords(hh_str, run_id_dwd)
+    lead_hours = list(range(start_step, end_step + 1))
+
+    u_hourly, v_hourly, g_hourly = [], [], []
+
+    for h in lead_hours:
+        u_arr = fetch_icond2_file_members(hh_str, run_id_dwd, h, "u_10m", valid_cells)
+        v_arr = fetch_icond2_file_members(hh_str, run_id_dwd, h, "v_10m", valid_cells)
+
+        if h == 0:
+            g_arr = np.full((21, len(valid_cells)), np.nan, dtype=np.float32)
+        else:
+            g_arr = fetch_icond2_file_members(hh_str, run_id_dwd, h, "vmax_10m", valid_cells)
+
+        u_hourly.append(u_arr)
+        v_hourly.append(v_arr)
+        g_hourly.append(g_arr)
+
+    # Shape: (lead_time, members, cell) -> (members, lead_time, cell)
+    u_all = np.transpose(np.stack(u_hourly, axis=0), (1, 0, 2))
+    v_all = np.transpose(np.stack(v_hourly, axis=0), (1, 0, 2))
+    g_all = np.transpose(np.stack(g_hourly, axis=0), (1, 0, 2))
+
+    u_h = xr.DataArray(u_all[0], dims=["lead_time", "cell"])
+    u_e = xr.DataArray(u_all[1:], dims=["eps", "lead_time", "cell"])
+
+    v_h = xr.DataArray(v_all[0], dims=["lead_time", "cell"])
+    v_e = xr.DataArray(v_all[1:], dims=["eps", "lead_time", "cell"])
+
+    g_h = xr.DataArray(g_all[0], dims=["lead_time", "cell"])
+    g_e = xr.DataArray(g_all[1:], dims=["eps", "lead_time", "cell"])
+
+    return {
+        "surface": {
+            "u_h": u_h, "u_e": u_e,
+            "v_h": v_h, "v_e": v_e,
+            "g_h": g_h, "g_e": g_e
+        },
+        "altitude_hl": {},
+        "altitude_ens": {},
+        "ref_lon": ref_lon,
+        "ref_lat": ref_lat
+    }
+
+# ================= ALLGEMEINE WEICHE =================
 def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
     if model_name == "arome":
         return fetch_arome_hd_data(start_step, end_step, ref_time_str)
+    if model_name == "icon-d2":
+        return fetch_icond2_eps_data(start_step, end_step, ref_time_str)
 
     model_cfg = config.MODELS_CONFIG[model_name]
     collection = model_cfg["collection"]
@@ -421,7 +509,6 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
 
     lead_times = [timedelta(hours=h) for h in range(start_step, end_step + 1)]
 
-    # Pilot-Download für Koordinaten
     print(f"1. Pilot-Download [{model_name}]: Hole Referenzgitter aus Stunde 1...", flush=True)
     req_pilot = ogd_api.Request(
         collection=collection,
@@ -436,8 +523,7 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
                 ds_pilot = ogd_api.get_from_ogd(req_pilot)
             break
         except Exception as e:
-            if attempt == 3:
-                raise e
+            if attempt == 3: raise e
             time.sleep(3)
 
     lats = ds_pilot.coords['lat'].values
@@ -497,7 +583,6 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
             key, ds = f.result()
             surface_results[key] = ds
 
-    # 3D-Höhenwinde
     hl_altitudes = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and k in active_vars]
     ens_altitudes = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and k in ens_vars]
     all_target_alts = sorted(list(set(hl_altitudes + ens_altitudes)))
