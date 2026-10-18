@@ -1,5 +1,6 @@
 import os
 import gc
+import re
 import bz2
 import time
 import tempfile
@@ -14,7 +15,6 @@ import cfgrib
 from meteodatalab import ogd_api, grib_decoder, data_source
 import config
 
-# Globaler Cache für ICON-D2 Gitterkoordinaten (im RAM des jeweiligen Prozesses)
 _ICOND2_GRID_CACHE = {}
 
 class SilenceStderr:
@@ -414,13 +414,49 @@ def _download_and_extract_dwd_bytes(url):
             time.sleep(2 * attempt)
     return None
 
+def _find_dwd_coord_url(cycle_hh, param_name):
+    """
+    Sucht auf dem DWD-Server dynamisch nach der passenden clat/clon-Datei.
+    Prüft zuerst den aktuellen Lauf und falls nicht vorhanden, den 00Z-Lauf.
+    """
+    candidate_dirs = [
+        f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/{cycle_hh}/{param_name}/",
+        f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/00/{param_name}/"
+    ]
+    for d_url in candidate_dirs:
+        try:
+            r = requests.get(d_url, timeout=10)
+            if r.status_code == 200:
+                matches = re.findall(r'href="([^"]*' + param_name + r'[^"]*\.bz2)"', r.text, re.IGNORECASE)
+                if matches:
+                    # Neueste oder erste Datei nehmen
+                    return d_url.rstrip('/') + '/' + matches[-1]
+        except Exception:
+            pass
+    return None
+
 def _load_icond2_grid_coords(ref_iso):
     """
-    Lädt einmalig die invarianten Gitterkoordinaten (clat / clon) vom DWD herunter
-    und filtert alle Punkte innerhalb der Schweizer Bounding Box heraus.
+    Lädt die zeit-invarianten Koordinaten clat/clon für ICON-D2 herunter
+    und ermittelt die Indizes für die Schweizer Bounding Box.
     """
+    global _ICOND2_GRID_CACHE
     if "valid_indices" in _ICOND2_GRID_CACHE:
         return _ICOND2_GRID_CACHE
+
+    disk_cache = "/tmp/icon_d2_swiss_grid.npz"
+    if os.path.exists(disk_cache):
+        try:
+            data = np.load(disk_cache)
+            _ICOND2_GRID_CACHE = {
+                "valid_indices": data["valid_indices"],
+                "ref_lat": data["ref_lat"],
+                "ref_lon": data["ref_lon"]
+            }
+            print(f"✓ ICON-D2 Schweizer Gitter aus Cache geladen ({len(data['valid_indices'])} Punkte).", flush=True)
+            return _ICOND2_GRID_CACHE
+        except Exception:
+            pass
 
     try:
         ref_dt = datetime.fromisoformat(ref_iso.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
@@ -428,27 +464,22 @@ def _load_icond2_grid_coords(ref_iso):
         ref_dt = datetime.now(ZoneInfo("UTC"))
 
     cycle_hh = ref_dt.strftime("%H")
-    date_ymd = ref_dt.strftime("%Y%m%d")
-    base_url = f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/{cycle_hh}"
+    print(f"-> Suche ICON-D2 Gitterkoordinaten (clat/clon) auf Open Data...", flush=True)
 
-    print(f"-> Lade ICON-D2 Gitterkoordinaten (clat/clon) von Lauf {cycle_hh}Z...", flush=True)
+    url_lat = _find_dwd_coord_url(cycle_hh, "clat")
+    url_lon = _find_dwd_coord_url(cycle_hh, "clon")
 
-    def _fetch_coord_file(param_name):
-        candidates = [
-            f"{base_url}/{param_name}/icon-d2_germany_icosahedral_time-invariant_{date_ymd}{cycle_hh}_{param_name}.grib2.bz2",
-            f"{base_url}/{param_name}/icon-d2_germany_icosahedral_time-invariant_{date_ymd}{cycle_hh}_{param_name.upper()}.grib2.bz2"
-        ]
-        for url in candidates:
-            b = _download_and_extract_dwd_bytes(url)
-            if b is not None:
-                return b
-        return None
+    if not url_lat or not url_lon:
+        raise RuntimeError(f"Konnte Verzeichnis für ICON-D2 clat/clon nicht finden (geprüft: {cycle_hh}Z & 00Z).")
 
-    clat_bytes = _fetch_coord_file("clat")
-    clon_bytes = _fetch_coord_file("clon")
+    print(f"-> Lade clat: {url_lat}", flush=True)
+    print(f"-> Lade clon: {url_lon}", flush=True)
+
+    clat_bytes = _download_and_extract_dwd_bytes(url_lat)
+    clon_bytes = _download_and_extract_dwd_bytes(url_lon)
 
     if not clat_bytes or not clon_bytes:
-        raise RuntimeError("Konnte ICON-D2 clat/clon Koordinatendateien nicht vom DWD laden.")
+        raise RuntimeError("Konnte ICON-D2 clat/clon Bytes nicht dekomprimieren.")
 
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_lat, \
          tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_lon:
@@ -471,22 +502,38 @@ def _load_icond2_grid_coords(ref_iso):
         ds_lat.close()
         ds_lon.close()
 
-        # Automatische Erkennung ob Radiant oder Grad (ICON speichert meist Radiant)
+        # Radiant zu Grad umrechnen, falls nötig
         if np.nanmax(np.abs(lats)) <= 1.6:
             lats = np.rad2deg(lats)
             lons = np.rad2deg(lons)
 
-        # 0..360 -> -180..180 normalisieren
+        # Längen auf -180..180 normalisieren
         lons = (lons + 180.0) % 360.0 - 180.0
 
         mask = (lats >= config.LAT_MIN) & (lats <= config.LAT_MAX) & \
                (lons >= config.LON_MIN) & (lons <= config.LON_MAX)
         valid_indices = np.where(mask)[0]
 
-        _ICOND2_GRID_CACHE["valid_indices"] = valid_indices
-        _ICOND2_GRID_CACHE["ref_lat"] = lats[valid_indices].astype(np.float32)
-        _ICOND2_GRID_CACHE["ref_lon"] = lons[valid_indices].astype(np.float32)
-        print(f"✓ ICON-D2 Gitter geladen: {len(valid_indices)} Punkte für Schweizer Ausschnitt reserviert.", flush=True)
+        if len(valid_indices) == 0:
+            raise RuntimeError(f"Keine Gitterpunkte im Schweizer Bereich gefunden! (Lats: {np.nanmin(lats):.2f}..{np.nanmax(lats):.2f}, Lons: {np.nanmin(lons):.2f}..{np.nanmax(lons):.2f})")
+
+        _ICOND2_GRID_CACHE = {
+            "valid_indices": valid_indices,
+            "ref_lat": lats[valid_indices].astype(np.float32),
+            "ref_lon": lons[valid_indices].astype(np.float32)
+        }
+
+        try:
+            np.savez_compressed(
+                disk_cache,
+                valid_indices=valid_indices,
+                ref_lat=_ICOND2_GRID_CACHE["ref_lat"],
+                ref_lon=_ICOND2_GRID_CACHE["ref_lon"]
+            )
+        except Exception:
+            pass
+
+        print(f"✓ ICON-D2 Gitter geladen: {len(valid_indices)} Punkte für Schweizer Ausschnitt definiert.", flush=True)
         return _ICOND2_GRID_CACHE
     finally:
         for p in [path_lat, path_lon]:
