@@ -4,6 +4,8 @@ var isSyncingMaps = false;
 var isSplitLegendOpen = false;
 var syncRafId = null;
 
+var ALL_MODELS = ["icon-ch1", "icon-ch2", "arome", "icon-d2"];
+
 var modelsState = {
     left: {
         currentModel: "icon-ch1",
@@ -184,7 +186,7 @@ function toggleSplitScreen(e) {
         wrapper.classList.remove("single-view");
         wrapper.classList.add("split-view");
     } else {
-        wrapper.classList.remove("split-view");
+        wrapper.classList.remove("single-view");
         wrapper.classList.add("single-view");
         isSplitLegendOpen = false;
         var legBox = document.getElementById("legendBox");
@@ -281,7 +283,7 @@ function setPopupsDimmed(dimmed) {
 
 function closeAllPopups() {
     ['left', 'right'].forEach(side => {
-        ['icon-ch1', 'icon-ch2', 'arome', 'icon-d2'].forEach(m => {
+        ALL_MODELS.forEach(m => {
             var el = document.getElementById(`runDropdown-${side}-${m}`);
             if (el) el.style.display = "none";
         });
@@ -400,17 +402,24 @@ async function fetchAvailableRuns(modelName) {
     updateModelButtonLabels();
 }
 
+function getModelShortLabel(m) {
+    if (m === "icon-ch1") return "CH1";
+    if (m === "icon-ch2") return "CH2";
+    if (m === "icon-d2") return "D2";
+    return "AROME";
+}
+
 function updateModelButtonLabels() {
     ['left', 'right'].forEach(side => {
         var effectiveStateSide = isSplitActive ? side : 'left';
         var st = modelsState[effectiveStateSide];
-        ["icon-ch1", "icon-ch2", "arome", "icon-d2"].forEach(m => {
+        ALL_MODELS.forEach(m => {
             var btn = document.getElementById(`btnModel-${side}-${m}`);
             if (!btn) return;
             var runs = availableRuns[m] || [];
             var activeRun = (st.currentModel === m) ? st.currentRunId : (selectedRuns[effectiveStateSide][m] || (runs[0] ? runs[0].id : null));
             var activeObj = runs.find(r => r.id === activeRun) || runs[0];
-            var modName = (m === "icon-ch1") ? "CH1" : (m === "icon-ch2") ? "CH2" : (m === "arome" ? "AROME HD" : "D2");
+            var modName = getModelShortLabel(m);
             var timeTxt = activeObj ? activeObj.label : "--";
             btn.innerHTML = `<span class="model-title">${modName} ▾</span><span class="model-time">${timeTxt}</span>`;
             btn.classList.toggle("active", st.currentModel === m);
@@ -1128,7 +1137,7 @@ function initMapInstance(domId) {
 
     var relief = L.tileLayer(swisstopo_relief_url, {
         pane: 'reliefPane',
-        attribution: '&copy; swisstopo | Wetterdaten: &copy; MeteoSchweiz, Météo-France & DWD',
+        attribution: '&copy; swisstopo | Wetterdaten: &copy; MeteoSchweiz, DWD & Météo-France',
         maxZoom: 15, maxNativeZoom: 14
     }).addTo(m);
 
@@ -1243,10 +1252,9 @@ async function init() {
 
         updateNavModeButton();
 
-        await fetchAvailableRuns("icon-ch1");
-        await fetchAvailableRuns("icon-ch2");
-        await fetchAvailableRuns("arome");
-        await fetchAvailableRuns("icon-d2");
+        for (const m of ALL_MODELS) {
+            await fetchAvailableRuns(m);
+        }
 
         await loadModelAndRun('left', 'icon-ch1');
         await loadModelAndRun('right', 'arome');
@@ -1296,19 +1304,12 @@ async function updateForecast() {
     var refDateParts = refParts[0].split(".");
     var refTimeHour = refParts[1].split(":")[0];
     
-    function getModShort(mKey) {
-        if (mKey === "arome") return "AROME";
-        if (mKey === "icon-ch2") return "CH2";
-        if (mKey === "icon-d2") return "D2";
-        return "CH1";
-    }
-
     if (isSplitActive) {
-        var modL = getModShort(modelsState.left.currentModel);
-        var modR = getModShort(modelsState.right.currentModel);
+        var modL = getModelShortLabel(modelsState.left.currentModel);
+        var modR = getModelShortLabel(modelsState.right.currentModel);
         document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z | L: ${modL} | R: ${modR}`;
     } else {
-        var modShort = getModShort(modelsState.left.currentModel);
+        var modShort = getModelShortLabel(modelsState.left.currentModel);
         document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z ${modShort}`;
     }
 
@@ -1470,6 +1471,11 @@ function drawVisibleArrows(side) {
     else if (zoom === 13) step = 2;
     else if (zoom >= 14) step = 1;
 
+    // Für 200x120-Gitter (CH2 & D2) Schrittweite leicht reduzieren für harmonische Pfeildichte
+    if (st.config.nx <= 200) {
+        step = Math.max(1, Math.round(step / 2));
+    }
+
     var speeds = gridData.s;
     var dirs_half = gridData.d;
 
@@ -1511,8 +1517,7 @@ function drawVisibleArrows(side) {
             var speed = sVal / 10.0;
             var dir = dirVal * 2.0;
 
-            // Harmonisch verkleinerte Pfeile
-            var arrow_w = Math.min(26, Math.max(5.5, 4.0 + Math.pow(speed, 0.60) * 1.5));
+            var arrow_w = Math.min(20, Math.max(4.5, 3.2 + Math.pow(speed, 0.58) * 1.2));
             var scale = (arrow_w / 15.0) * dpr;
 
             ctx.save();
