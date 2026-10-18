@@ -72,10 +72,10 @@ MODELS_CONFIG = {
         "nx": 200,
         "ny": 120,
         "hours": 48,
-        "max_members": 1,  # Deterministischer Hauptlauf
+        "max_members": 21,  
         "max_runs": 8,     # 8 Läufe à 3 Stunden im Archiv
         "active_variables": ["wind", "gust"],
-        "ensemble_variables": [],
+        "ensemble_variables": ["wind", "gust"],
         "max_chunks": 4
     }
 }
