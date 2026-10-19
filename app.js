@@ -206,16 +206,14 @@ function toggleLegend() {
     if (btn) btn.classList.toggle("active", isLegendOpen);
 }
 
+// UNABHÄNGIGES TOGGLEN DES MEMBER-PANELS (OHNE ANDERE PANELS ZU SCHLIESSEN)
 function toggleMemberPanel(side) {
     var p = document.getElementById(side === 'left' ? "memberPanelLeft" : "memberPanelRight");
     var b = document.getElementById(side === 'left' ? "btnToggleMemberLeft" : "btnToggleMemberRight");
     if (!p) return;
     var isOpen = (p.style.display === "flex");
-    closeAllPopups();
-    if (!isOpen) {
-        p.style.display = "flex";
-        if (b) b.classList.add("active");
-    }
+    p.style.display = isOpen ? "none" : "flex";
+    if (b) b.classList.toggle("active", !isOpen);
 }
 
 function toggleEnsembleAccordionLocal(side) {
@@ -368,13 +366,12 @@ function navRun(dir) {
     }
 }
 
-// IN SINGLE-ANSICHT STEUERN DIE BUTTONS IMMER 'left' (DIE SICHTBARE KARTE)
 async function handleModelButtonClick(modelName, side) {
     var effectiveSide = isSplitActive ? side : 'left';
     var st = modelsState[effectiveSide];
 
     if (st.currentModel !== modelName) {
-        closeAllPopups();
+        // Wechsle Modell
         st.currentModel = modelName;
         var runs = availableRuns[modelName] || [];
         var runId = selectedRuns[effectiveSide][modelName] || (runs.length > 0 ? runs[0].id : null);
@@ -427,8 +424,10 @@ function toggleRunDropdown(side, modelName) {
     var el = document.getElementById(elId);
     if (!el) return;
     var isAlreadyOpen = (el.style.display === "flex");
-    closeAllPopups();
-    if (isAlreadyOpen) return;
+    if (isAlreadyOpen) {
+        el.style.display = "none";
+        return;
+    }
 
     var runs = availableRuns[modelName] || [];
     el.innerHTML = "";
@@ -442,6 +441,7 @@ function toggleRunDropdown(side, modelName) {
             item.innerHTML = `<span>${r.label}</span>`;
             item.onclick = function(e) {
                 e.stopPropagation();
+                el.style.display = "none";
                 selectRun(effectiveSide, modelName, r.id);
             };
             el.appendChild(item);
@@ -459,11 +459,9 @@ function toggleRunDropdown(side, modelName) {
         el.style.left = "auto";
     }
     el.style.display = "flex";
-    setPopupsDimmed(true);
 }
 
 async function selectRun(side, modelName, runId) {
-    closeAllPopups();
     var effectiveSide = isSplitActive ? side : 'left';
     modelsState[effectiveSide].currentModel = modelName;
     modelsState[effectiveSide].currentRunId = runId;
@@ -539,11 +537,14 @@ function toggleHoehenMenu() {
     document.getElementById("btnToggleHoehen").innerText = isHoehenOpen ? "Höhenwind ▴" : "Höhenwind ▾";
 }
 
+// UNABHÄNGIGES TOGGLE FÜR 2. EBENE
 function toggleLayer2Dropdown() {
     var el = document.getElementById("layer2Dropdown");
     var isAlreadyOpen = (el.style.display === "flex");
-    closeAllPopups();
-    if (isAlreadyOpen) return;
+    if (isAlreadyOpen) {
+        el.style.display = "none";
+        return;
+    }
 
     var btn = document.getElementById("layer2Btn");
     var rect = btn.getBoundingClientRect();
@@ -553,14 +554,12 @@ function toggleLayer2Dropdown() {
     el.style.display = "flex";
 }
 
+// UNABHÄNGIGES TOGGLE FÜR EINSTELLUNGEN
 function toggleSettings(e) {
     if (e) e.preventDefault();
     var el = document.getElementById("settingsPopup");
     var isAlreadyOpen = (el.style.display === "block");
-    closeAllPopups();
-    if (isAlreadyOpen) return;
-    el.style.display = "block";
-    setPopupsDimmed(true);
+    el.style.display = isAlreadyOpen ? "none" : "block";
 }
 
 function setLayerMode(layerNum, mode) {
@@ -692,7 +691,8 @@ function initLayer2Dropdown() {
 
 function setSecondaryVar(newVar) {
     layer2Var = newVar;
-    closeAllPopups();
+    var el = document.getElementById("layer2Dropdown");
+    if (el) el.style.display = "none";
     
     var btn = document.getElementById("layer2Btn");
     var cfgSec = document.getElementById("cfgSectionL2");
@@ -880,7 +880,7 @@ function jumpToDaySameHour(targetDayName) {
     updateForecast();
 }
 
-// IN SINGLE-ANSICHT STEUERN DIE BUTTONS IMMER 'left'
+// MEMBER-BUTTONS KLICKEN ÄNDERT DEN MEMBER, LÄSST DAS PANEL ABER OFFEN
 function renderMemberButtonsForTarget(side, hId, eId, sId, optPrefix) {
     var effectiveStateSide = isSplitActive ? side : 'left';
     var st = modelsState[effectiveStateSide];
@@ -903,17 +903,17 @@ function renderMemberButtonsForTarget(side, hId, eId, sId, optPrefix) {
 
         if (idx === 0) {
             btn.innerText = "Hauptlauf";
-            btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); closeAllPopups(); };
+            btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); };
             hCont.appendChild(btn);
         } else if (hasMultiple && idx >= 1 && idx < statOffset) {
             btn.innerText = "Member " + idx;
             if (!isOldRun) {
-                btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); closeAllPopups(); };
+                btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); };
             }
             eCont.appendChild(btn);
         } else if (hasMultiple) {
             btn.innerText = name;
-            btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); closeAllPopups(); };
+            btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); };
             sCont.appendChild(btn);
         }
     });
@@ -1175,7 +1175,6 @@ function initMapInstance(domId) {
     m.on('move', () => { if (domId === 'mapLeft') syncMap(mapLeft, mapRight); else syncMap(mapRight, mapLeft); });
     m.on('moveend', scheduleMapUpdates);
     m.on('zoomend', scheduleMapUpdates);
-    m.on('click', closeAllPopups);
 
     return { 
         map: m, 
@@ -1240,7 +1239,6 @@ async function init() {
         });
 
         window.onresize = function() {
-            closeAllPopups();
             updateModelButtonLabels();
             initMemberPanelsAll();
             updateForecast();
@@ -1253,7 +1251,6 @@ async function init() {
             await fetchAvailableRuns(m);
         }
 
-        // Standardmäßig startet links CH1, rechts D2
         await loadModelAndRun('left', 'icon-ch1');
         await loadModelAndRun('right', 'icon-d2');
         updateCityLabels();
@@ -1317,7 +1314,7 @@ async function updateForecast() {
         if (btn) btn.classList.toggle("active", d === currentDayName);
     });
 
-    // Ausgeschriebenes Label auf dem Button
+    // Ausgeschriebener Name auf dem Hauptlauf-Toggle-Button
     ['left', 'right'].forEach(side => {
         var effectiveStateSide = isSplitActive ? side : 'left';
         var st = modelsState[effectiveStateSide];
@@ -1342,7 +1339,6 @@ async function updateForecast() {
     updateEnsembleToggleState();
     updateLegend();
 
-    // RENDER AUF DER JEWEILIGEN KARTE
     renderContours('left');
     drawVisibleArrows('left');
 
