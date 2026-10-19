@@ -127,12 +127,10 @@ var CITIES = [
     { name: "Glarus", lat: 47.0406, lon: 9.0678, minZoom: 10 }
 ];
 
-// In Single-Ansicht steuern die rechten Controls immer modelsState.left
 function getActiveStateSide(domSide) {
     return isSplitActive ? domSide : 'left';
 }
 
-// Prüft absolut verlässlich, ob für das Modell und die aktuelle Variable ein Ensemble existiert
 function modelHasEnsembleForCurrentVar(stateSide) {
     var st = modelsState[stateSide];
     if (!st || !st.config) return false;
@@ -222,7 +220,6 @@ function toggleLegend() {
     if (btn) btn.classList.toggle("active", isLegendOpen);
 }
 
-// Mobile Aufklappen / Zuklappen
 function toggleMobileModelPanel(forceState) {
     if (typeof forceState === "boolean") {
         isMobileModelExpanded = forceState;
@@ -238,7 +235,6 @@ function toggleMobileModelPanel(forceState) {
     if (elL) elL.classList.toggle("mobile-collapsed", !isMobileModelExpanded);
 }
 
-// Unabhängiges Aufklappen des Member-Panels
 function toggleMemberPanel(side) {
     var p = document.getElementById(side === 'left' ? "memberPanelLeft" : "memberPanelRight");
     var b = document.getElementById(side === 'left' ? "btnToggleMemberLeft" : "btnToggleMemberRight");
@@ -384,6 +380,7 @@ function updateNavModeButton() {
     }
 }
 
+// IM SPLIT-MODUS STEUERN DIE TASTEN DAS RECHTE FENSTER
 function navRun(dir) {
     var side = isSplitActive ? 'right' : 'left';
     var st = modelsState[side];
@@ -536,7 +533,6 @@ async function loadModelAndRun(side, modelName, runId) {
         return;
     }
 
-    // Sicherstellen, dass kein ungültiger Member aktiv bleibt
     if (!modelHasEnsembleForCurrentVar(side)) {
         st.currentMemberIdx = 0;
     }
@@ -759,7 +755,6 @@ function switchLayer1(newVar) {
     layer1Var = newVar;
     updateActiveButtonStates();
 
-    // Bei Variablenwechsel prüfen, ob Ensembles existieren
     ['left', 'right'].forEach(s => {
         if (!modelHasEnsembleForCurrentVar(s)) {
             modelsState[s].currentMemberIdx = 0;
@@ -818,8 +813,9 @@ function navRight() {
     }
 }
 
+// IN SPLIT-ANSICHT STEUERN ▲ UND ▼ DAS RECHTE FENSTER
 function navUp() {
-    var side = 'left';
+    var side = isSplitActive ? 'right' : 'left';
     if (verticalNavMode === 'run') {
         navRun(-1);
         return;
@@ -841,7 +837,7 @@ function navUp() {
 }
 
 function navDown() {
-    var side = 'left';
+    var side = isSplitActive ? 'right' : 'left';
     if (verticalNavMode === 'run') {
         navRun(1);
         return;
@@ -911,7 +907,6 @@ function jumpToDaySameHour(targetDayName) {
     updateForecast();
 }
 
-// Prüft jedes Modell individuell und rendert Buttons sauber
 function renderMemberButtonsForTarget(domSide) {
     var stateSide = getActiveStateSide(domSide);
     var st = modelsState[stateSide];
@@ -1333,7 +1328,6 @@ async function updateForecast() {
             var maxSteps = (st.times ? st.times.length : 100);
             var stepForSide = Math.min(currentStepIdx, maxSteps - 1);
 
-            // Prüfung pro Seite
             if (!modelHasEnsembleForCurrentVar(side)) {
                 st.currentMemberIdx = 0;
             }
@@ -1578,13 +1572,13 @@ function drawVisibleArrows(side) {
             ctx.scale(scale, scale);
 
             ctx.beginPath();
-            ctx.moveTo(0, -10.5);   // Spitze
-            ctx.lineTo(4.2, -3.0);  // Flügel rechts
-            ctx.lineTo(0.9, -3.0);  // Schaftansatz rechts
-            ctx.lineTo(0.9, 11.0);  // Schaftende rechts
-            ctx.lineTo(-0.9, 11.0); // Schaftende links
-            ctx.lineTo(-0.9, -3.0); // Schaftansatz links
-            ctx.lineTo(-4.2, -3.0); // Flügel links
+            ctx.moveTo(0, -10.5);
+            ctx.lineTo(4.2, -3.0);
+            ctx.lineTo(0.9, -3.0);
+            ctx.lineTo(0.9, 11.0);
+            ctx.lineTo(-0.9, 11.0);
+            ctx.lineTo(-0.9, -3.0);
+            ctx.lineTo(-4.2, -3.0);
             ctx.closePath();
 
             ctx.fillStyle = '#111111';
