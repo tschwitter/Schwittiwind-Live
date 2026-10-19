@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Wetter & Wind (ICON CH1, CH2, D2 & AROME HD)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=38" />
+    <link rel="stylesheet" href="style.css?v=39" />
 </head>
 <body>
 
@@ -42,7 +42,6 @@
 
     <!-- MODELL-AUSWAHL LINKS (NUR IM SPLITSCREEN SICHTBAR) -->
     <div class="model-select-header model-select-left mobile-collapsed" id="modelSelectLeft">
-        <!-- Hochkanter Reiter für Mobile -->
         <button class="model-tab-btn" onclick="toggleMobileModelPanel(true)">
             <span id="tabModelLabelLeft">CH1</span>
         </button>
@@ -71,7 +70,6 @@
                 </div>
             </div>
 
-            <!-- BUTTON FÜR MEMBER-PANEL LINKS -->
             <button class="member-toggle-btn" id="btnToggleMemberLeft" onclick="toggleMemberPanel('left')">
                 <span id="lblMemberBtnLeft">Hauptlauf ▾</span>
             </button>
@@ -97,7 +95,6 @@
 
     <!-- MODELL-AUSWAHL RECHTS (STANDARD: HAUPT-AUSWAHL / SPLIT: RECHTE KARTE) -->
     <div class="model-select-header model-select-right mobile-collapsed" id="modelSelectRight">
-        <!-- Hochkanter Reiter für Mobile -->
         <button class="model-tab-btn" onclick="toggleMobileModelPanel(true)">
             <span id="tabModelLabelRight">D2</span>
         </button>
@@ -126,7 +123,6 @@
                 </div>
             </div>
 
-            <!-- BUTTON FÜR MEMBER-PANEL RECHTS -->
             <button class="member-toggle-btn" id="btnToggleMemberRight" onclick="toggleMemberPanel('right')">
                 <span id="lblMemberBtnRight">Hauptlauf ▾</span>
             </button>
@@ -245,6 +241,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=38"></script>
+    <script src="app.js?v=39"></script>
 </body>
 </html>
