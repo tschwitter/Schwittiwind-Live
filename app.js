@@ -5,8 +5,6 @@ var isLegendOpen = false;
 var syncRafId = null;
 
 var ALL_MODELS = ["icon-ch1", "icon-ch2", "arome", "icon-d2"];
-
-// Mobile Zustand: Standardmässig eingeklappt
 var isMobileModelExpanded = false;
 
 var modelsState = {
@@ -129,6 +127,21 @@ var CITIES = [
     { name: "Glarus", lat: 47.0406, lon: 9.0678, minZoom: 10 }
 ];
 
+// In Single-Ansicht steuern die rechten Controls immer modelsState.left
+function getActiveStateSide(domSide) {
+    return isSplitActive ? domSide : 'left';
+}
+
+// Prüft absolut verlässlich, ob für das Modell und die aktuelle Variable ein Ensemble existiert
+function modelHasEnsembleForCurrentVar(stateSide) {
+    var st = modelsState[stateSide];
+    if (!st || !st.config) return false;
+    var vCfg = st.config.variables_config && st.config.variables_config[layer1Var];
+    var hasEnsVar = vCfg ? (vCfg.has_ensemble === true) : false;
+    var hasMultiple = st.config.member_names && st.config.member_names.length > 1;
+    return Boolean(hasEnsVar && hasMultiple);
+}
+
 function setOverlaysVisible(visible) {
     var op = visible ? "1" : "0";
     [ { map: mapLeft, st: modelsState.left }, { map: mapRight, st: modelsState.right } ].forEach(item => {
@@ -185,7 +198,7 @@ function toggleSplitScreen(e) {
         wrapper.classList.remove("single-view");
         wrapper.classList.add("split-view");
     } else {
-        wrapper.classList.remove("single-view");
+        wrapper.classList.remove("split-view");
         wrapper.classList.add("single-view");
     }
 
@@ -209,7 +222,7 @@ function toggleLegend() {
     if (btn) btn.classList.toggle("active", isLegendOpen);
 }
 
-// MOBILE EINKLAPP- / AUSKLAPP-LOGIK
+// Mobile Aufklappen / Zuklappen
 function toggleMobileModelPanel(forceState) {
     if (typeof forceState === "boolean") {
         isMobileModelExpanded = forceState;
@@ -225,7 +238,7 @@ function toggleMobileModelPanel(forceState) {
     if (elL) elL.classList.toggle("mobile-collapsed", !isMobileModelExpanded);
 }
 
-// UNABHÄNGIGES TOGGLEN DES MEMBER-PANELS
+// Unabhängiges Aufklappen des Member-Panels
 function toggleMemberPanel(side) {
     var p = document.getElementById(side === 'left' ? "memberPanelLeft" : "memberPanelRight");
     var b = document.getElementById(side === 'left' ? "btnToggleMemberLeft" : "btnToggleMemberRight");
@@ -386,14 +399,14 @@ function navRun(dir) {
 }
 
 async function handleModelButtonClick(modelName, side) {
-    var effectiveSide = isSplitActive ? side : 'left';
-    var st = modelsState[effectiveSide];
+    var stateSide = getActiveStateSide(side);
+    var st = modelsState[stateSide];
 
     if (st.currentModel !== modelName) {
         st.currentModel = modelName;
         var runs = availableRuns[modelName] || [];
-        var runId = selectedRuns[effectiveSide][modelName] || (runs.length > 0 ? runs[0].id : null);
-        await loadModelAndRun(effectiveSide, modelName, runId);
+        var runId = selectedRuns[stateSide][modelName] || (runs.length > 0 ? runs[0].id : null);
+        await loadModelAndRun(stateSide, modelName, runId);
     } else {
         toggleRunDropdown(side, modelName);
     }
@@ -420,10 +433,9 @@ function getModelShortLabel(m) {
 
 function updateModelButtonLabels() {
     ['left', 'right'].forEach(side => {
-        var effectiveStateSide = isSplitActive ? side : 'left';
-        var st = modelsState[effectiveStateSide];
+        var stateSide = getActiveStateSide(side);
+        var st = modelsState[stateSide];
 
-        // Aktualisiert die Beschriftung des hochkanten Mobile-Reiters
         var tabLabel = document.getElementById(side === 'left' ? "tabModelLabelLeft" : "tabModelLabelRight");
         if (tabLabel) {
             tabLabel.innerText = getModelShortLabel(st.currentModel);
@@ -433,7 +445,7 @@ function updateModelButtonLabels() {
             var btn = document.getElementById(`btnModel-${side}-${m}`);
             if (!btn) return;
             var runs = availableRuns[m] || [];
-            var activeRun = (st.currentModel === m) ? st.currentRunId : (selectedRuns[effectiveStateSide][m] || (runs[0] ? runs[0].id : null));
+            var activeRun = (st.currentModel === m) ? st.currentRunId : (selectedRuns[stateSide][m] || (runs[0] ? runs[0].id : null));
             var activeObj = runs.find(r => r.id === activeRun) || runs[0];
             var modName = getModelShortLabel(m);
             var timeTxt = activeObj ? activeObj.label : "--";
@@ -444,7 +456,7 @@ function updateModelButtonLabels() {
 }
 
 function toggleRunDropdown(side, modelName) {
-    var effectiveSide = isSplitActive ? side : 'left';
+    var stateSide = getActiveStateSide(side);
     var elId = `runDropdown-${side}-${modelName}`;
     var el = document.getElementById(elId);
     if (!el) return;
@@ -462,12 +474,12 @@ function toggleRunDropdown(side, modelName) {
     } else {
         runs.forEach((r) => {
             var item = document.createElement("button");
-            item.className = "run-item" + (r.id === modelsState[effectiveSide].currentRunId ? " active" : "");
+            item.className = "run-item" + (r.id === modelsState[stateSide].currentRunId ? " active" : "");
             item.innerHTML = `<span>${r.label}</span>`;
             item.onclick = function(e) {
                 e.stopPropagation();
                 el.style.display = "none";
-                selectRun(effectiveSide, modelName, r.id);
+                selectRun(stateSide, modelName, r.id);
             };
             el.appendChild(item);
         });
@@ -487,11 +499,11 @@ function toggleRunDropdown(side, modelName) {
 }
 
 async function selectRun(side, modelName, runId) {
-    var effectiveSide = isSplitActive ? side : 'left';
-    modelsState[effectiveSide].currentModel = modelName;
-    modelsState[effectiveSide].currentRunId = runId;
-    selectedRuns[effectiveSide][modelName] = runId;
-    await loadModelAndRun(effectiveSide, modelName, runId);
+    var stateSide = getActiveStateSide(side);
+    modelsState[stateSide].currentModel = modelName;
+    modelsState[stateSide].currentRunId = runId;
+    selectedRuns[stateSide][modelName] = runId;
+    await loadModelAndRun(stateSide, modelName, runId);
 }
 
 async function loadModelAndRun(side, modelName, runId) {
@@ -524,26 +536,27 @@ async function loadModelAndRun(side, modelName, runId) {
         return;
     }
 
+    // Sicherstellen, dass kein ungültiger Member aktiv bleibt
+    if (!modelHasEnsembleForCurrentVar(side)) {
+        st.currentMemberIdx = 0;
+    }
+
     initNavigationBars();
     initLayer2Dropdown();
     initDayButtons();
     initMemberPanelsAll();
-
-    var vCfg = st.config && st.config.variables_config && st.config.variables_config[layer1Var];
-    var hasEns = vCfg ? vCfg.has_ensemble : (st.config && st.config.member_names && st.config.member_names.length > 1);
-    updateMemberPanelVisibility(hasEns);
 
     await updateForecast();
 }
 
 function updateEnsembleToggleState() {
     ['left', 'right'].forEach(side => {
-        var effectiveStateSide = isSplitActive ? side : 'left';
+        var stateSide = getActiveStateSide(side);
         var btn = document.getElementById(side === 'left' ? "btnToggleEnsembleLeft" : "btnToggleEnsembleRight");
-        var cfg = modelsState[effectiveStateSide].config;
+        var cfg = modelsState[stateSide].config;
         if (!btn || !cfg || !cfg.member_names) return;
         var statOffset = cfg.member_names.length - 6;
-        var isMemberActive = (modelsState[effectiveStateSide].currentMemberIdx >= 1 && modelsState[effectiveStateSide].currentMemberIdx < statOffset);
+        var isMemberActive = (modelsState[stateSide].currentMemberIdx >= 1 && modelsState[stateSide].currentMemberIdx < statOffset);
         btn.classList.toggle("active-indicator", isMemberActive && !isEnsembleOpen);
     });
 }
@@ -623,7 +636,7 @@ function initNavigationBars() {
     wetterContainer.innerHTML = "";
     hoehenContainer.innerHTML = "";
 
-    var effectiveSide = isSplitActive ? 'left' : 'left';
+    var effectiveSide = 'left';
     var cfg = modelsState[effectiveSide].config;
     if (!cfg) return;
     var vars = cfg.variables || Object.keys(cfg.variables_config);
@@ -658,7 +671,7 @@ function initNavigationBars() {
 }
 
 function updateActiveButtonStates() {
-    var effectiveSide = isSplitActive ? 'left' : 'left';
+    var effectiveSide = 'left';
     var cfg = modelsState[effectiveSide].config;
     if (!cfg) return;
     var vars = cfg.variables || Object.keys(cfg.variables_config);
@@ -698,7 +711,7 @@ function initLayer2Dropdown() {
     clearBtn.onclick = function() { setSecondaryVar(null); };
     menu.appendChild(clearBtn);
 
-    var effectiveSide = isSplitActive ? 'left' : 'left';
+    var effectiveSide = 'left';
     var cfg = modelsState[effectiveSide].config;
     if (!cfg) return;
     var vars = cfg.variables || Object.keys(cfg.variables_config);
@@ -720,7 +733,7 @@ function setSecondaryVar(newVar) {
     var btn = document.getElementById("layer2Btn");
     var cfgSec = document.getElementById("cfgSectionL2");
     var titleSec = document.getElementById("cfgTitleL2");
-    var effectiveSide = isSplitActive ? 'left' : 'left';
+    var effectiveSide = 'left';
     var cfg = modelsState[effectiveSide].config;
 
     if (layer2Var) {
@@ -746,26 +759,21 @@ function switchLayer1(newVar) {
     layer1Var = newVar;
     updateActiveButtonStates();
 
-    var effectiveSide = isSplitActive ? 'left' : 'left';
-    var cfg = modelsState[effectiveSide].config;
+    // Bei Variablenwechsel prüfen, ob Ensembles existieren
+    ['left', 'right'].forEach(s => {
+        if (!modelHasEnsembleForCurrentVar(s)) {
+            modelsState[s].currentMemberIdx = 0;
+        }
+    });
+
+    var cfg = modelsState.left.config;
     var vCfg = cfg ? cfg.variables_config[layer1Var] : null;
-    var hasEns = vCfg ? vCfg.has_ensemble : (cfg && cfg.member_names && cfg.member_names.length > 1);
-    if (!hasEns) modelsState[effectiveSide].currentMemberIdx = 0;
 
     document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (vCfg ? vCfg.label : layer1Var);
     setLayerOpacity(1, (vCfg && vCfg.palette === "cloud") ? 95 : 60);
 
-    updateMemberPanelVisibility(hasEns);
+    initMemberPanelsAll();
     updateForecast();
-}
-
-function updateMemberPanelVisibility(hasEns) {
-    ['left', 'right'].forEach(side => {
-        var ensGroup = document.getElementById(side === 'left' ? "ensembleGroupLeft" : "ensembleGroupRight");
-        var notice = document.getElementById(side === 'left' ? "onlyHlNoticeLeft" : "onlyHlNoticeRight");
-        if (ensGroup) ensGroup.style.display = hasEns ? "block" : "none";
-        if (notice) notice.style.display = hasEns ? "none" : "block";
-    });
 }
 
 function navLeft() {
@@ -811,13 +819,13 @@ function navRight() {
 }
 
 function navUp() {
-    var side = isSplitActive ? 'left' : 'left';
+    var side = 'left';
     if (verticalNavMode === 'run') {
         navRun(-1);
         return;
     }
     var st = modelsState[side];
-    if (!st.config || !st.config.member_names || st.config.member_names.length <= 1) return;
+    if (!modelHasEnsembleForCurrentVar(side)) return;
     var statOffset = st.config.member_names.length - 6;
 
     if (!isEnsembleOpen) {
@@ -833,13 +841,13 @@ function navUp() {
 }
 
 function navDown() {
-    var side = isSplitActive ? 'left' : 'left';
+    var side = 'left';
     if (verticalNavMode === 'run') {
         navRun(1);
         return;
     }
     var st = modelsState[side];
-    if (!st.config || !st.config.member_names || st.config.member_names.length <= 1) return;
+    if (!modelHasEnsembleForCurrentVar(side)) return;
     var maxIdx = st.config.member_names.length - 1;
     var statOffset = st.config.member_names.length - 6;
 
@@ -903,59 +911,77 @@ function jumpToDaySameHour(targetDayName) {
     updateForecast();
 }
 
-function renderMemberButtonsForTarget(side, hId, eId, sId, optPrefix) {
-    var effectiveStateSide = isSplitActive ? side : 'left';
-    var st = modelsState[effectiveStateSide];
+// Prüft jedes Modell individuell und rendert Buttons sauber
+function renderMemberButtonsForTarget(domSide) {
+    var stateSide = getActiveStateSide(domSide);
+    var st = modelsState[stateSide];
+    if (!st || !st.config) return;
     var cfg = st.config;
-    var hCont = document.getElementById(hId);
-    var eCont = document.getElementById(eId);
-    var sCont = document.getElementById(sId);
-    if (!cfg || !hCont || !eCont || !sCont) return;
 
-    hCont.innerHTML = ""; eCont.innerHTML = ""; sCont.innerHTML = "";
+    var hCont = document.getElementById(domSide === 'left' ? "hauptlaufContainerLeft" : "hauptlaufContainerRight");
+    var eCont = document.getElementById(domSide === 'left' ? "ensembleContainerLeft" : "ensembleContainerRight");
+    var sCont = document.getElementById(domSide === 'left' ? "statistikenContainerLeft" : "statistikenContainerRight");
+    var ensGroup = document.getElementById(domSide === 'left' ? "ensembleGroupLeft" : "ensembleGroupRight");
+    var notice = document.getElementById(domSide === 'left' ? "onlyHlNoticeLeft" : "onlyHlNoticeRight");
+
+    if (!hCont || !eCont || !sCont) return;
+
+    hCont.innerHTML = "";
+    eCont.innerHTML = "";
+    sCont.innerHTML = "";
+
+    var hasEns = modelHasEnsembleForCurrentVar(stateSide);
+    if (!hasEns) {
+        st.currentMemberIdx = 0;
+    }
+
     var runs = availableRuns[st.currentModel] || [];
     var isOldRun = (runs.length > 0 && st.currentRunId !== runs[0].id);
-    var hasMultiple = cfg.member_names && cfg.member_names.length > 1;
-    var statOffset = hasMultiple ? (cfg.member_names.length - 6) : 1;
+    var statOffset = (cfg.member_names && cfg.member_names.length > 6) ? (cfg.member_names.length - 6) : 1;
 
     cfg.member_names.forEach((name, idx) => {
         var btn = document.createElement("button");
         btn.className = "member-btn";
-        btn.id = (optPrefix ? (optPrefix + "-") : "") + "member-btn-" + idx;
+        btn.id = `${domSide}-member-btn-${idx}`;
 
         if (idx === 0) {
             btn.innerText = "Hauptlauf";
-            btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); };
+            btn.onclick = function() {
+                st.currentMemberIdx = idx;
+                updateForecast();
+            };
             hCont.appendChild(btn);
-        } else if (hasMultiple && idx >= 1 && idx < statOffset) {
+        } else if (hasEns && idx >= 1 && idx < statOffset) {
             btn.innerText = "Member " + idx;
             if (!isOldRun) {
-                btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); };
+                btn.onclick = function() {
+                    st.currentMemberIdx = idx;
+                    updateForecast();
+                };
             }
             eCont.appendChild(btn);
-        } else if (hasMultiple) {
+        } else if (hasEns) {
             btn.innerText = name;
-            btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); };
+            btn.onclick = function() {
+                st.currentMemberIdx = idx;
+                updateForecast();
+            };
             sCont.appendChild(btn);
         }
     });
 
-    var ensGroupId = side === 'left' ? "ensembleGroupLeft" : "ensembleGroupRight";
-    var noticeId = side === 'left' ? "onlyHlNoticeLeft" : "onlyHlNoticeRight";
-    var ensGroup = document.getElementById(ensGroupId);
-    var notice = document.getElementById(noticeId);
-    if (ensGroup) ensGroup.style.display = hasMultiple ? "block" : "none";
-    if (notice) notice.style.display = hasMultiple ? "none" : "block";
+    if (ensGroup) ensGroup.style.display = hasEns ? "block" : "none";
+    if (notice) notice.style.display = hasEns ? "none" : "block";
 }
 
 function initMemberPanelsAll() {
-    renderMemberButtonsForTarget('left', "hauptlaufContainerLeft", "ensembleContainerLeft", "statistikenContainerLeft", "left");
-    renderMemberButtonsForTarget('right', "hauptlaufContainerRight", "ensembleContainerRight", "statistikenContainerRight", "right");
+    renderMemberButtonsForTarget('left');
+    renderMemberButtonsForTarget('right');
     updateEnsembleToggleState();
 }
 
 function renderSingleLegendCol(varName, isIQR) {
-    var effectiveSide = isSplitActive ? 'left' : 'left';
+    var effectiveSide = 'left';
     var cfg = modelsState[effectiveSide].config || {};
     var vCfg = (cfg.variables_config && cfg.variables_config[varName]) || {};
     var paletteType = isIQR ? ("iqr_" + (vCfg.palette || "wind")) : (vCfg.palette || "wind");
@@ -1020,11 +1046,11 @@ function renderSingleLegendCol(varName, isIQR) {
 
 function updateLegend() {
     var box = document.getElementById("legendBox");
-    var effectiveSide = isSplitActive ? 'left' : 'left';
+    var effectiveSide = 'left';
     var cfg = modelsState[effectiveSide].config;
     if (!cfg) return;
-    var hasMultiple = cfg.member_names && cfg.member_names.length > 1;
-    var iqrIdx = hasMultiple ? (cfg.member_names.length - 1) : 0;
+    var hasMultiple = modelHasEnsembleForCurrentVar(effectiveSide);
+    var iqrIdx = (cfg.member_names && cfg.member_names.length > 1) ? (cfg.member_names.length - 1) : 0;
     var isIQR1 = (hasMultiple && modelsState[effectiveSide].currentMemberIdx === iqrIdx);
     
     var html = renderSingleLegendCol(layer1Var, isIQR1);
@@ -1096,9 +1122,9 @@ async function ensureDataLoaded(side, varName, memberIdx, stepIdx) {
     var st = modelsState[side];
     const cacheKey = `${st.currentModel}_${st.currentRunId}_${varName}_${memberIdx}_${stepIdx}`;
     const vCfg = (st.config && st.config.variables_config && st.config.variables_config[varName]) || {};
-    var hasMultiple = st.config && st.config.member_names && st.config.member_names.length > 1;
-    var iqrIdx = hasMultiple ? (st.config.member_names.length - 1) : 0;
-    const isIQR = (hasMultiple && vCfg.has_ensemble && memberIdx === iqrIdx);
+    var hasMultiple = modelHasEnsembleForCurrentVar(side);
+    var iqrIdx = (st.config && st.config.member_names && st.config.member_names.length > 1) ? (st.config.member_names.length - 1) : 0;
+    const isIQR = (hasMultiple && memberIdx === iqrIdx);
     const paletteType = isIQR ? ("iqr_" + (vCfg.palette || "wind")) : (vCfg.palette || "wind");
 
     if (!cacheContours[cacheKey]) {
@@ -1261,7 +1287,6 @@ async function init() {
         });
 
         window.onresize = function() {
-            // Auf mobilen Bildschirmen standardmässig eingeklappt starten
             if (window.innerWidth <= 768) {
                 toggleMobileModelPanel(false);
             }
@@ -1277,7 +1302,6 @@ async function init() {
             await fetchAvailableRuns(m);
         }
 
-        // Standardmässig auf Mobile eingeklappt starten
         if (window.innerWidth <= 768) {
             toggleMobileModelPanel(false);
         }
@@ -1308,6 +1332,11 @@ async function updateForecast() {
             if (!st.config) continue;
             var maxSteps = (st.times ? st.times.length : 100);
             var stepForSide = Math.min(currentStepIdx, maxSteps - 1);
+
+            // Prüfung pro Seite
+            if (!modelHasEnsembleForCurrentVar(side)) {
+                st.currentMemberIdx = 0;
+            }
 
             await ensureDataLoaded(side, layer1Var, st.currentMemberIdx, stepForSide);
             if (layer2Var) {
@@ -1346,8 +1375,8 @@ async function updateForecast() {
     });
 
     ['left', 'right'].forEach(side => {
-        var effectiveStateSide = isSplitActive ? side : 'left';
-        var st = modelsState[effectiveStateSide];
+        var stateSide = getActiveStateSide(side);
+        var st = modelsState[stateSide];
         var lbl = document.getElementById(side === 'left' ? "lblMemberBtnLeft" : "lblMemberBtnRight");
         if (lbl && st.config && st.config.member_names) {
             var mName = st.config.member_names[st.currentMemberIdx] || "Hauptlauf";
@@ -1356,8 +1385,8 @@ async function updateForecast() {
     });
 
     ['left', 'right'].forEach(side => {
-        var effectiveStateSide = isSplitActive ? side : 'left';
-        var st = modelsState[effectiveStateSide];
+        var stateSide = getActiveStateSide(side);
+        var st = modelsState[stateSide];
         if (st.config && st.config.member_names) {
             for (var i = 0; i < st.config.member_names.length; i++) {
                 var btn = document.getElementById((side === 'left' ? "left-" : "right-") + "member-btn-" + i);
@@ -1463,8 +1492,8 @@ function drawVisibleArrows(side) {
     var arrowVar = null;
     var arrowMember = 0;
     var vCfg1 = st.config.variables_config[layer1Var];
-    var hasMultiple = st.config.member_names && st.config.member_names.length > 1;
-    var iqrIdx = hasMultiple ? (st.config.member_names.length - 1) : 0;
+    var hasMultiple = modelHasEnsembleForCurrentVar(side);
+    var iqrIdx = (st.config && st.config.member_names && st.config.member_names.length > 1) ? (st.config.member_names.length - 1) : 0;
     
     if (vCfg1 && vCfg1.has_arrows && (!hasMultiple || st.currentMemberIdx < iqrIdx - 5)) {
         arrowVar = layer1Var;
