@@ -1,3 +1,63 @@
+// INTELLIGENTE NAVIGATION NACH OBEN (▲)
+function navUp() {
+    var side = isSplitActive ? 'right' : 'left';
+    if (verticalNavMode === 'run') {
+        navRun(-1);
+        return;
+    }
+    var st = modelsState[side];
+    if (!modelHasEnsembleForCurrentVar(side)) return;
+    var statOffset = st.config.member_names.length - 6;
+
+    // Prüfen, ob das Members-Accordion offen ist
+    if (!isEnsembleOpen) {
+        // Wenn Members zugeklappt sind:
+        if (st.currentMemberIdx === statOffset) {
+            // Vom Median direkt zurück zum Hauptlauf springen (Members überspringen)
+            st.currentMemberIdx = 0;
+        } else if (st.currentMemberIdx > statOffset) {
+            // Innerhalb der Statistiken schrittweise nach oben
+            st.currentMemberIdx = st.currentMemberIdx - 1;
+        } else {
+            st.currentMemberIdx = 0;
+        }
+    } else {
+        // Wenn Members ausgeklappt sind: lückenlos schrittweise nach oben
+        st.currentMemberIdx = Math.max(0, st.currentMemberIdx - 1);
+    }
+    updateForecast();
+}
+
+// INTELLIGENTE NAVIGATION NACH UNTEN (▼)
+function navDown() {
+    var side = isSplitActive ? 'right' : 'left';
+    if (verticalNavMode === 'run') {
+        navRun(1);
+        return;
+    }
+    var st = modelsState[side];
+    if (!modelHasEnsembleForCurrentVar(side)) return;
+    var maxIdx = st.config.member_names.length - 1;
+    var statOffset = st.config.member_names.length - 6;
+
+    // Prüfen, ob das Members-Accordion offen ist
+    if (!isEnsembleOpen) {
+        // Wenn Members zugeklappt sind:
+        if (st.currentMemberIdx === 0) {
+            // Vom Hauptlauf direkt zum Median springen (Members überspringen)
+            st.currentMemberIdx = statOffset;
+        } else if (st.currentMemberIdx >= statOffset) {
+            // Innerhalb der Statistiken weiter nach unten bis maxIdx (IQR)
+            st.currentMemberIdx = Math.min(maxIdx, st.currentMemberIdx + 1);
+        }
+    } else {
+        // Wenn Members ausgeklappt sind: lückenlos schrittweise nach unten (HL -> M1 -> M2 ... -> Median)
+        st.currentMemberIdx = Math.min(maxIdx, st.currentMemberIdx + 1);
+    }
+    updateForecast();
+}
+Und hier die vollständige app.js zum direkten Kopieren:
+
 var mapLeft, mapRight;
 var isSplitActive = false;
 var isSyncingMaps = false;
@@ -244,6 +304,7 @@ function toggleMemberPanel(side) {
     if (b) b.classList.toggle("active", !isOpen);
 }
 
+// TOGGLE FÜR DAS SUBPANEL MIT SPEICHERUNG DES ZUSTANDS
 function toggleEnsembleAccordionLocal(side) {
     var cont = document.getElementById(side === 'left' ? "ensembleContainerLeft" : "ensembleContainerRight");
     var btn = document.getElementById(side === 'left' ? "btnToggleEnsembleLeft" : "btnToggleEnsembleRight");
@@ -251,6 +312,10 @@ function toggleEnsembleAccordionLocal(side) {
     var isOpen = (cont.style.display !== "none");
     cont.style.display = isOpen ? "none" : "block";
     if (btn) btn.classList.toggle("open", !isOpen);
+
+    isEnsembleOpen = !isOpen;
+    localStorage.setItem("icon_ensemble_open", isEnsembleOpen ? "true" : "false");
+    updateEnsembleToggleState();
 }
 
 function updateCityLabels() {
@@ -380,7 +445,6 @@ function updateNavModeButton() {
     }
 }
 
-// IM SPLIT-MODUS STEUERN DIE TASTEN DAS RECHTE FENSTER
 function navRun(dir) {
     var side = isSplitActive ? 'right' : 'left';
     var st = modelsState[side];
@@ -813,7 +877,7 @@ function navRight() {
     }
 }
 
-// IN SPLIT-ANSICHT STEUERN ▲ UND ▼ DAS RECHTE FENSTER
+// INTELLIGENTE NAVIGATION NACH OBEN (▲)
 function navUp() {
     var side = isSplitActive ? 'right' : 'left';
     if (verticalNavMode === 'run') {
@@ -825,8 +889,11 @@ function navUp() {
     var statOffset = st.config.member_names.length - 6;
 
     if (!isEnsembleOpen) {
-        if (st.currentMemberIdx >= statOffset) {
-            st.currentMemberIdx = (st.currentMemberIdx === statOffset) ? 0 : st.currentMemberIdx - 1;
+        if (st.currentMemberIdx === statOffset) {
+            // Vom Median direkt zurück zum Hauptlauf springen
+            st.currentMemberIdx = 0;
+        } else if (st.currentMemberIdx > statOffset) {
+            st.currentMemberIdx = st.currentMemberIdx - 1;
         } else {
             st.currentMemberIdx = 0;
         }
@@ -836,6 +903,7 @@ function navUp() {
     updateForecast();
 }
 
+// INTELLIGENTE NAVIGATION NACH UNTEN (▼)
 function navDown() {
     var side = isSplitActive ? 'right' : 'left';
     if (verticalNavMode === 'run') {
@@ -848,9 +916,14 @@ function navDown() {
     var statOffset = st.config.member_names.length - 6;
 
     if (!isEnsembleOpen) {
-        if (st.currentMemberIdx === 0) st.currentMemberIdx = statOffset;
-        else if (st.currentMemberIdx >= statOffset) st.currentMemberIdx = Math.min(maxIdx, st.currentMemberIdx + 1);
+        if (st.currentMemberIdx === 0) {
+            // Vom Hauptlauf direkt zum Median springen (Members überspringen)
+            st.currentMemberIdx = statOffset;
+        } else if (st.currentMemberIdx >= statOffset) {
+            st.currentMemberIdx = Math.min(maxIdx, st.currentMemberIdx + 1);
+        }
     } else {
+        // Bei geöffnetem Subpanel lückenlos durch Members gehen
         st.currentMemberIdx = Math.min(maxIdx, st.currentMemberIdx + 1);
     }
     updateForecast();
