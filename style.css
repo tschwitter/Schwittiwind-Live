@@ -70,7 +70,7 @@ body.split-active #mapLeft .leaflet-control-attribution,
     display: none !important;
 }
 
-/* --- EINSTELLUNGS- & SPLIT-BUTTON: EXAKT DIE SELBE HÖHE WIE MODELLAUSWAHL --- */
+/* --- EINSTELLUNGS-, SPLIT- & COLLAPSE-BUTTONS --- */
 .custom-settings-control {
     position: fixed;
     top: 10px;
@@ -82,6 +82,7 @@ body.split-active #mapLeft .leaflet-control-attribution,
     height: 70px;
     gap: 3px;
     box-sizing: border-box;
+    transition: right 0.2s ease, height 0.2s ease;
 }
 
 .settings-control-btn {
@@ -103,6 +104,12 @@ body.split-active #mapLeft .leaflet-control-attribution,
     -webkit-tap-highlight-color: transparent;
     outline: none;
     box-sizing: border-box;
+}
+
+.collapse-control-btn {
+    display: none !important; /* Nur auf Mobile sichtbar */
+    font-size: 13px !important;
+    color: #70c4ff !important;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -192,6 +199,7 @@ body.split-active #mapLeft .leaflet-control-attribution,
     align-items: center;
     max-width: 96vw;
     pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 .top-row {
@@ -316,7 +324,7 @@ body.split-active #mapLeft .leaflet-control-attribution,
     box-shadow: 0 0 12px rgba(0, 122, 183, 0.75), 0 4px 10px rgba(0, 0, 0, 0.4) !important;
 }
 
-/* --- MODELL-AUSWAHLEN (HÖHE: 70px) --- */
+/* --- MODELL-AUSWAHLEN --- */
 .model-select-header {
     position: fixed;
     top: 10px;
@@ -328,6 +336,15 @@ body.split-active #mapLeft .leaflet-control-attribution,
 .model-select-right { right: 10px; }
 .model-select-left { display: none; left: 10px; }
 body.split-active .model-select-left { display: block; }
+
+/* HOCHKANT EINKLAPP-REITER (AUF DESKTOP VERSTECKT) */
+.model-tab-btn {
+    display: none;
+}
+
+.model-content-wrap {
+    width: 100%;
+}
 
 .model-toggle-column {
     display: flex;
@@ -394,7 +411,7 @@ body.split-active .model-select-left { display: block; }
     letter-spacing: -0.2px;
 }
 
-/* --- HAUPTLAUF-AUSKLAPPBUTTON: EXAKT GLEICH HOCH WIE DIE AUSGEKLAPPTEN BUTTONS --- */
+/* --- HAUPTLAUF-AUSKLAPPBUTTON --- */
 .member-toggle-btn {
     display: block;
     width: 100%;
@@ -405,8 +422,8 @@ body.split-active .model-select-left { display: block; }
     font-family: Arial, sans-serif;
     font-size: 11px;
     font-weight: bold;
-    padding: 7px 4px; /* Exakt selbes Padding wie .member-btn */
-    min-height: 28px;  /* Exakt selbe Höhe wie .member-btn */
+    padding: 7px 4px;
+    min-height: 28px;
     margin: 3px 0 0 0;
     cursor: pointer;
     box-shadow: 0 2px 6px rgba(0,0,0,0.35);
@@ -469,6 +486,7 @@ body.split-active .model-select-left { display: block; }
     color: #ffffff !important;
 }
 
+/* ZENTRIERTER MEMBERS-BUTTON MIT PFEIL DIREKT DAHINTER */
 .member-section-toggle {
     width: 100%;
     background: rgba(255,255,255,0.06);
@@ -479,10 +497,14 @@ body.split-active .model-select-left { display: block; }
     font-size: 11px; font-weight: bold;
     padding: 7px 10px;
     margin: 3px 0 6px 0;
-    display: flex; justify-content: space-between; align-items: center;
+    display: flex; 
+    justify-content: center; /* ZENTRIERT */
+    align-items: center;
+    gap: 5px; /* Pfeil direkt neben Members */
     cursor: pointer;
     transition: all 0.2s;
     user-select: none;
+    box-sizing: border-box;
 }
 .member-section-toggle:hover { background: rgba(255,255,255,0.14); color: #ffffff; }
 .member-section-toggle .chevron { font-size: 10px; transition: transform 0.2s ease; }
@@ -741,7 +763,7 @@ body.split-active .model-select-left { display: block; }
 
 .bottom-labels-row { display: flex; justify-content: space-between; font-size: 11px; font-weight: bold; color: #cbd5e1; padding: 0 2px; }
 
-/* --- DYNAMISCHE FARBSKALA (PER DEFAULT ZUGEKLAPPT) --- */
+/* --- DYNAMISCHE FARBSKALA --- */
 .legend-wrapper {
     position: fixed;
     bottom: 12px; left: 10px;
@@ -792,35 +814,96 @@ body.split-active .model-select-left { display: block; }
 .legend-bar { width: 16px; height: 230px; display: flex; flex-direction: column; border-radius: 2px; overflow: hidden; border: 1px solid rgba(0,0,0,0.8); }
 .legend-labels { position: absolute; left: 22px; top: -5px; height: 240px; font-size: 8.5px; font-weight: bold; display: flex; flex-direction: column; justify-content: space-between; }
 
-/* --- RESPONSIVES MOBILE DESIGN --- */
+/* --- RESPONSIVES MOBILE DESIGN: EINGEKLAPPTE MODELLAUSWAHL --- */
 @media (max-width: 768px) {
-    .model-select-header { top: 6px; width: 145px; }
+    /* Wenn Modellauswahl ausgeklappt ist: Top-Panel ausblenden, um Überlappung zu verhindern */
+    body.mobile-models-expanded .top-control-panel {
+        opacity: 0 !important;
+        pointer-events: none !important;
+        transform: translate(-50%, -10px) !important;
+    }
+
+    .model-select-header {
+        top: 6px;
+        width: auto;
+    }
     .model-select-right { right: 6px; }
     .model-select-left { left: 6px; }
-    
-    .model-toggle-column { height: 64px; }
-    
+
+    /* Der hochkante Reiter-Button auf Mobile */
+    .model-tab-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 64px;
+        background: rgba(24, 33, 42, 0.95);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 8px;
+        color: #70c4ff;
+        font-family: Arial, sans-serif;
+        font-size: 11px;
+        font-weight: bold;
+        cursor: pointer;
+        user-select: none;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        box-sizing: border-box;
+    }
+    .model-tab-btn span {
+        display: inline-block;
+        transform: rotate(90deg);
+        white-space: nowrap;
+    }
+
+    /* Standardmässig eingeklappt: Panel verbergen, Reiter anzeigen */
+    .model-select-header.mobile-collapsed .model-content-wrap {
+        display: none !important;
+    }
+    .model-select-header.mobile-collapsed .model-tab-btn {
+        display: flex !important;
+    }
+
+    /* Ausgeklappt: Reiter verbergen, Panel anzeigen */
+    .model-select-header:not(.mobile-collapsed) {
+        width: 145px;
+    }
+    .model-select-header:not(.mobile-collapsed) .model-tab-btn {
+        display: none !important;
+    }
+    .model-select-header:not(.mobile-collapsed) .model-content-wrap {
+        display: block !important;
+    }
+
+    /* Positionierung der Settings-Controls */
     .custom-settings-control {
         top: 6px;
-        right: 156px;
+        right: 40px; /* Neben dem eingeklappten 28px Reiter */
         height: 64px;
         gap: 3px;
     }
+
+    /* Wenn rechts ausgeklappt: Buttons wandern links neben das 145px Panel & Collapse-Pfeil (▶) wird sichtbar */
+    body.mobile-models-expanded .custom-settings-control {
+        right: 156px !important;
+        height: 98px !important; /* Platz für 3 Buttons */
+    }
+    body.mobile-models-expanded .collapse-control-btn {
+        display: flex !important;
+    }
+
     .settings-control-btn {
         width: 28px !important;
         font-size: 13px !important;
     }
+
     .settings-popup {
         right: 10px;
         top: 44px;
         width: 240px;
     }
 
-    .top-control-panel { top: 4px; }
-    .top-row { padding: 2px 4px; gap: 2px; border-radius: 14px; }
-    .var-btn, .nav-toggle-btn { font-size: 10.5px; padding: 4px 7px; border-radius: 10px; }
-    .layer2-btn { font-size: 9px; padding: 3px 16px 4px 16px; border-radius: 0 0 12px 12px; }
-
+    .model-toggle-column { height: 64px; }
     .member-dropdown { width: 145px !important; }
     .member-btn { font-size: 10.5px; padding: 6px 3px; min-height: 26px; }
     .member-toggle-btn { font-size: 10.5px; padding: 6px 3px; min-height: 26px; }
