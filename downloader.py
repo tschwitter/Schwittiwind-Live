@@ -403,7 +403,7 @@ def fetch_arome_hd_data(start_step, end_step, ref_time_str):
         "ref_lat": ref_lat
     }
 
-# ================= DWD ICON-D2 FETCHER =================
+# ================= DWD ICON-D2 & ICON-D2-EPS FETCHER =================
 def _download_and_extract_dwd_bytes(url):
     for attempt in range(1, 4):
         try:
@@ -415,10 +415,6 @@ def _download_and_extract_dwd_bytes(url):
     return None
 
 def _find_dwd_coord_url(cycle_hh, param_name):
-    """
-    Sucht auf dem DWD-Server dynamisch nach der passenden clat/clon-Datei.
-    Prüft zuerst den aktuellen Lauf und falls nicht vorhanden, den 00Z-Lauf.
-    """
     candidate_dirs = [
         f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/{cycle_hh}/{param_name}/",
         f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/00/{param_name}/"
@@ -435,10 +431,6 @@ def _find_dwd_coord_url(cycle_hh, param_name):
     return None
 
 def _load_icond2_grid_coords(ref_iso):
-    """
-    Lädt die zeit-invarianten Koordinaten clat/clon für ICON-D2 herunter
-    und ermittelt die Indizes für die Schweizer Bounding Box.
-    """
     global _ICOND2_GRID_CACHE
     if "valid_indices" in _ICOND2_GRID_CACHE:
         return _ICOND2_GRID_CACHE
@@ -471,9 +463,6 @@ def _load_icond2_grid_coords(ref_iso):
     if not url_lat or not url_lon:
         raise RuntimeError(f"Konnte Verzeichnis für ICON-D2 clat/clon nicht finden (geprüft: {cycle_hh}Z & 00Z).")
 
-    print(f"-> Lade clat: {url_lat}", flush=True)
-    print(f"-> Lade clon: {url_lon}", flush=True)
-
     clat_bytes = _download_and_extract_dwd_bytes(url_lat)
     clon_bytes = _download_and_extract_dwd_bytes(url_lon)
 
@@ -501,12 +490,10 @@ def _load_icond2_grid_coords(ref_iso):
         ds_lat.close()
         ds_lon.close()
 
-        # Radiant zu Grad umrechnen, falls nötig
         if np.nanmax(np.abs(lats)) <= 1.6:
             lats = np.rad2deg(lats)
             lons = np.rad2deg(lons)
 
-        # Längen auf -180..180 normalisieren
         lons = (lons + 180.0) % 360.0 - 180.0
 
         mask = (lats >= config.LAT_MIN) & (lats <= config.LAT_MAX) & \
@@ -514,7 +501,7 @@ def _load_icond2_grid_coords(ref_iso):
         valid_indices = np.where(mask)[0]
 
         if len(valid_indices) == 0:
-            raise RuntimeError(f"Keine Gitterpunkte im Schweizer Bereich gefunden! (Lats: {np.nanmin(lats):.2f}..{np.nanmax(lats):.2f}, Lons: {np.nanmin(lons):.2f}..{np.nanmax(lons):.2f})")
+            raise RuntimeError("Keine Gitterpunkte im Schweizer Bereich gefunden!")
 
         _ICOND2_GRID_CACHE = {
             "valid_indices": valid_indices,
@@ -542,6 +529,44 @@ def _load_icond2_grid_coords(ref_iso):
                 except Exception:
                     pass
 
+def _extract_grib_array(raw_bytes, valid_indices, is_ensemble=False):
+    """Liest ein GRIB2-Bytepaket ein und extrahiert 1D (HL) oder 2D (EPS) Werte."""
+    if raw_bytes is None:
+        return None
+
+    with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp:
+        tmp.write(raw_bytes)
+        tmp_path = tmp.name
+
+    try:
+        with SilenceStderr():
+            ds = cfgrib.open_dataset(tmp_path)
+        var_name = list(ds.data_vars.keys())[0]
+        vals = ds[var_name].values
+        ds.close()
+
+        if is_ensemble:
+            # 20 Ensemble-Member (Dimension 'number' oder 'eps' auf Achse 0)
+            if vals.ndim == 1:
+                vals = vals[np.newaxis, :]
+            elif vals.ndim > 2:
+                vals = np.squeeze(vals)
+                if vals.ndim == 1:
+                    vals = vals[np.newaxis, :]
+            sub_vals = vals[:, valid_indices].astype(np.float32)
+            return sub_vals
+        else:
+            # 1 Hauptlauf (flaches 1D-Array)
+            return vals.ravel()[valid_indices].astype(np.float32)
+    except Exception:
+        return None
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
 def fetch_icond2_single_hour(ref_iso, lead_hour, grid_info):
     try:
         ref_dt = datetime.fromisoformat(ref_iso.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
@@ -550,107 +575,79 @@ def fetch_icond2_single_hour(ref_iso, lead_hour, grid_info):
 
     cycle_hh = ref_dt.strftime("%H")
     date_ymd = ref_dt.strftime("%Y%m%d")
-    base_url = f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/{cycle_hh}"
 
-    url_u = f"{base_url}/u_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_u_10m.grib2.bz2"
-    url_v = f"{base_url}/v_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_v_10m.grib2.bz2"
-    url_g = f"{base_url}/vmax_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_vmax_10m.grib2.bz2"
+    base_det = f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/{cycle_hh}"
+    base_eps = f"https://opendata.dwd.de/weather/nwp/icon-d2-eps/grib/{cycle_hh}"
 
-    u_bytes = _download_and_extract_dwd_bytes(url_u)
-    v_bytes = _download_and_extract_dwd_bytes(url_v)
-    g_bytes = _download_and_extract_dwd_bytes(url_g) if lead_hour > 0 else None
+    # 1. Hauptlauf (deterministisch)
+    url_u_hl = f"{base_det}/u_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_u_10m.grib2.bz2"
+    url_v_hl = f"{base_det}/v_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_v_10m.grib2.bz2"
+    url_g_hl = f"{base_det}/vmax_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_vmax_10m.grib2.bz2"
 
-    if u_bytes is None or v_bytes is None:
-        print(f"⚠️ ICON-D2 Stunde +{lead_hour}h konnte nicht geladen werden.", flush=True)
-        return None, None, None
+    # 2. Ensemble (20 Member)
+    url_u_ens = f"{base_eps}/u_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_u_10m.grib2.bz2"
+    url_v_ens = f"{base_eps}/v_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_v_10m.grib2.bz2"
+    url_g_ens = f"{base_eps}/vmax_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_vmax_10m.grib2.bz2"
+
+    b_u_hl = _download_and_extract_dwd_bytes(url_u_hl)
+    b_v_hl = _download_and_extract_dwd_bytes(url_v_hl)
+    b_g_hl = _download_and_extract_dwd_bytes(url_g_hl) if lead_hour > 0 else None
+
+    b_u_ens = _download_and_extract_dwd_bytes(url_u_ens)
+    b_v_ens = _download_and_extract_dwd_bytes(url_v_ens)
+    b_g_ens = _download_and_extract_dwd_bytes(url_g_ens) if lead_hour > 0 else None
 
     valid_indices = grid_info["valid_indices"]
     num_pts = len(valid_indices)
 
-    with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_u, \
-         tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_v:
-        tmp_u.write(u_bytes)
-        tmp_v.write(v_bytes)
-        path_u = tmp_u.name
-        path_v = tmp_v.name
+    # Hauptlauf extrahieren (1D)
+    u_h = _extract_grib_array(b_u_hl, valid_indices, is_ensemble=False)
+    v_h = _extract_grib_array(b_v_hl, valid_indices, is_ensemble=False)
+    g_h = _extract_grib_array(b_g_hl, valid_indices, is_ensemble=False) if lead_hour > 0 else np.full(num_pts, np.nan, dtype=np.float32)
 
-    path_g = None
-    if g_bytes is not None:
-        with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_g:
-            tmp_g.write(g_bytes)
-            path_g = tmp_g.name
+    # Ensemble extrahieren (2D: [20, num_pts])
+    u_e = _extract_grib_array(b_u_ens, valid_indices, is_ensemble=True)
+    v_e = _extract_grib_array(b_v_ens, valid_indices, is_ensemble=True)
+    g_e = _extract_grib_array(b_g_ens, valid_indices, is_ensemble=True) if lead_hour > 0 else np.full((20, num_pts), np.nan, dtype=np.float32)
 
-    try:
-        with SilenceStderr():
-            ds_u = cfgrib.open_dataset(path_u)
-            ds_v = cfgrib.open_dataset(path_v)
-
-        var_u = list(ds_u.data_vars.keys())[0]
-        var_v = list(ds_v.data_vars.keys())[0]
-
-        val_u = ds_u[var_u].values.ravel()
-        val_v = ds_v[var_v].values.ravel()
-
-        ds_u.close()
-        ds_v.close()
-
-        sub_u = val_u[valid_indices].astype(np.float32)
-        sub_v = val_v[valid_indices].astype(np.float32)
-
-        if path_g is not None:
-            with SilenceStderr():
-                ds_g = cfgrib.open_dataset(path_g)
-            var_g = list(ds_g.data_vars.keys())[0]
-            val_g = ds_g[var_g].values.ravel()
-            ds_g.close()
-            sub_g = val_g[valid_indices].astype(np.float32)
-        else:
-            sub_g = np.full(num_pts, np.nan, dtype=np.float32)
-
-        return sub_u, sub_v, sub_g
-    except Exception as e:
-        print(f"Fehler beim Dekodieren von ICON-D2 (+{lead_hour}h): {e}", flush=True)
-        return None, None, None
-    finally:
-        for p in [path_u, path_v, path_g]:
-            if p and os.path.exists(p):
-                try:
-                    os.remove(p)
-                except Exception:
-                    pass
+    return u_h, v_h, g_h, u_e, v_e, g_e
 
 def fetch_icond2_data(start_step, end_step, ref_time_str):
-    print(f"-> Lade ICON-D2 (10m Wind & Böen) für Schritte {start_step} bis {end_step} ({ref_time_str})...", flush=True)
+    print(f"-> Lade ICON-D2 (10m Wind & Böen inkl. 20 Ensemble-Member) für Schritte {start_step} bis {end_step} ({ref_time_str})...", flush=True)
     grid_info = _load_icond2_grid_coords(ref_time_str)
     lead_hours = list(range(start_step, end_step + 1))
 
-    u_list, v_list, g_list = [], [], []
+    u_h_list, v_h_list, g_h_list = [], [], []
+    u_e_list, v_e_list, g_e_list = [], [], []
     num_pts = len(grid_info["valid_indices"])
 
     for h in lead_hours:
-        u_arr, v_arr, g_arr = fetch_icond2_single_hour(ref_time_str, h, grid_info)
-        if u_arr is not None:
-            u_list.append(u_arr)
-            v_list.append(v_arr)
-            g_list.append(g_arr)
-        else:
-            u_list.append(np.full(num_pts, np.nan, dtype=np.float32))
-            v_list.append(np.full(num_pts, np.nan, dtype=np.float32))
-            g_list.append(np.full(num_pts, np.nan, dtype=np.float32))
+        u_h, v_h, g_h, u_e, v_e, g_e = fetch_icond2_single_hour(ref_time_str, h, grid_info)
 
-    u_stack = np.stack(u_list, axis=0)
-    v_stack = np.stack(v_list, axis=0)
-    g_stack = np.stack(g_list, axis=0)
+        u_h_list.append(u_h if u_h is not None else np.full(num_pts, np.nan, dtype=np.float32))
+        v_h_list.append(v_h if v_h is not None else np.full(num_pts, np.nan, dtype=np.float32))
+        g_h_list.append(g_h if g_h is not None else np.full(num_pts, np.nan, dtype=np.float32))
 
-    u_da = xr.DataArray(u_stack, dims=["lead_time", "cell"])
-    v_da = xr.DataArray(v_stack, dims=["lead_time", "cell"])
-    g_da = xr.DataArray(g_stack, dims=["lead_time", "cell"])
+        u_e_list.append(u_e if u_e is not None else np.full((20, num_pts), np.nan, dtype=np.float32))
+        v_e_list.append(v_e if v_e is not None else np.full((20, num_pts), np.nan, dtype=np.float32))
+        g_e_list.append(g_e if g_e is not None else np.full((20, num_pts), np.nan, dtype=np.float32))
+
+    u_h_da = xr.DataArray(np.stack(u_h_list, axis=0), dims=["lead_time", "cell"])
+    v_h_da = xr.DataArray(np.stack(v_h_list, axis=0), dims=["lead_time", "cell"])
+    g_h_da = xr.DataArray(np.stack(g_h_list, axis=0), dims=["lead_time", "cell"])
+
+    u_e_da = xr.DataArray(np.stack(u_e_list, axis=0), dims=["lead_time", "eps", "cell"])
+    v_e_da = xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"])
+    g_e_da = xr.DataArray(np.stack(g_e_list, axis=0), dims=["lead_time", "eps", "cell"])
 
     return {
         "surface": {
-            "u_h": u_da,
-            "v_h": v_da,
-            "g_h": g_da
+            "u_h": u_h_da,
+            "v_h": v_h_da,
+            "g_h": g_h_da,
+            "u_e": u_e_da,
+            "v_e": v_e_da,
+            "g_e": g_e_da
         },
         "altitude_hl": {},
         "altitude_ens": {},
