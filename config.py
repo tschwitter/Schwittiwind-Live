@@ -34,7 +34,7 @@ MODELS_CONFIG = {
         "hhl_asset": "vertical_constants_icon-ch1-eps.grib2",
         "nx": 400,
         "ny": 240,
-        "hours": 33,
+        "hours": 3,
         "max_members": 11,
         "max_runs": 8,
         "active_variables": ["wind", "gust"],
