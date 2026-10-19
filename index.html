@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Wetter & Wind (ICON CH1, CH2, D2 & AROME HD)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=33" />
+    <link rel="stylesheet" href="style.css?v=35" />
 </head>
 <body>
 
@@ -16,13 +16,7 @@
         <div id="mapRight" class="map-pane-container"></div>
     </div>
 
-    <!-- EINSTELLUNGEN & SPLIT-BUTTON OBEN LINKS -->
-    <div class="custom-settings-control">
-        <a href="#" class="settings-control-btn" id="settingsBtn" onclick="toggleSettings(event)" title="Karten- & Ebenen-Optionen">⚙</a>
-        <a href="#" class="settings-control-btn split-toggle-btn" id="splitBtn" onclick="toggleSplitScreen(event)" title="Splitscreen Vergleich an/aus">◫</a>
-    </div>
-
-    <!-- OBERES KONTROLL-PANEL -->
+    <!-- OBERES KONTROLL-PANEL (MITTE) -->
     <div class="top-control-panel">
         <div class="top-row">
             <button class="nav-toggle-btn" id="btnToggleWetter" onclick="toggleWetterMenu()">Wetter ▾</button>
@@ -37,6 +31,12 @@
         <div class="layer2-anchor-wrap">
             <button class="layer2-btn" id="layer2Btn" onclick="toggleLayer2Dropdown()">+ 2. Ebene</button>
         </div>
+    </div>
+
+    <!-- EINSTELLUNGEN & SPLIT-BUTTON: ÜBEREINANDER NEBEN DER MODELLAUSWAHL -->
+    <div class="custom-settings-control">
+        <a href="#" class="settings-control-btn" id="settingsBtn" onclick="toggleSettings(event)" title="Karten- & Ebenen-Optionen">⚙</a>
+        <a href="#" class="settings-control-btn split-toggle-btn" id="splitBtn" onclick="toggleSplitScreen(event)" title="Splitscreen Vergleich an/aus">◫</a>
     </div>
 
     <!-- MODELL-AUSWAHL LINKS (NUR IM SPLITSCREEN SICHTBAR) -->
@@ -65,10 +65,10 @@
         </div>
 
         <!-- BUTTON FÜR MEMBER-PANEL LINKS -->
-        <button class="split-member-toggle-btn" id="btnToggleMemberLeft" onclick="toggleSplitMemberPanel('left')">
-            <span id="lblMemberBtnLeft">HL ▾</span>
+        <button class="member-toggle-btn" id="btnToggleMemberLeft" onclick="toggleMemberPanel('left')">
+            <span id="lblMemberBtnLeft">Hauptlauf ▾</span>
         </button>
-        <div class="member-panel split-member-dropdown" id="memberPanelLeft" style="display: none;">
+        <div class="member-panel member-dropdown" id="memberPanelLeft" style="display: none;">
             <div class="member-panel-title">LÄUFE (LINKS)</div>
             <div class="member-section-title">Hauptlauf</div>
             <div id="hauptlaufContainerLeft"></div>
@@ -87,7 +87,7 @@
         </div>
     </div>
 
-    <!-- MODELL-AUSWAHL RECHTS (IM SINGLE-MODUS = HAUPT-AUSWAHL, IM SPLIT = RECHTE KARTE) -->
+    <!-- MODELL-AUSWAHL RECHTS (STANDARD: HAUPT-AUSWAHL / SPLIT: RECHTE KARTE) -->
     <div class="model-select-header model-select-right" id="modelSelectRight">
         <div class="model-toggle-column">
             <div class="model-toggle-row">
@@ -113,11 +113,11 @@
         </div>
 
         <!-- BUTTON FÜR MEMBER-PANEL RECHTS -->
-        <button class="split-member-toggle-btn" id="btnToggleMemberRight" onclick="toggleSplitMemberPanel('right')">
-            <span id="lblMemberBtnRight">HL ▾</span>
+        <button class="member-toggle-btn" id="btnToggleMemberRight" onclick="toggleMemberPanel('right')">
+            <span id="lblMemberBtnRight">Hauptlauf ▾</span>
         </button>
-        <div class="member-panel split-member-dropdown" id="memberPanelRight" style="display: none;">
-            <div class="member-panel-title">LÄUFE (RECHTS)</div>
+        <div class="member-panel member-dropdown" id="memberPanelRight" style="display: none;">
+            <div class="member-panel-title">LÄUFE</div>
             <div class="member-section-title">Hauptlauf</div>
             <div id="hauptlaufContainerRight"></div>
             <div id="ensembleGroupRight">
@@ -203,25 +203,6 @@
 
     <div id="loadingIndicator">Lade Wetterdaten...</div>
 
-    <!-- RECHTES PANEL (NUR IM SINGLE-MODUS AKTIV) -->
-    <div class="member-panel single-member-panel" id="memberPanel">
-        <div class="member-panel-title">LÄUFE</div>
-        <div class="member-section-title">Hauptlauf</div>
-        <div id="hauptlaufContainer"></div>
-        <div id="ensembleGroup">
-            <div class="member-section-title" style="margin-top: 10px;">Ensemble</div>
-            <button class="member-section-toggle" id="btnToggleEnsemble" onclick="toggleEnsembleAccordion()">
-                <span>Members</span>
-                <span id="ensembleChevron" class="chevron">▾</span>
-            </button>
-            <div id="ensembleContainer" class="member-grid" style="display: none;"></div>
-
-            <div class="member-section-title" style="margin-top: 10px;">Statistiken</div>
-            <div id="statistikenContainer" class="member-grid"></div>
-        </div>
-        <div id="onlyHlNotice" class="only-hl-info">Nur Hauptlauf verfügbar</div>
-    </div>
-
     <!-- UNTERES KONTROLLZENTRUM -->
     <div class="control-panel">
         <div class="day-buttons-row" id="dayButtonsContainer"></div>
@@ -241,14 +222,14 @@
         </div>
     </div>
 
-    <!-- DYNAMISCHE LEGENDE & SPLIT-TOGGLE-BUTTON -->
+    <!-- DYNAMISCHE FARBSKALA -->
     <div class="legend-wrapper">
-        <button class="split-legend-btn" id="btnToggleLegendSplit" onclick="toggleSplitLegend()">📊 Skala</button>
-        <div class="legend-box" id="legendBox"></div>
+        <button class="legend-toggle-btn" id="btnToggleLegend" onclick="toggleLegend()">Farbskala</button>
+        <div class="legend-box" id="legendBox" style="display: none;"></div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=33"></script>
+    <script src="app.js?v=35"></script>
 </body>
 </html>
