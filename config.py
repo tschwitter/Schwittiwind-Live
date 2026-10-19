@@ -50,8 +50,8 @@ MODELS_CONFIG = {
         "hours": 120,
         "max_members": 21,
         "max_runs": 4,
-        "active_variables": [],
-        "ensemble_variables": [],
+        "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"],
+        "ensemble_variables": ["wind", "gust", "sun", "dbz"],
         "max_chunks": 4
     },
     "arome": {
