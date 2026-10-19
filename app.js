@@ -1,63 +1,3 @@
-// INTELLIGENTE NAVIGATION NACH OBEN (▲)
-function navUp() {
-    var side = isSplitActive ? 'right' : 'left';
-    if (verticalNavMode === 'run') {
-        navRun(-1);
-        return;
-    }
-    var st = modelsState[side];
-    if (!modelHasEnsembleForCurrentVar(side)) return;
-    var statOffset = st.config.member_names.length - 6;
-
-    // Prüfen, ob das Members-Accordion offen ist
-    if (!isEnsembleOpen) {
-        // Wenn Members zugeklappt sind:
-        if (st.currentMemberIdx === statOffset) {
-            // Vom Median direkt zurück zum Hauptlauf springen (Members überspringen)
-            st.currentMemberIdx = 0;
-        } else if (st.currentMemberIdx > statOffset) {
-            // Innerhalb der Statistiken schrittweise nach oben
-            st.currentMemberIdx = st.currentMemberIdx - 1;
-        } else {
-            st.currentMemberIdx = 0;
-        }
-    } else {
-        // Wenn Members ausgeklappt sind: lückenlos schrittweise nach oben
-        st.currentMemberIdx = Math.max(0, st.currentMemberIdx - 1);
-    }
-    updateForecast();
-}
-
-// INTELLIGENTE NAVIGATION NACH UNTEN (▼)
-function navDown() {
-    var side = isSplitActive ? 'right' : 'left';
-    if (verticalNavMode === 'run') {
-        navRun(1);
-        return;
-    }
-    var st = modelsState[side];
-    if (!modelHasEnsembleForCurrentVar(side)) return;
-    var maxIdx = st.config.member_names.length - 1;
-    var statOffset = st.config.member_names.length - 6;
-
-    // Prüfen, ob das Members-Accordion offen ist
-    if (!isEnsembleOpen) {
-        // Wenn Members zugeklappt sind:
-        if (st.currentMemberIdx === 0) {
-            // Vom Hauptlauf direkt zum Median springen (Members überspringen)
-            st.currentMemberIdx = statOffset;
-        } else if (st.currentMemberIdx >= statOffset) {
-            // Innerhalb der Statistiken weiter nach unten bis maxIdx (IQR)
-            st.currentMemberIdx = Math.min(maxIdx, st.currentMemberIdx + 1);
-        }
-    } else {
-        // Wenn Members ausgeklappt sind: lückenlos schrittweise nach unten (HL -> M1 -> M2 ... -> Median)
-        st.currentMemberIdx = Math.min(maxIdx, st.currentMemberIdx + 1);
-    }
-    updateForecast();
-}
-Und hier die vollständige app.js zum direkten Kopieren:
-
 var mapLeft, mapRight;
 var isSplitActive = false;
 var isSyncingMaps = false;
@@ -134,6 +74,7 @@ var weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
 var mapUpdateTimer = null;
 var mapSafetyTimer = null;
+var resizeDebounceTimer = null;
 
 var CITIES = [
     { name: "Zürich", lat: 47.3769, lon: 8.5417, minZoom: 7 },
@@ -234,10 +175,7 @@ function syncMap(sourceMap, targetMap) {
 }
 
 function toggleSplitScreen(e) {
-    if (e) {
-        e.preventDefault();
-        e.stopPropagation();
-    }
+    if (e && e.preventDefault) e.preventDefault();
     isSplitActive = !isSplitActive;
 
     var wrapper = document.getElementById("mapsWrapper");
@@ -247,9 +185,6 @@ function toggleSplitScreen(e) {
     if (btn) {
         btn.classList.toggle("active", isSplitActive);
         btn.blur();
-    }
-    if (document.activeElement && document.activeElement.blur) {
-        document.activeElement.blur();
     }
 
     if (isSplitActive) {
@@ -280,7 +215,8 @@ function toggleLegend() {
     if (btn) btn.classList.toggle("active", isLegendOpen);
 }
 
-function toggleMobileModelPanel(forceState) {
+function toggleMobileModelPanel(forceState, e) {
+    if (e && e.preventDefault) e.preventDefault();
     if (typeof forceState === "boolean") {
         isMobileModelExpanded = forceState;
     } else {
@@ -304,7 +240,6 @@ function toggleMemberPanel(side) {
     if (b) b.classList.toggle("active", !isOpen);
 }
 
-// TOGGLE FÜR DAS SUBPANEL MIT SPEICHERUNG DES ZUSTANDS
 function toggleEnsembleAccordionLocal(side) {
     var cont = document.getElementById(side === 'left' ? "ensembleContainerLeft" : "ensembleContainerRight");
     var btn = document.getElementById(side === 'left' ? "btnToggleEnsembleLeft" : "btnToggleEnsembleRight");
@@ -498,7 +433,7 @@ function updateModelButtonLabels() {
         var st = modelsState[stateSide];
 
         var tabLabel = document.getElementById(side === 'left' ? "tabModelLabelLeft" : "tabModelLabelRight");
-        if (tabLabel) {
+        if (tabLabel && st) {
             tabLabel.innerText = getModelShortLabel(st.currentModel);
         }
 
@@ -506,12 +441,12 @@ function updateModelButtonLabels() {
             var btn = document.getElementById(`btnModel-${side}-${m}`);
             if (!btn) return;
             var runs = availableRuns[m] || [];
-            var activeRun = (st.currentModel === m) ? st.currentRunId : (selectedRuns[stateSide][m] || (runs[0] ? runs[0].id : null));
+            var activeRun = (st && st.currentModel === m) ? st.currentRunId : (selectedRuns[stateSide][m] || (runs[0] ? runs[0].id : null));
             var activeObj = runs.find(r => r.id === activeRun) || runs[0];
             var modName = getModelShortLabel(m);
             var timeTxt = activeObj ? activeObj.label : "--";
             btn.innerHTML = `<span class="model-title">${modName} ▾</span><span class="model-time">${timeTxt}</span>`;
-            btn.classList.toggle("active", st.currentModel === m);
+            btn.classList.toggle("active", st && st.currentModel === m);
         });
     });
 }
@@ -652,7 +587,7 @@ function toggleLayer2Dropdown() {
 }
 
 function toggleSettings(e) {
-    if (e) e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     var el = document.getElementById("settingsPopup");
     var isAlreadyOpen = (el.style.display === "block");
     el.style.display = isAlreadyOpen ? "none" : "block";
@@ -890,7 +825,6 @@ function navUp() {
 
     if (!isEnsembleOpen) {
         if (st.currentMemberIdx === statOffset) {
-            // Vom Median direkt zurück zum Hauptlauf springen
             st.currentMemberIdx = 0;
         } else if (st.currentMemberIdx > statOffset) {
             st.currentMemberIdx = st.currentMemberIdx - 1;
@@ -917,13 +851,11 @@ function navDown() {
 
     if (!isEnsembleOpen) {
         if (st.currentMemberIdx === 0) {
-            // Vom Hauptlauf direkt zum Median springen (Members überspringen)
             st.currentMemberIdx = statOffset;
         } else if (st.currentMemberIdx >= statOffset) {
             st.currentMemberIdx = Math.min(maxIdx, st.currentMemberIdx + 1);
         }
     } else {
-        // Bei geöffnetem Subpanel lückenlos durch Members gehen
         st.currentMemberIdx = Math.min(maxIdx, st.currentMemberIdx + 1);
     }
     updateForecast();
@@ -1303,6 +1235,40 @@ function initMapInstance(domId) {
     };
 }
 
+async function fetchModelFiles(side, modelName, runId) {
+    var st = modelsState[side];
+    st.currentModel = modelName;
+
+    if (!availableRuns[modelName] || availableRuns[modelName].length === 0) {
+        await fetchAvailableRuns(modelName);
+    }
+    var runs = availableRuns[modelName] || [];
+    if (!runId && runs.length > 0) runId = runs[0].id;
+    st.currentRunId = runId;
+    selectedRuns[side][modelName] = runId;
+
+    const cacheBuster = Date.now();
+    const runPath = runId ? `data/${modelName}/${runId}` : `data/${modelName}`;
+    
+    try {
+        const configRes = await fetch(`${runPath}/config.json?t=${cacheBuster}`);
+        if (!configRes.ok) throw new Error("Konnte config.json nicht laden für " + modelName);
+        st.config = await configRes.json();
+
+        const timesRes = await fetch(`${runPath}/times.json?t=${cacheBuster}`);
+        if (!timesRes.ok) throw new Error("Konnte times.json nicht laden für " + modelName);
+        st.times = await timesRes.json();
+    } catch (e) {
+        console.error("Fehler beim Laden von " + modelName, e);
+        return false;
+    }
+
+    if (!modelHasEnsembleForCurrentVar(side)) {
+        st.currentMemberIdx = 0;
+    }
+    return true;
+}
+
 async function init() {
     try {
         var leftInit = initMapInstance('mapLeft');
@@ -1355,13 +1321,12 @@ async function init() {
         });
 
         window.onresize = function() {
-            if (window.innerWidth <= 768) {
-                toggleMobileModelPanel(false);
-            }
-            updateModelButtonLabels();
-            initMemberPanelsAll();
-            updateForecast();
-            scheduleMapUpdates();
+            if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer);
+            resizeDebounceTimer = setTimeout(function() {
+                if (mapLeft) mapLeft.invalidateSize();
+                if (mapRight) mapRight.invalidateSize();
+                scheduleMapUpdates();
+            }, 100);
         };
 
         updateNavModeButton();
@@ -1374,8 +1339,16 @@ async function init() {
             toggleMobileModelPanel(false);
         }
 
-        await loadModelAndRun('left', 'icon-ch1');
-        await loadModelAndRun('right', 'icon-d2');
+        await fetchModelFiles('left', 'icon-ch1');
+        await fetchModelFiles('right', 'icon-d2');
+
+        initNavigationBars();
+        initLayer2Dropdown();
+        initDayButtons();
+        initMemberPanelsAll();
+        updateModelButtonLabels();
+
+        await updateForecast();
         updateCityLabels();
     } catch (err) {
         console.error("Fehler bei init():", err);
@@ -1393,7 +1366,9 @@ async function updateForecast() {
     var slider = document.getElementById("timeSlider");
     slider.min = 0; slider.max = 23; slider.value = currentHour;
 
-    document.getElementById("loadingIndicator").style.display = "block";
+    var loadingIndicator = document.getElementById("loadingIndicator");
+    if (loadingIndicator) loadingIndicator.style.display = "block";
+
     try {
         for (const side of sidesToUpdate) {
             var st = modelsState[side];
@@ -1407,15 +1382,16 @@ async function updateForecast() {
 
             await ensureDataLoaded(side, layer1Var, st.currentMemberIdx, stepForSide);
             if (layer2Var) {
-                var vCfg2 = st.config.variables_config[layer2Var] || {};
+                var vCfg2 = st.config.variables_config && st.config.variables_config[layer2Var] || {};
                 var m2 = vCfg2.has_ensemble ? st.currentMemberIdx : 0;
                 await ensureDataLoaded(side, layer2Var, m2, stepForSide);
             }
         }
     } catch (err) {
         console.error("Fehler beim Laden von Forecast-Daten:", err);
+    } finally {
+        if (loadingIndicator) loadingIndicator.style.display = "none";
     }
-    document.getElementById("loadingIndicator").style.display = "none";
 
     var tInfo = times[currentStepIdx];
     var parts = tInfo.local_str.split(" ")[0].split(".");
@@ -1445,7 +1421,7 @@ async function updateForecast() {
         var stateSide = getActiveStateSide(side);
         var st = modelsState[stateSide];
         var lbl = document.getElementById(side === 'left' ? "lblMemberBtnLeft" : "lblMemberBtnRight");
-        if (lbl && st.config && st.config.member_names) {
+        if (lbl && st && st.config && st.config.member_names) {
             var mName = st.config.member_names[st.currentMemberIdx] || "Hauptlauf";
             lbl.innerText = mName + " ▾";
         }
@@ -1454,7 +1430,7 @@ async function updateForecast() {
     ['left', 'right'].forEach(side => {
         var stateSide = getActiveStateSide(side);
         var st = modelsState[stateSide];
-        if (st.config && st.config.member_names) {
+        if (st && st.config && st.config.member_names) {
             for (var i = 0; i < st.config.member_names.length; i++) {
                 var btn = document.getElementById((side === 'left' ? "left-" : "right-") + "member-btn-" + i);
                 if (btn) btn.classList.toggle("active", i === st.currentMemberIdx);
@@ -1558,7 +1534,7 @@ function drawVisibleArrows(side) {
 
     var arrowVar = null;
     var arrowMember = 0;
-    var vCfg1 = st.config.variables_config[layer1Var];
+    var vCfg1 = st.config.variables_config && st.config.variables_config[layer1Var];
     var hasMultiple = modelHasEnsembleForCurrentVar(side);
     var iqrIdx = (st.config && st.config.member_names && st.config.member_names.length > 1) ? (st.config.member_names.length - 1) : 0;
     
@@ -1566,7 +1542,7 @@ function drawVisibleArrows(side) {
         arrowVar = layer1Var;
         arrowMember = st.currentMemberIdx;
     } else if (layer2Var) {
-        var vCfg2 = st.config.variables_config[layer2Var];
+        var vCfg2 = st.config.variables_config && st.config.variables_config[layer2Var];
         if (vCfg2 && vCfg2.has_arrows) {
             arrowVar = layer2Var;
             arrowMember = vCfg2.has_ensemble ? st.currentMemberIdx : 0;
