@@ -49,7 +49,7 @@ html, body {
 
 .wind-arrow-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
 
-/* --- LEAFLET ATTRIBUTION (DEUTLICH KLEIN & DISKRET) --- */
+/* --- LEAFLET ATTRIBUTION (DEUTLICH KLEINER & DISKRET) --- */
 .leaflet-control-attribution {
     font-size: 8px !important;
     line-height: 10px !important;
@@ -64,16 +64,18 @@ html, body {
     text-decoration: none !important;
 }
 
-/* --- EINSTELLUNGS- & SPLIT-BUTTON: ÜBEREINANDER NEBEN MODELLAUSWAHL --- */
+/* --- EINSTELLUNGS- & SPLIT-BUTTON: EXAKT DIE SELBE HÖHE WIE MODELLAUSWAHL --- */
 .custom-settings-control {
     position: fixed;
     top: 10px;
-    right: 172px; /* Direkt links neben dem 155px breiten Modellauswahl-Container */
+    right: 171px; /* 10px Rand + 155px Modellauswahl + 6px Abstand */
     z-index: 10000;
     pointer-events: auto;
     display: flex;
-    flex-direction: column; /* Vertikaler Stapel: Rad über Split */
-    gap: 4px;
+    flex-direction: column;
+    height: 70px; /* EXAKT IDENTISCH ZU .model-toggle-column */
+    gap: 3px;
+    box-sizing: border-box;
 }
 
 .settings-control-btn {
@@ -81,8 +83,7 @@ html, body {
     align-items: center;
     justify-content: center;
     width: 32px !important;
-    height: 32px !important;
-    line-height: 32px !important;
+    flex: 1 !important; /* Füllt exakt 50% der 70px Höhe aus */
     font-size: 15px !important;
     text-decoration: none !important;
     background-color: rgba(33, 43, 54, 0.95) !important;
@@ -95,6 +96,7 @@ html, body {
     user-select: none;
     -webkit-tap-highlight-color: transparent;
     outline: none;
+    box-sizing: border-box;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -308,7 +310,7 @@ html, body {
     box-shadow: 0 0 12px rgba(0, 122, 183, 0.75), 0 4px 10px rgba(0, 0, 0, 0.4) !important;
 }
 
-/* --- MODELL-AUSWAHLEN (EXAKT 155px BREIT) --- */
+/* --- MODELL-AUSWAHLEN (HÖHE: 70px) --- */
 .model-select-header {
     position: fixed;
     top: 10px;
@@ -325,6 +327,7 @@ body.split-active .model-select-left { display: block; }
     display: flex;
     flex-direction: column;
     width: 100%;
+    height: 70px; /* EXAKTE HÖHE */
     gap: 3px;
     background: rgba(24, 33, 42, 0.95);
     backdrop-filter: blur(8px);
@@ -338,18 +341,20 @@ body.split-active .model-select-left { display: block; }
 .model-toggle-row {
     display: flex;
     width: 100%;
+    flex: 1; /* Teilt die Höhe 50/50 auf */
     gap: 3px;
 }
 
 .model-btn {
     flex: 1;
+    height: 100%;
     min-width: 0;
     background: transparent;
     border: none;
     border-radius: 8px;
     color: #cbd5e1;
     font-family: Arial, sans-serif;
-    padding: 3px 2px;
+    padding: 2px 2px;
     cursor: pointer;
     transition: all 0.2s;
     display: flex;
@@ -383,7 +388,7 @@ body.split-active .model-select-left { display: block; }
     letter-spacing: -0.2px;
 }
 
-/* --- HAUPTLAUF- & MEMBER-TOGGLE BUTTON (PER DEFAULT IMMER SICHTBAR & ZUGEKLAPPT) --- */
+/* --- HAUPTLAUF- & MEMBER-TOGGLE BUTTON --- */
 .member-toggle-btn {
     display: block;
     width: 100%;
@@ -391,9 +396,9 @@ body.split-active .model-select-left { display: block; }
     border: 1px solid rgba(255,255,255,0.18);
     border-radius: 8px;
     color: #cbd5e1;
-    font-size: 11px;
+    font-size: 11.5px;
     font-weight: bold;
-    padding: 5px 8px;
+    padding: 6px 8px;
     margin-top: 4px;
     cursor: pointer;
     box-shadow: 0 3px 8px rgba(0,0,0,0.4);
@@ -404,7 +409,7 @@ body.split-active .model-select-left { display: block; }
 .member-toggle-btn:hover { background: #007ab7; color: #ffffff; border-color: #70c4ff; }
 .member-toggle-btn.active { background: #007ab7; color: #ffffff; border-color: #70c4ff; }
 
-/* --- MEMBER-DROPDOWN-PANEL (IDENTISCH IN SINGLE & SPLIT, MAX 155px BREIT) --- */
+/* --- MEMBER-DROPDOWN-PANEL MIT WIEDER GRÖSSEREN BUTTONS --- */
 .member-dropdown {
     position: absolute !important;
     top: calc(100% + 4px) !important;
@@ -450,8 +455,8 @@ body.split-active .model-select-left { display: block; }
 }
 
 .member-section-title {
-    font-size: 9.5px; font-weight: bold;
-    margin: 6px 0 3px 2px; text-transform: uppercase; letter-spacing: 0.5px;
+    font-size: 10px; font-weight: bold;
+    margin: 8px 0 4px 2px; text-transform: uppercase; letter-spacing: 0.5px;
     color: #ffffff !important;
 }
 
@@ -462,9 +467,9 @@ body.split-active .model-select-left { display: block; }
     border-radius: 8px;
     color: #e0e0e0;
     font-family: Arial, sans-serif;
-    font-size: 10.5px; font-weight: bold;
-    padding: 5px 8px;
-    margin: 2px 0 5px 0;
+    font-size: 11px; font-weight: bold;
+    padding: 7px 10px; /* Schön hoch */
+    margin: 3px 0 6px 0;
     display: flex; justify-content: space-between; align-items: center;
     cursor: pointer;
     transition: all 0.2s;
@@ -480,13 +485,16 @@ body.split-active .model-select-left { display: block; }
     box-shadow: 0 0 10px rgba(0, 122, 183, 0.65);
 }
 
+/* Schön große, hohe Member-Buttons */
 .member-btn {
     width: 100%;
     background-color: rgba(255,255,255,0.06);
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 8px;
-    color: #e0e0e0; font-weight: bold; font-size: 10.5px;
-    padding: 5px 4px; margin: 2px 0;
+    color: #e0e0e0; font-weight: bold; font-size: 11px;
+    padding: 7px 4px; /* Höherer Klickbereich */
+    min-height: 28px;
+    margin: 3px 0;
     cursor: pointer; text-align: center;
     box-shadow: 0 1px 3px rgba(0,0,0,0.25);
     transition: all 0.15s ease-in-out;
@@ -582,7 +590,7 @@ body.split-active .model-select-left { display: block; }
 /* Einstellungs-Popup */
 .settings-popup {
     top: 48px;
-    right: 172px; /* Unter dem Zahnrad ausgerichtet */
+    right: 171px;
     left: auto;
     width: 260px;
 }
@@ -743,7 +751,7 @@ body.split-active .model-select-left { display: block; }
     font-family: Arial, sans-serif;
     font-size: 11px;
     font-weight: bold;
-    padding: 5px 12px;
+    padding: 6px 12px;
     cursor: pointer;
     box-shadow: 0 4px 15px rgba(0,0,0,0.65);
     margin-bottom: 4px;
@@ -782,15 +790,17 @@ body.split-active .model-select-left { display: block; }
     .model-select-right { right: 6px; }
     .model-select-left { left: 6px; }
     
+    .model-toggle-column { height: 64px; }
+    
     .custom-settings-control {
         top: 6px;
-        right: 156px; /* Direkt neben den 145px Buttons */
+        right: 156px; /* Direkt neben 145px Modellauswahl */
+        height: 64px; /* Exakt selbe Höhe auf Mobile */
+        gap: 3px;
     }
     .settings-control-btn {
-        width: 30px !important;
-        height: 30px !important;
-        line-height: 30px !important;
-        font-size: 14px !important;
+        width: 28px !important;
+        font-size: 13px !important;
     }
     .settings-popup {
         right: 10px;
@@ -804,12 +814,12 @@ body.split-active .model-select-left { display: block; }
     .layer2-btn { font-size: 9px; padding: 3px 16px 4px 16px; border-radius: 0 0 12px 12px; }
 
     .member-dropdown { width: 145px !important; }
-    .member-btn { font-size: 10px; padding: 5px 3px; }
+    .member-btn { font-size: 10.5px; padding: 6px 3px; min-height: 26px; }
 
     .control-panel { bottom: 6px; left: 6px; right: 6px; width: auto; transform: none; padding: 6px 8px; border-radius: 10px; }
     
     .legend-wrapper { bottom: 105px; left: 6px; }
-    .legend-toggle-btn { font-size: 10px; padding: 4px 8px; }
+    .legend-toggle-btn { font-size: 10px; padding: 5px 10px; }
     .legend-box { padding: 4px; }
     .legend-column { width: 50px; }
     .legend-scale { height: 160px; }
