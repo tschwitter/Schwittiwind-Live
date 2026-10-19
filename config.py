@@ -52,7 +52,7 @@ MODELS_CONFIG = {
         "max_runs": 4,
         "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"],
         "ensemble_variables": ["wind", "gust", "sun", "dbz"],
-        "max_chunks": 4
+        "max_chunks": 3
     },
     "arome": {
         "name": "AROME HD (1.3km)",
@@ -76,7 +76,7 @@ MODELS_CONFIG = {
         "max_runs": 8,     # 8 Läufe à 3 Stunden im Archiv
         "active_variables": ["wind", "gust"],
         "ensemble_variables": ["wind", "gust"],
-        "max_chunks": 4
+        "max_chunks": 2
     }
 }
 
