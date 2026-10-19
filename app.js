@@ -1,10 +1,13 @@
 var mapLeft, mapRight;
 var isSplitActive = false;
 var isSyncingMaps = false;
-var isLegendOpen = false; // STANDARDMÄSSIG EINGEKLAPPT
+var isLegendOpen = false;
 var syncRafId = null;
 
 var ALL_MODELS = ["icon-ch1", "icon-ch2", "arome", "icon-d2"];
+
+// Mobile Zustand: Standardmässig eingeklappt
+var isMobileModelExpanded = false;
 
 var modelsState = {
     left: {
@@ -182,7 +185,7 @@ function toggleSplitScreen(e) {
         wrapper.classList.remove("single-view");
         wrapper.classList.add("split-view");
     } else {
-        wrapper.classList.remove("split-view");
+        wrapper.classList.remove("single-view");
         wrapper.classList.add("single-view");
     }
 
@@ -206,7 +209,23 @@ function toggleLegend() {
     if (btn) btn.classList.toggle("active", isLegendOpen);
 }
 
-// UNABHÄNGIGES TOGGLEN DES MEMBER-PANELS (OHNE ANDERE PANELS ZU SCHLIESSEN)
+// MOBILE EINKLAPP- / AUSKLAPP-LOGIK
+function toggleMobileModelPanel(forceState) {
+    if (typeof forceState === "boolean") {
+        isMobileModelExpanded = forceState;
+    } else {
+        isMobileModelExpanded = !isMobileModelExpanded;
+    }
+
+    document.body.classList.toggle("mobile-models-expanded", isMobileModelExpanded);
+    var elR = document.getElementById("modelSelectRight");
+    var elL = document.getElementById("modelSelectLeft");
+
+    if (elR) elR.classList.toggle("mobile-collapsed", !isMobileModelExpanded);
+    if (elL) elL.classList.toggle("mobile-collapsed", !isMobileModelExpanded);
+}
+
+// UNABHÄNGIGES TOGGLEN DES MEMBER-PANELS
 function toggleMemberPanel(side) {
     var p = document.getElementById(side === 'left' ? "memberPanelLeft" : "memberPanelRight");
     var b = document.getElementById(side === 'left' ? "btnToggleMemberLeft" : "btnToggleMemberRight");
@@ -371,7 +390,6 @@ async function handleModelButtonClick(modelName, side) {
     var st = modelsState[effectiveSide];
 
     if (st.currentModel !== modelName) {
-        // Wechsle Modell
         st.currentModel = modelName;
         var runs = availableRuns[modelName] || [];
         var runId = selectedRuns[effectiveSide][modelName] || (runs.length > 0 ? runs[0].id : null);
@@ -404,6 +422,13 @@ function updateModelButtonLabels() {
     ['left', 'right'].forEach(side => {
         var effectiveStateSide = isSplitActive ? side : 'left';
         var st = modelsState[effectiveStateSide];
+
+        // Aktualisiert die Beschriftung des hochkanten Mobile-Reiters
+        var tabLabel = document.getElementById(side === 'left' ? "tabModelLabelLeft" : "tabModelLabelRight");
+        if (tabLabel) {
+            tabLabel.innerText = getModelShortLabel(st.currentModel);
+        }
+
         ALL_MODELS.forEach(m => {
             var btn = document.getElementById(`btnModel-${side}-${m}`);
             if (!btn) return;
@@ -537,7 +562,6 @@ function toggleHoehenMenu() {
     document.getElementById("btnToggleHoehen").innerText = isHoehenOpen ? "Höhenwind ▴" : "Höhenwind ▾";
 }
 
-// UNABHÄNGIGES TOGGLE FÜR 2. EBENE
 function toggleLayer2Dropdown() {
     var el = document.getElementById("layer2Dropdown");
     var isAlreadyOpen = (el.style.display === "flex");
@@ -554,7 +578,6 @@ function toggleLayer2Dropdown() {
     el.style.display = "flex";
 }
 
-// UNABHÄNGIGES TOGGLE FÜR EINSTELLUNGEN
 function toggleSettings(e) {
     if (e) e.preventDefault();
     var el = document.getElementById("settingsPopup");
@@ -880,7 +903,6 @@ function jumpToDaySameHour(targetDayName) {
     updateForecast();
 }
 
-// MEMBER-BUTTONS KLICKEN ÄNDERT DEN MEMBER, LÄSST DAS PANEL ABER OFFEN
 function renderMemberButtonsForTarget(side, hId, eId, sId, optPrefix) {
     var effectiveStateSide = isSplitActive ? side : 'left';
     var st = modelsState[effectiveStateSide];
@@ -1239,6 +1261,10 @@ async function init() {
         });
 
         window.onresize = function() {
+            // Auf mobilen Bildschirmen standardmässig eingeklappt starten
+            if (window.innerWidth <= 768) {
+                toggleMobileModelPanel(false);
+            }
             updateModelButtonLabels();
             initMemberPanelsAll();
             updateForecast();
@@ -1249,6 +1275,11 @@ async function init() {
 
         for (const m of ALL_MODELS) {
             await fetchAvailableRuns(m);
+        }
+
+        // Standardmässig auf Mobile eingeklappt starten
+        if (window.innerWidth <= 768) {
+            toggleMobileModelPanel(false);
         }
 
         await loadModelAndRun('left', 'icon-ch1');
@@ -1314,7 +1345,6 @@ async function updateForecast() {
         if (btn) btn.classList.toggle("active", d === currentDayName);
     });
 
-    // Ausgeschriebener Name auf dem Hauptlauf-Toggle-Button
     ['left', 'right'].forEach(side => {
         var effectiveStateSide = isSplitActive ? side : 'left';
         var st = modelsState[effectiveStateSide];
