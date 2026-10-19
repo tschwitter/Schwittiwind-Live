@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Wetter & Wind (ICON CH1, CH2, D2 & AROME HD)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=37" />
+    <link rel="stylesheet" href="style.css?v=38" />
 </head>
 <body>
 
@@ -33,105 +33,120 @@
         </div>
     </div>
 
-    <!-- EINSTELLUNGEN & SPLIT-BUTTON: ÜBEREINANDER NEBEN DER MODELLAUSWAHL -->
+    <!-- EINSTELLUNGEN-, SPLIT- & COLLAPSE-BUTTONS -->
     <div class="custom-settings-control">
         <a href="#" class="settings-control-btn" id="settingsBtn" onclick="toggleSettings(event)" title="Karten- & Ebenen-Optionen">⚙</a>
         <a href="#" class="settings-control-btn split-toggle-btn" id="splitBtn" onclick="toggleSplitScreen(event)" title="Splitscreen Vergleich an/aus">◫</a>
+        <a href="#" class="settings-control-btn collapse-control-btn" id="collapseBtn" onclick="toggleMobileModelPanel(false)" title="Modellauswahl zuklappen">▶</a>
     </div>
 
     <!-- MODELL-AUSWAHL LINKS (NUR IM SPLITSCREEN SICHTBAR) -->
-    <div class="model-select-header model-select-left" id="modelSelectLeft">
-        <div class="model-toggle-column">
-            <div class="model-toggle-row">
-                <button class="model-btn" id="btnModel-left-arome" onclick="handleModelButtonClick('arome', 'left')">
-                    <span class="model-title">AROME ▾</span>
-                    <span class="model-time">--</span>
-                </button>
-                <button class="model-btn" id="btnModel-left-icon-d2" onclick="handleModelButtonClick('icon-d2', 'left')">
-                    <span class="model-title">D2 ▾</span>
-                    <span class="model-time">--</span>
-                </button>
-            </div>
-            <div class="model-toggle-row">
-                <button class="model-btn active" id="btnModel-left-icon-ch1" onclick="handleModelButtonClick('icon-ch1', 'left')">
-                    <span class="model-title">CH1 ▾</span>
-                    <span class="model-time">--</span>
-                </button>
-                <button class="model-btn" id="btnModel-left-icon-ch2" onclick="handleModelButtonClick('icon-ch2', 'left')">
-                    <span class="model-title">CH2 ▾</span>
-                    <span class="model-time">--</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- BUTTON FÜR MEMBER-PANEL LINKS -->
-        <button class="member-toggle-btn" id="btnToggleMemberLeft" onclick="toggleMemberPanel('left')">
-            <span id="lblMemberBtnLeft">Hauptlauf ▾</span>
+    <div class="model-select-header model-select-left mobile-collapsed" id="modelSelectLeft">
+        <!-- Hochkanter Reiter für Mobile -->
+        <button class="model-tab-btn" onclick="toggleMobileModelPanel(true)">
+            <span id="tabModelLabelLeft">CH1</span>
         </button>
-        <div class="member-panel member-dropdown" id="memberPanelLeft" style="display: none;">
-            <div class="member-panel-title">LÄUFE (LINKS)</div>
-            <div class="member-section-title">Hauptlauf</div>
-            <div id="hauptlaufContainerLeft"></div>
-            <div id="ensembleGroupLeft">
-                <div class="member-section-title" style="margin-top: 10px;">Ensemble</div>
-                <button class="member-section-toggle" id="btnToggleEnsembleLeft" onclick="toggleEnsembleAccordionLocal('left')">
-                    <span>Members</span>
-                    <span id="ensembleChevronLeft" class="chevron">▾</span>
-                </button>
-                <div id="ensembleContainerLeft" class="member-grid" style="display: none;"></div>
 
-                <div class="member-section-title" style="margin-top: 10px;">Statistiken</div>
-                <div id="statistikenContainerLeft" class="member-grid"></div>
+        <div class="model-content-wrap">
+            <div class="model-toggle-column">
+                <div class="model-toggle-row">
+                    <button class="model-btn" id="btnModel-left-arome" onclick="handleModelButtonClick('arome', 'left')">
+                        <span class="model-title">AROME ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
+                    <button class="model-btn" id="btnModel-left-icon-d2" onclick="handleModelButtonClick('icon-d2', 'left')">
+                        <span class="model-title">D2 ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
+                </div>
+                <div class="model-toggle-row">
+                    <button class="model-btn active" id="btnModel-left-icon-ch1" onclick="handleModelButtonClick('icon-ch1', 'left')">
+                        <span class="model-title">CH1 ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
+                    <button class="model-btn" id="btnModel-left-icon-ch2" onclick="handleModelButtonClick('icon-ch2', 'left')">
+                        <span class="model-title">CH2 ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
+                </div>
             </div>
-            <div id="onlyHlNoticeLeft" class="only-hl-info">Nur Hauptlauf verfügbar</div>
+
+            <!-- BUTTON FÜR MEMBER-PANEL LINKS -->
+            <button class="member-toggle-btn" id="btnToggleMemberLeft" onclick="toggleMemberPanel('left')">
+                <span id="lblMemberBtnLeft">Hauptlauf ▾</span>
+            </button>
+            <div class="member-panel member-dropdown" id="memberPanelLeft" style="display: none;">
+                <div class="member-panel-title">LÄUFE (LINKS)</div>
+                <div class="member-section-title">Hauptlauf</div>
+                <div id="hauptlaufContainerLeft"></div>
+                <div id="ensembleGroupLeft">
+                    <div class="member-section-title" style="margin-top: 10px;">Ensemble</div>
+                    <button class="member-section-toggle" id="btnToggleEnsembleLeft" onclick="toggleEnsembleAccordionLocal('left')">
+                        <span>Members</span>
+                        <span id="ensembleChevronLeft" class="chevron">▾</span>
+                    </button>
+                    <div id="ensembleContainerLeft" class="member-grid" style="display: none;"></div>
+
+                    <div class="member-section-title" style="margin-top: 10px;">Statistiken</div>
+                    <div id="statistikenContainerLeft" class="member-grid"></div>
+                </div>
+                <div id="onlyHlNoticeLeft" class="only-hl-info">Nur Hauptlauf verfügbar</div>
+            </div>
         </div>
     </div>
 
     <!-- MODELL-AUSWAHL RECHTS (STANDARD: HAUPT-AUSWAHL / SPLIT: RECHTE KARTE) -->
-    <div class="model-select-header model-select-right" id="modelSelectRight">
-        <div class="model-toggle-column">
-            <div class="model-toggle-row">
-                <button class="model-btn" id="btnModel-right-arome" onclick="handleModelButtonClick('arome', 'right')">
-                    <span class="model-title">AROME ▾</span>
-                    <span class="model-time">--</span>
-                </button>
-                <button class="model-btn" id="btnModel-right-icon-d2" onclick="handleModelButtonClick('icon-d2', 'right')">
-                    <span class="model-title">D2 ▾</span>
-                    <span class="model-time">--</span>
-                </button>
-            </div>
-            <div class="model-toggle-row">
-                <button class="model-btn active" id="btnModel-right-icon-ch1" onclick="handleModelButtonClick('icon-ch1', 'right')">
-                    <span class="model-title">CH1 ▾</span>
-                    <span class="model-time">--</span>
-                </button>
-                <button class="model-btn" id="btnModel-right-icon-ch2" onclick="handleModelButtonClick('icon-ch2', 'right')">
-                    <span class="model-title">CH2 ▾</span>
-                    <span class="model-time">--</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- BUTTON FÜR MEMBER-PANEL RECHTS -->
-        <button class="member-toggle-btn" id="btnToggleMemberRight" onclick="toggleMemberPanel('right')">
-            <span id="lblMemberBtnRight">Hauptlauf ▾</span>
+    <div class="model-select-header model-select-right mobile-collapsed" id="modelSelectRight">
+        <!-- Hochkanter Reiter für Mobile -->
+        <button class="model-tab-btn" onclick="toggleMobileModelPanel(true)">
+            <span id="tabModelLabelRight">D2</span>
         </button>
-        <div class="member-panel member-dropdown" id="memberPanelRight" style="display: none;">
-            <div class="member-panel-title">LÄUFE</div>
-            <div class="member-section-title">Hauptlauf</div>
-            <div id="hauptlaufContainerRight"></div>
-            <div id="ensembleGroupRight">
-                <div class="member-section-title" style="margin-top: 10px;">Ensemble</div>
-                <button class="member-section-toggle" id="btnToggleEnsembleRight" onclick="toggleEnsembleAccordionLocal('right')">
-                    <span>Members</span>
-                    <span id="ensembleChevronRight" class="chevron">▾</span>
-                </button>
-                <div id="ensembleContainerRight" class="member-grid" style="display: none;"></div>
 
-                <div class="member-section-title" style="margin-top: 10px;">Statistiken</div>
-                <div id="statistikenContainerRight" class="member-grid"></div>
+        <div class="model-content-wrap">
+            <div class="model-toggle-column">
+                <div class="model-toggle-row">
+                    <button class="model-btn" id="btnModel-right-arome" onclick="handleModelButtonClick('arome', 'right')">
+                        <span class="model-title">AROME ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
+                    <button class="model-btn" id="btnModel-right-icon-d2" onclick="handleModelButtonClick('icon-d2', 'right')">
+                        <span class="model-title">D2 ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
+                </div>
+                <div class="model-toggle-row">
+                    <button class="model-btn active" id="btnModel-right-icon-ch1" onclick="handleModelButtonClick('icon-ch1', 'right')">
+                        <span class="model-title">CH1 ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
+                    <button class="model-btn" id="btnModel-right-icon-ch2" onclick="handleModelButtonClick('icon-ch2', 'right')">
+                        <span class="model-title">CH2 ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
+                </div>
             </div>
-            <div id="onlyHlNoticeRight" class="only-hl-info">Nur Hauptlauf verfügbar</div>
+
+            <!-- BUTTON FÜR MEMBER-PANEL RECHTS -->
+            <button class="member-toggle-btn" id="btnToggleMemberRight" onclick="toggleMemberPanel('right')">
+                <span id="lblMemberBtnRight">Hauptlauf ▾</span>
+            </button>
+            <div class="member-panel member-dropdown" id="memberPanelRight" style="display: none;">
+                <div class="member-panel-title">LÄUFE</div>
+                <div class="member-section-title">Hauptlauf</div>
+                <div id="hauptlaufContainerRight"></div>
+                <div id="ensembleGroupRight">
+                    <div class="member-section-title" style="margin-top: 10px;">Ensemble</div>
+                    <button class="member-section-toggle" id="btnToggleEnsembleRight" onclick="toggleEnsembleAccordionLocal('right')">
+                        <span>Members</span>
+                        <span id="ensembleChevronRight" class="chevron">▾</span>
+                    </button>
+                    <div id="ensembleContainerRight" class="member-grid" style="display: none;"></div>
+
+                    <div class="member-section-title" style="margin-top: 10px;">Statistiken</div>
+                    <div id="statistikenContainerRight" class="member-grid"></div>
+                </div>
+                <div id="onlyHlNoticeRight" class="only-hl-info">Nur Hauptlauf verfügbar</div>
+            </div>
         </div>
     </div>
 
@@ -230,6 +245,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=37"></script>
+    <script src="app.js?v=38"></script>
 </body>
 </html>
