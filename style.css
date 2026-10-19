@@ -106,10 +106,14 @@ body.split-active #mapLeft .leaflet-control-attribution,
     box-sizing: border-box;
 }
 
+/* Einklappbutton (▶): Neutral, leuchtet NICHT blau */
 .collapse-control-btn {
-    display: none !important; /* Nur auf Mobile sichtbar */
+    display: none !important;
     font-size: 13px !important;
-    color: #70c4ff !important;
+    color: #e0e0e0 !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    background-color: rgba(33, 43, 54, 0.95) !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5) !important;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -220,7 +224,7 @@ body.split-active #mapLeft .leaflet-control-attribution,
 }
 
 .sub-nav-row {
-    background-color: rgba(25, 34, 44, 0.95);
+    background-color: rgba(255, 255, 255, 0.05);
     border-color: rgba(0, 122, 183, 0.4);
     padding: 3px 8px;
     gap: 3px;
@@ -337,7 +341,6 @@ body.split-active #mapLeft .leaflet-control-attribution,
 .model-select-left { display: none; left: 10px; }
 body.split-active .model-select-left { display: block; }
 
-/* HOCHKANT EINKLAPP-REITER (AUF DESKTOP VERSTECKT) */
 .model-tab-btn {
     display: none;
 }
@@ -498,9 +501,9 @@ body.split-active .model-select-left { display: block; }
     padding: 7px 10px;
     margin: 3px 0 6px 0;
     display: flex; 
-    justify-content: center; /* ZENTRIERT */
+    justify-content: center;
     align-items: center;
-    gap: 5px; /* Pfeil direkt neben Members */
+    gap: 5px;
     cursor: pointer;
     transition: all 0.2s;
     user-select: none;
@@ -816,7 +819,6 @@ body.split-active .model-select-left { display: block; }
 
 /* --- RESPONSIVES MOBILE DESIGN: EINGEKLAPPTE MODELLAUSWAHL --- */
 @media (max-width: 768px) {
-    /* Wenn Modellauswahl ausgeklappt ist: Top-Panel ausblenden, um Überlappung zu verhindern */
     body.mobile-models-expanded .top-control-panel {
         opacity: 0 !important;
         pointer-events: none !important;
@@ -830,7 +832,7 @@ body.split-active .model-select-left { display: block; }
     .model-select-right { right: 6px; }
     .model-select-left { left: 6px; }
 
-    /* Der hochkante Reiter-Button auf Mobile */
+    /* HOCHKANT-REITER: GEGEN DEN UHRZEIGERSINN GEDREHT (-90deg) */
     .model-tab-btn {
         display: flex;
         align-items: center;
@@ -852,11 +854,10 @@ body.split-active .model-select-left { display: block; }
     }
     .model-tab-btn span {
         display: inline-block;
-        transform: rotate(90deg);
+        transform: rotate(-90deg); /* ANDERSRUM HOCHKANT */
         white-space: nowrap;
     }
 
-    /* Standardmässig eingeklappt: Panel verbergen, Reiter anzeigen */
     .model-select-header.mobile-collapsed .model-content-wrap {
         display: none !important;
     }
@@ -864,7 +865,6 @@ body.split-active .model-select-left { display: block; }
         display: flex !important;
     }
 
-    /* Ausgeklappt: Reiter verbergen, Panel anzeigen */
     .model-select-header:not(.mobile-collapsed) {
         width: 145px;
     }
@@ -875,18 +875,16 @@ body.split-active .model-select-left { display: block; }
         display: block !important;
     }
 
-    /* Positionierung der Settings-Controls */
     .custom-settings-control {
         top: 6px;
-        right: 40px; /* Neben dem eingeklappten 28px Reiter */
+        right: 40px;
         height: 64px;
         gap: 3px;
     }
 
-    /* Wenn rechts ausgeklappt: Buttons wandern links neben das 145px Panel & Collapse-Pfeil (▶) wird sichtbar */
     body.mobile-models-expanded .custom-settings-control {
         right: 156px !important;
-        height: 98px !important; /* Platz für 3 Buttons */
+        height: 98px !important;
     }
     body.mobile-models-expanded .collapse-control-btn {
         display: flex !important;
