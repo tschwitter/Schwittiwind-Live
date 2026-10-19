@@ -34,7 +34,7 @@ MODELS_CONFIG = {
         "hhl_asset": "vertical_constants_icon-ch1-eps.grib2",
         "nx": 400,
         "ny": 240,
-        "hours": 3,
+        "hours": 33,
         "max_members": 11,
         "max_runs": 8,
         "active_variables": ["wind", "gust"],
@@ -64,7 +64,7 @@ MODELS_CONFIG = {
         "max_runs": 8,     # 8 Läufe à 3 Stunden im Archiv
         "active_variables": ["wind", "gust"],
         "ensemble_variables": [],
-        "max_chunks": 4
+        "max_chunks": 1
     },
     "icon-d2": {
         "name": "ICON-D2 (2.2km)",
