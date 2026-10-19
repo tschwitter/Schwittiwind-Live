@@ -82,7 +82,7 @@ body.split-active #mapLeft .leaflet-control-attribution,
     height: 70px;
     gap: 3px;
     box-sizing: border-box;
-    transition: right 0.2s ease, height 0.2s ease;
+    transition: right 0.2s ease, height 0.2s ease, top 0.2s ease;
 }
 
 .settings-control-btn {
@@ -818,16 +818,18 @@ body.split-active .model-select-left { display: block; }
 .legend-bar { width: 16px; height: 230px; display: flex; flex-direction: column; border-radius: 2px; overflow: hidden; border: 1px solid rgba(0,0,0,0.8); }
 .legend-labels { position: absolute; left: 22px; top: -5px; height: 240px; font-size: 8.5px; font-weight: bold; display: flex; flex-direction: column; justify-content: space-between; }
 
-/* --- RESPONSIVES MOBILE DESIGN: EINGEKLAPPTE MODELLAUSWAHL --- */
+/* --- RESPONSIVES MOBILE DESIGN --- */
 @media (max-width: 768px) {
+    /* Wenn Modellauswahl ausgeklappt ist: Top-Panel sanft ausblenden */
     body.mobile-models-expanded .top-control-panel {
         opacity: 0 !important;
         pointer-events: none !important;
         transform: translate(-50%, -10px) !important;
     }
 
+    /* Modellauswahl unterhalb der Parameter- und 2.-Ebene-Leiste platzieren */
     .model-select-header {
-        top: 6px;
+        top: 64px !important; /* SAUBER UNTERHALB DER LEISTE */
         width: auto;
     }
     .model-select-right { right: 6px; }
@@ -876,8 +878,9 @@ body.split-active .model-select-left { display: block; }
         display: block !important;
     }
 
+    /* Buttons ebenfalls auf top: 64px absenken, damit sie nicht überlappen */
     .custom-settings-control {
-        top: 6px;
+        top: 64px !important; /* SAUBER UNTERHALB DER LEISTE */
         right: 40px;
         height: 64px;
         gap: 3px;
@@ -898,7 +901,7 @@ body.split-active .model-select-left { display: block; }
 
     .settings-popup {
         right: 10px;
-        top: 44px;
+        top: 102px !important; /* Passend zum versetzten Zahnrad */
         width: 240px;
     }
 
