@@ -1,7 +1,7 @@
 var mapLeft, mapRight;
 var isSplitActive = false;
 var isSyncingMaps = false;
-var isLegendOpen = false; // PER DEFAULT JETZT ÜBERALL EINGEKLAPPT
+var isLegendOpen = false; // STANDARDMÄSSIG EINGEKLAPPT
 var syncRafId = null;
 
 var ALL_MODELS = ["icon-ch1", "icon-ch2", "arome", "icon-d2"];
@@ -21,7 +21,7 @@ var modelsState = {
         canvasRenderer2: null
     },
     right: {
-        currentModel: "arome",
+        currentModel: "icon-d2",
         currentRunId: null,
         currentMemberIdx: 0,
         config: null,
@@ -368,8 +368,9 @@ function navRun(dir) {
     }
 }
 
+// IN SINGLE-ANSICHT STEUERN DIE BUTTONS IMMER 'left' (DIE SICHTBARE KARTE)
 async function handleModelButtonClick(modelName, side) {
-    var effectiveSide = isSplitActive ? side : 'right';
+    var effectiveSide = isSplitActive ? side : 'left';
     var st = modelsState[effectiveSide];
 
     if (st.currentModel !== modelName) {
@@ -404,7 +405,7 @@ function getModelShortLabel(m) {
 
 function updateModelButtonLabels() {
     ['left', 'right'].forEach(side => {
-        var effectiveStateSide = isSplitActive ? side : 'right';
+        var effectiveStateSide = isSplitActive ? side : 'left';
         var st = modelsState[effectiveStateSide];
         ALL_MODELS.forEach(m => {
             var btn = document.getElementById(`btnModel-${side}-${m}`);
@@ -421,7 +422,7 @@ function updateModelButtonLabels() {
 }
 
 function toggleRunDropdown(side, modelName) {
-    var effectiveSide = isSplitActive ? side : 'right';
+    var effectiveSide = isSplitActive ? side : 'left';
     var elId = `runDropdown-${side}-${modelName}`;
     var el = document.getElementById(elId);
     if (!el) return;
@@ -463,10 +464,11 @@ function toggleRunDropdown(side, modelName) {
 
 async function selectRun(side, modelName, runId) {
     closeAllPopups();
-    modelsState[side].currentModel = modelName;
-    modelsState[side].currentRunId = runId;
-    selectedRuns[side][modelName] = runId;
-    await loadModelAndRun(side, modelName, runId);
+    var effectiveSide = isSplitActive ? side : 'left';
+    modelsState[effectiveSide].currentModel = modelName;
+    modelsState[effectiveSide].currentRunId = runId;
+    selectedRuns[effectiveSide][modelName] = runId;
+    await loadModelAndRun(effectiveSide, modelName, runId);
 }
 
 async function loadModelAndRun(side, modelName, runId) {
@@ -513,11 +515,12 @@ async function loadModelAndRun(side, modelName, runId) {
 
 function updateEnsembleToggleState() {
     ['left', 'right'].forEach(side => {
+        var effectiveStateSide = isSplitActive ? side : 'left';
         var btn = document.getElementById(side === 'left' ? "btnToggleEnsembleLeft" : "btnToggleEnsembleRight");
-        var cfg = modelsState[side].config;
+        var cfg = modelsState[effectiveStateSide].config;
         if (!btn || !cfg || !cfg.member_names) return;
         var statOffset = cfg.member_names.length - 6;
-        var isMemberActive = (modelsState[side].currentMemberIdx >= 1 && modelsState[side].currentMemberIdx < statOffset);
+        var isMemberActive = (modelsState[effectiveStateSide].currentMemberIdx >= 1 && modelsState[effectiveStateSide].currentMemberIdx < statOffset);
         btn.classList.toggle("active-indicator", isMemberActive && !isEnsembleOpen);
     });
 }
@@ -598,7 +601,7 @@ function initNavigationBars() {
     wetterContainer.innerHTML = "";
     hoehenContainer.innerHTML = "";
 
-    var effectiveSide = isSplitActive ? 'right' : 'right';
+    var effectiveSide = isSplitActive ? 'left' : 'left';
     var cfg = modelsState[effectiveSide].config;
     if (!cfg) return;
     var vars = cfg.variables || Object.keys(cfg.variables_config);
@@ -633,7 +636,7 @@ function initNavigationBars() {
 }
 
 function updateActiveButtonStates() {
-    var effectiveSide = isSplitActive ? 'right' : 'right';
+    var effectiveSide = isSplitActive ? 'left' : 'left';
     var cfg = modelsState[effectiveSide].config;
     if (!cfg) return;
     var vars = cfg.variables || Object.keys(cfg.variables_config);
@@ -673,7 +676,7 @@ function initLayer2Dropdown() {
     clearBtn.onclick = function() { setSecondaryVar(null); };
     menu.appendChild(clearBtn);
 
-    var effectiveSide = isSplitActive ? 'right' : 'right';
+    var effectiveSide = isSplitActive ? 'left' : 'left';
     var cfg = modelsState[effectiveSide].config;
     if (!cfg) return;
     var vars = cfg.variables || Object.keys(cfg.variables_config);
@@ -694,7 +697,7 @@ function setSecondaryVar(newVar) {
     var btn = document.getElementById("layer2Btn");
     var cfgSec = document.getElementById("cfgSectionL2");
     var titleSec = document.getElementById("cfgTitleL2");
-    var effectiveSide = isSplitActive ? 'right' : 'right';
+    var effectiveSide = isSplitActive ? 'left' : 'left';
     var cfg = modelsState[effectiveSide].config;
 
     if (layer2Var) {
@@ -720,7 +723,7 @@ function switchLayer1(newVar) {
     layer1Var = newVar;
     updateActiveButtonStates();
 
-    var effectiveSide = isSplitActive ? 'right' : 'right';
+    var effectiveSide = isSplitActive ? 'left' : 'left';
     var cfg = modelsState[effectiveSide].config;
     var vCfg = cfg ? cfg.variables_config[layer1Var] : null;
     var hasEns = vCfg ? vCfg.has_ensemble : (cfg && cfg.member_names && cfg.member_names.length > 1);
@@ -785,7 +788,7 @@ function navRight() {
 }
 
 function navUp() {
-    var side = isSplitActive ? 'right' : 'right';
+    var side = isSplitActive ? 'left' : 'left';
     if (verticalNavMode === 'run') {
         navRun(-1);
         return;
@@ -807,7 +810,7 @@ function navUp() {
 }
 
 function navDown() {
-    var side = isSplitActive ? 'right' : 'right';
+    var side = isSplitActive ? 'left' : 'left';
     if (verticalNavMode === 'run') {
         navRun(1);
         return;
@@ -832,8 +835,7 @@ function initDayButtons() {
     uniqueDays = [];
     dayTimesteps = {};
     
-    var effectiveSide = isSplitActive ? 'right' : 'right';
-    var times = modelsState[effectiveSide].times || modelsState.left.times;
+    var times = modelsState.left.times;
     if (!times) return;
 
     times.forEach((t, idx) => {
@@ -858,8 +860,7 @@ function initDayButtons() {
 }
 
 function jumpToDaySameHour(targetDayName) {
-    var effectiveSide = isSplitActive ? 'right' : 'right';
-    var times = modelsState[effectiveSide].times || modelsState.left.times;
+    var times = modelsState.left.times;
     if (!times || !times[currentStepIdx]) return;
     var currentHour = parseInt(times[currentStepIdx].local_str.split(" ")[1].split(":")[0]);
     var targetIndices = dayTimesteps[targetDayName];
@@ -879,9 +880,10 @@ function jumpToDaySameHour(targetDayName) {
     updateForecast();
 }
 
-// VOLL AUSGESCHRIEBENE LABELS (HAUPTLAUF, MEMBER X, MEDIAN, MIN, MAX, IQR ETC.)
+// IN SINGLE-ANSICHT STEUERN DIE BUTTONS IMMER 'left'
 function renderMemberButtonsForTarget(side, hId, eId, sId, optPrefix) {
-    var st = modelsState[side];
+    var effectiveStateSide = isSplitActive ? side : 'left';
+    var st = modelsState[effectiveStateSide];
     var cfg = st.config;
     var hCont = document.getElementById(hId);
     var eCont = document.getElementById(eId);
@@ -910,7 +912,7 @@ function renderMemberButtonsForTarget(side, hId, eId, sId, optPrefix) {
             }
             eCont.appendChild(btn);
         } else if (hasMultiple) {
-            btn.innerText = name; // Vollständiger Name ("Median", "Min", "Max", "Interquantilabstand" etc.)
+            btn.innerText = name;
             btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); closeAllPopups(); };
             sCont.appendChild(btn);
         }
@@ -931,7 +933,7 @@ function initMemberPanelsAll() {
 }
 
 function renderSingleLegendCol(varName, isIQR) {
-    var effectiveSide = isSplitActive ? 'right' : 'right';
+    var effectiveSide = isSplitActive ? 'left' : 'left';
     var cfg = modelsState[effectiveSide].config || {};
     var vCfg = (cfg.variables_config && cfg.variables_config[varName]) || {};
     var paletteType = isIQR ? ("iqr_" + (vCfg.palette || "wind")) : (vCfg.palette || "wind");
@@ -996,7 +998,7 @@ function renderSingleLegendCol(varName, isIQR) {
 
 function updateLegend() {
     var box = document.getElementById("legendBox");
-    var effectiveSide = isSplitActive ? 'right' : 'right';
+    var effectiveSide = isSplitActive ? 'left' : 'left';
     var cfg = modelsState[effectiveSide].config;
     if (!cfg) return;
     var hasMultiple = cfg.member_names && cfg.member_names.length > 1;
@@ -1218,8 +1220,7 @@ async function init() {
             var steps = dayTimesteps[curDay] || [];
             if (steps.length === 0) return;
 
-            var effectiveSide = isSplitActive ? 'right' : 'right';
-            var times = modelsState[effectiveSide].times || modelsState.left.times;
+            var times = modelsState.left.times;
             var bestIdx = steps[0];
             var minDiff = 999;
             steps.forEach(idx => {
@@ -1252,8 +1253,9 @@ async function init() {
             await fetchAvailableRuns(m);
         }
 
+        // Standardmäßig startet links CH1, rechts D2
         await loadModelAndRun('left', 'icon-ch1');
-        await loadModelAndRun('right', 'icon-ch1'); // Standardmässig rechts = Single-Hauptansicht
+        await loadModelAndRun('right', 'icon-d2');
         updateCityLabels();
     } catch (err) {
         console.error("Fehler bei init():", err);
@@ -1261,9 +1263,9 @@ async function init() {
 }
 
 async function updateForecast() {
-    var sidesToUpdate = isSplitActive ? ['left', 'right'] : ['right'];
-    var effectiveSide = isSplitActive ? 'left' : 'right';
-    var times = modelsState[effectiveSide].times || modelsState.right.times;
+    var sidesToUpdate = isSplitActive ? ['left', 'right'] : ['left'];
+    var effectiveSide = 'left';
+    var times = modelsState[effectiveSide].times;
     if (!times || !times[currentStepIdx]) return;
 
     var currentDayName = getDayNameForStep(currentStepIdx);
@@ -1296,7 +1298,7 @@ async function updateForecast() {
     var hourMin = tInfo.local_str.split(" ")[1].substring(0, 5);
     document.getElementById("currentStepLabel").innerText = parts[0] + "." + parts[1] + " " + hourMin + " LT";
 
-    var cfgCurrent = modelsState[effectiveSide].config;
+    var cfgCurrent = modelsState.left.config;
     var refParts = cfgCurrent ? cfgCurrent.ref_time_utc.split(" ") : ["01.01.", "00:00"];
     var refDateParts = refParts[0].split(".");
     var refTimeHour = refParts[1].split(":")[0];
@@ -1306,7 +1308,7 @@ async function updateForecast() {
         var modR = getModelShortLabel(modelsState.right.currentModel);
         document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z | L: ${modL} | R: ${modR}`;
     } else {
-        var modShort = getModelShortLabel(modelsState.right.currentModel);
+        var modShort = getModelShortLabel(modelsState.left.currentModel);
         document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z ${modShort}`;
     }
 
@@ -1315,9 +1317,10 @@ async function updateForecast() {
         if (btn) btn.classList.toggle("active", d === currentDayName);
     });
 
-    // Voll ausgeschriebenes Label auf dem Button
+    // Ausgeschriebenes Label auf dem Button
     ['left', 'right'].forEach(side => {
-        var st = modelsState[side];
+        var effectiveStateSide = isSplitActive ? side : 'left';
+        var st = modelsState[effectiveStateSide];
         var lbl = document.getElementById(side === 'left' ? "lblMemberBtnLeft" : "lblMemberBtnRight");
         if (lbl && st.config && st.config.member_names) {
             var mName = st.config.member_names[st.currentMemberIdx] || "Hauptlauf";
@@ -1326,7 +1329,8 @@ async function updateForecast() {
     });
 
     ['left', 'right'].forEach(side => {
-        var st = modelsState[side];
+        var effectiveStateSide = isSplitActive ? side : 'left';
+        var st = modelsState[effectiveStateSide];
         if (st.config && st.config.member_names) {
             for (var i = 0; i < st.config.member_names.length; i++) {
                 var btn = document.getElementById((side === 'left' ? "left-" : "right-") + "member-btn-" + i);
@@ -1338,12 +1342,11 @@ async function updateForecast() {
     updateEnsembleToggleState();
     updateLegend();
 
+    // RENDER AUF DER JEWEILIGEN KARTE
+    renderContours('left');
+    drawVisibleArrows('left');
+
     if (isSplitActive) {
-        renderContours('left');
-        drawVisibleArrows('left');
-        renderContours('right');
-        drawVisibleArrows('right');
-    } else {
         renderContours('right');
         drawVisibleArrows('right');
     }
