@@ -1,7 +1,7 @@
 var mapLeft, mapRight;
 var isSplitActive = false;
 var isSyncingMaps = false;
-var isSplitLegendOpen = false;
+var isLegendOpen = false; // PER DEFAULT JETZT ÜBERALL EINGEKLAPPT
 var syncRafId = null;
 
 var ALL_MODELS = ["icon-ch1", "icon-ch2", "arome", "icon-d2"];
@@ -171,11 +171,7 @@ function toggleSplitScreen(e) {
     document.body.classList.toggle("split-active", isSplitActive);
     
     if (btn) {
-        if (isSplitActive) {
-            btn.classList.add("active");
-        } else {
-            btn.classList.remove("active");
-        }
+        btn.classList.toggle("active", isSplitActive);
         btn.blur();
     }
     if (document.activeElement && document.activeElement.blur) {
@@ -186,11 +182,8 @@ function toggleSplitScreen(e) {
         wrapper.classList.remove("single-view");
         wrapper.classList.add("split-view");
     } else {
-        wrapper.classList.remove("single-view");
+        wrapper.classList.remove("split-view");
         wrapper.classList.add("single-view");
-        isSplitLegendOpen = false;
-        var legBox = document.getElementById("legendBox");
-        if (legBox) legBox.classList.remove("open");
     }
 
     setTimeout(async () => {
@@ -205,13 +198,15 @@ function toggleSplitScreen(e) {
     }, 150);
 }
 
-function toggleSplitLegend() {
-    isSplitLegendOpen = !isSplitLegendOpen;
+function toggleLegend() {
+    isLegendOpen = !isLegendOpen;
     var box = document.getElementById("legendBox");
-    if (box) box.classList.toggle("open", isSplitLegendOpen);
+    var btn = document.getElementById("btnToggleLegend");
+    if (box) box.style.display = isLegendOpen ? "flex" : "none";
+    if (btn) btn.classList.toggle("active", isLegendOpen);
 }
 
-function toggleSplitMemberPanel(side) {
+function toggleMemberPanel(side) {
     var p = document.getElementById(side === 'left' ? "memberPanelLeft" : "memberPanelRight");
     var b = document.getElementById(side === 'left' ? "btnToggleMemberLeft" : "btnToggleMemberRight");
     if (!p) return;
@@ -275,9 +270,7 @@ function getDayNameForStep(stepIdx) {
 }
 
 function setPopupsDimmed(dimmed) {
-    var p = document.getElementById("memberPanel");
     var l = document.getElementById("legendBox");
-    if (p) p.classList.toggle("panel-dimmed", dimmed);
     if (l) l.classList.toggle("panel-dimmed", dimmed);
 }
 
@@ -376,7 +369,7 @@ function navRun(dir) {
 }
 
 async function handleModelButtonClick(modelName, side) {
-    var effectiveSide = isSplitActive ? side : 'left';
+    var effectiveSide = isSplitActive ? side : 'right';
     var st = modelsState[effectiveSide];
 
     if (st.currentModel !== modelName) {
@@ -411,7 +404,7 @@ function getModelShortLabel(m) {
 
 function updateModelButtonLabels() {
     ['left', 'right'].forEach(side => {
-        var effectiveStateSide = isSplitActive ? side : 'left';
+        var effectiveStateSide = isSplitActive ? side : 'right';
         var st = modelsState[effectiveStateSide];
         ALL_MODELS.forEach(m => {
             var btn = document.getElementById(`btnModel-${side}-${m}`);
@@ -428,7 +421,7 @@ function updateModelButtonLabels() {
 }
 
 function toggleRunDropdown(side, modelName) {
-    var effectiveSide = isSplitActive ? side : 'left';
+    var effectiveSide = isSplitActive ? side : 'right';
     var elId = `runDropdown-${side}-${modelName}`;
     var el = document.getElementById(elId);
     if (!el) return;
@@ -511,29 +504,22 @@ async function loadModelAndRun(side, modelName, runId) {
     initDayButtons();
     initMemberPanelsAll();
 
+    var vCfg = st.config && st.config.variables_config && st.config.variables_config[layer1Var];
+    var hasEns = vCfg ? vCfg.has_ensemble : (st.config && st.config.member_names && st.config.member_names.length > 1);
+    updateMemberPanelVisibility(hasEns);
+
     await updateForecast();
 }
 
 function updateEnsembleToggleState() {
-    var btn = document.getElementById("btnToggleEnsemble");
-    var cfg = modelsState.left.config;
-    if (!btn || !cfg) return;
-    var statOffset = cfg.member_names.length - 6;
-    var isMemberActive = (modelsState.left.currentMemberIdx >= 1 && modelsState.left.currentMemberIdx < statOffset);
-    btn.classList.toggle("active-indicator", isMemberActive && !isEnsembleOpen);
-}
-
-function toggleEnsembleAccordion(forceOpen) {
-    if (forceOpen === true) isEnsembleOpen = true;
-    else if (forceOpen === false) isEnsembleOpen = false;
-    else isEnsembleOpen = !isEnsembleOpen;
-
-    localStorage.setItem("icon_ensemble_open", isEnsembleOpen ? "true" : "false");
-    var cont = document.getElementById("ensembleContainer");
-    var btn = document.getElementById("btnToggleEnsemble");
-    if (cont) cont.style.display = isEnsembleOpen ? "block" : "none";
-    if (btn) btn.classList.toggle("open", isEnsembleOpen);
-    updateEnsembleToggleState();
+    ['left', 'right'].forEach(side => {
+        var btn = document.getElementById(side === 'left' ? "btnToggleEnsembleLeft" : "btnToggleEnsembleRight");
+        var cfg = modelsState[side].config;
+        if (!btn || !cfg || !cfg.member_names) return;
+        var statOffset = cfg.member_names.length - 6;
+        var isMemberActive = (modelsState[side].currentMemberIdx >= 1 && modelsState[side].currentMemberIdx < statOffset);
+        btn.classList.toggle("active-indicator", isMemberActive && !isEnsembleOpen);
+    });
 }
 
 function toggleWetterMenu() {
@@ -612,7 +598,8 @@ function initNavigationBars() {
     wetterContainer.innerHTML = "";
     hoehenContainer.innerHTML = "";
 
-    var cfg = modelsState.left.config;
+    var effectiveSide = isSplitActive ? 'right' : 'right';
+    var cfg = modelsState[effectiveSide].config;
     if (!cfg) return;
     var vars = cfg.variables || Object.keys(cfg.variables_config);
     if (!layer1Var || !vars.includes(layer1Var)) layer1Var = vars[0];
@@ -646,7 +633,8 @@ function initNavigationBars() {
 }
 
 function updateActiveButtonStates() {
-    var cfg = modelsState.left.config;
+    var effectiveSide = isSplitActive ? 'right' : 'right';
+    var cfg = modelsState[effectiveSide].config;
     if (!cfg) return;
     var vars = cfg.variables || Object.keys(cfg.variables_config);
     var isWetterActive = false;
@@ -685,7 +673,8 @@ function initLayer2Dropdown() {
     clearBtn.onclick = function() { setSecondaryVar(null); };
     menu.appendChild(clearBtn);
 
-    var cfg = modelsState.left.config;
+    var effectiveSide = isSplitActive ? 'right' : 'right';
+    var cfg = modelsState[effectiveSide].config;
     if (!cfg) return;
     var vars = cfg.variables || Object.keys(cfg.variables_config);
     vars.forEach(vKey => {
@@ -705,7 +694,8 @@ function setSecondaryVar(newVar) {
     var btn = document.getElementById("layer2Btn");
     var cfgSec = document.getElementById("cfgSectionL2");
     var titleSec = document.getElementById("cfgTitleL2");
-    var cfg = modelsState.left.config;
+    var effectiveSide = isSplitActive ? 'right' : 'right';
+    var cfg = modelsState[effectiveSide].config;
 
     if (layer2Var) {
         var vCfg = (cfg && cfg.variables_config[layer2Var]) || {};
@@ -730,10 +720,11 @@ function switchLayer1(newVar) {
     layer1Var = newVar;
     updateActiveButtonStates();
 
-    var cfg = modelsState.left.config;
+    var effectiveSide = isSplitActive ? 'right' : 'right';
+    var cfg = modelsState[effectiveSide].config;
     var vCfg = cfg ? cfg.variables_config[layer1Var] : null;
-    var hasEns = vCfg ? vCfg.has_ensemble : (cfg && cfg.member_names.length > 1);
-    if (!hasEns) modelsState.left.currentMemberIdx = 0;
+    var hasEns = vCfg ? vCfg.has_ensemble : (cfg && cfg.member_names && cfg.member_names.length > 1);
+    if (!hasEns) modelsState[effectiveSide].currentMemberIdx = 0;
 
     document.getElementById("cfgTitleL1").innerText = "1. Ebene: " + (vCfg ? vCfg.label : layer1Var);
     setLayerOpacity(1, (vCfg && vCfg.palette === "cloud") ? 95 : 60);
@@ -743,10 +734,12 @@ function switchLayer1(newVar) {
 }
 
 function updateMemberPanelVisibility(hasEns) {
-    var ensGroup = document.getElementById("ensembleGroup");
-    var notice = document.getElementById("onlyHlNotice");
-    if (ensGroup) ensGroup.style.display = hasEns ? "block" : "none";
-    if (notice) notice.style.display = hasEns ? "none" : "block";
+    ['left', 'right'].forEach(side => {
+        var ensGroup = document.getElementById(side === 'left' ? "ensembleGroupLeft" : "ensembleGroupRight");
+        var notice = document.getElementById(side === 'left' ? "onlyHlNoticeLeft" : "onlyHlNoticeRight");
+        if (ensGroup) ensGroup.style.display = hasEns ? "block" : "none";
+        if (notice) notice.style.display = hasEns ? "none" : "block";
+    });
 }
 
 function navLeft() {
@@ -792,12 +785,13 @@ function navRight() {
 }
 
 function navUp() {
+    var side = isSplitActive ? 'right' : 'right';
     if (verticalNavMode === 'run') {
         navRun(-1);
         return;
     }
-    var st = modelsState.left;
-    if (!st.config || st.config.member_names.length <= 1) return;
+    var st = modelsState[side];
+    if (!st.config || !st.config.member_names || st.config.member_names.length <= 1) return;
     var statOffset = st.config.member_names.length - 6;
 
     if (!isEnsembleOpen) {
@@ -813,12 +807,13 @@ function navUp() {
 }
 
 function navDown() {
+    var side = isSplitActive ? 'right' : 'right';
     if (verticalNavMode === 'run') {
         navRun(1);
         return;
     }
-    var st = modelsState.left;
-    if (!st.config || st.config.member_names.length <= 1) return;
+    var st = modelsState[side];
+    if (!st.config || !st.config.member_names || st.config.member_names.length <= 1) return;
     var maxIdx = st.config.member_names.length - 1;
     var statOffset = st.config.member_names.length - 6;
 
@@ -837,7 +832,8 @@ function initDayButtons() {
     uniqueDays = [];
     dayTimesteps = {};
     
-    var times = modelsState.left.times;
+    var effectiveSide = isSplitActive ? 'right' : 'right';
+    var times = modelsState[effectiveSide].times || modelsState.left.times;
     if (!times) return;
 
     times.forEach((t, idx) => {
@@ -862,7 +858,8 @@ function initDayButtons() {
 }
 
 function jumpToDaySameHour(targetDayName) {
-    var times = modelsState.left.times;
+    var effectiveSide = isSplitActive ? 'right' : 'right';
+    var times = modelsState[effectiveSide].times || modelsState.left.times;
     if (!times || !times[currentStepIdx]) return;
     var currentHour = parseInt(times[currentStepIdx].local_str.split(" ")[1].split(":")[0]);
     var targetIndices = dayTimesteps[targetDayName];
@@ -882,6 +879,7 @@ function jumpToDaySameHour(targetDayName) {
     updateForecast();
 }
 
+// VOLL AUSGESCHRIEBENE LABELS (HAUPTLAUF, MEMBER X, MEDIAN, MIN, MAX, IQR ETC.)
 function renderMemberButtonsForTarget(side, hId, eId, sId, optPrefix) {
     var st = modelsState[side];
     var cfg = st.config;
@@ -891,11 +889,10 @@ function renderMemberButtonsForTarget(side, hId, eId, sId, optPrefix) {
     if (!cfg || !hCont || !eCont || !sCont) return;
 
     hCont.innerHTML = ""; eCont.innerHTML = ""; sCont.innerHTML = "";
-    var isMobile = window.innerWidth <= 768;
     var runs = availableRuns[st.currentModel] || [];
     var isOldRun = (runs.length > 0 && st.currentRunId !== runs[0].id);
-    var hasMultiple = cfg.member_names.length > 1;
-    var statOffset = cfg.member_names.length - 6;
+    var hasMultiple = cfg.member_names && cfg.member_names.length > 1;
+    var statOffset = hasMultiple ? (cfg.member_names.length - 6) : 1;
 
     cfg.member_names.forEach((name, idx) => {
         var btn = document.createElement("button");
@@ -903,42 +900,39 @@ function renderMemberButtonsForTarget(side, hId, eId, sId, optPrefix) {
         btn.id = (optPrefix ? (optPrefix + "-") : "") + "member-btn-" + idx;
 
         if (idx === 0) {
-            btn.innerText = isMobile ? "HL" : "Hauptlauf";
-            btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); };
+            btn.innerText = "Hauptlauf";
+            btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); closeAllPopups(); };
             hCont.appendChild(btn);
         } else if (hasMultiple && idx >= 1 && idx < statOffset) {
-            btn.innerText = isMobile ? "M" + idx : "Member " + idx;
+            btn.innerText = "Member " + idx;
             if (!isOldRun) {
-                btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); };
+                btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); closeAllPopups(); };
             }
             eCont.appendChild(btn);
         } else if (hasMultiple) {
-            if (idx === statOffset) btn.innerText = isMobile ? "MD" : name;
-            else if (idx === statOffset + 1) btn.innerText = "Min";
-            else if (idx === statOffset + 2) btn.innerText = "Max";
-            else if (idx === statOffset + 3) btn.innerText = isMobile ? "%25" : name;
-            else if (idx === statOffset + 4) btn.innerText = isMobile ? "%75" : name;
-            else if (idx === statOffset + 5) btn.innerText = isMobile ? "IQ" : name;
-            btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); };
+            btn.innerText = name; // Vollständiger Name ("Median", "Min", "Max", "Interquantilabstand" etc.)
+            btn.onclick = function() { st.currentMemberIdx = idx; updateForecast(); closeAllPopups(); };
             sCont.appendChild(btn);
         }
     });
 
-    var ensGroup = document.getElementById(side === 'left' ? "ensembleGroupLeft" : (side === 'right' ? "ensembleGroupRight" : "ensembleGroup"));
-    var notice = document.getElementById(side === 'left' ? "onlyHlNoticeLeft" : (side === 'right' ? "onlyHlNoticeRight" : "onlyHlNotice"));
+    var ensGroupId = side === 'left' ? "ensembleGroupLeft" : "ensembleGroupRight";
+    var noticeId = side === 'left' ? "onlyHlNoticeLeft" : "onlyHlNoticeRight";
+    var ensGroup = document.getElementById(ensGroupId);
+    var notice = document.getElementById(noticeId);
     if (ensGroup) ensGroup.style.display = hasMultiple ? "block" : "none";
     if (notice) notice.style.display = hasMultiple ? "none" : "block";
 }
 
 function initMemberPanelsAll() {
-    renderMemberButtonsForTarget('left', "hauptlaufContainer", "ensembleContainer", "statistikenContainer", "");
     renderMemberButtonsForTarget('left', "hauptlaufContainerLeft", "ensembleContainerLeft", "statistikenContainerLeft", "left");
     renderMemberButtonsForTarget('right', "hauptlaufContainerRight", "ensembleContainerRight", "statistikenContainerRight", "right");
     updateEnsembleToggleState();
 }
 
 function renderSingleLegendCol(varName, isIQR) {
-    var cfg = modelsState.left.config || {};
+    var effectiveSide = isSplitActive ? 'right' : 'right';
+    var cfg = modelsState[effectiveSide].config || {};
     var vCfg = (cfg.variables_config && cfg.variables_config[varName]) || {};
     var paletteType = isIQR ? ("iqr_" + (vCfg.palette || "wind")) : (vCfg.palette || "wind");
     var p = (cfg.palettes && cfg.palettes[paletteType]) || (cfg.palettes && cfg.palettes["wind"]) || { levels: [], colors: [] };
@@ -1002,16 +996,17 @@ function renderSingleLegendCol(varName, isIQR) {
 
 function updateLegend() {
     var box = document.getElementById("legendBox");
-    var cfg = modelsState.left.config;
+    var effectiveSide = isSplitActive ? 'right' : 'right';
+    var cfg = modelsState[effectiveSide].config;
     if (!cfg) return;
-    var hasMultiple = cfg.member_names.length > 1;
-    var iqrIdx = cfg.member_names.length - 1;
-    var isIQR1 = (hasMultiple && modelsState.left.currentMemberIdx === iqrIdx);
+    var hasMultiple = cfg.member_names && cfg.member_names.length > 1;
+    var iqrIdx = hasMultiple ? (cfg.member_names.length - 1) : 0;
+    var isIQR1 = (hasMultiple && modelsState[effectiveSide].currentMemberIdx === iqrIdx);
     
     var html = renderSingleLegendCol(layer1Var, isIQR1);
     if (layer2Var && layer2Var !== layer1Var) {
         var vCfg2 = cfg.variables_config[layer2Var] || {};
-        var isIQR2 = (hasMultiple && vCfg2.has_ensemble && modelsState.left.currentMemberIdx === iqrIdx);
+        var isIQR2 = (hasMultiple && vCfg2.has_ensemble && modelsState[effectiveSide].currentMemberIdx === iqrIdx);
         html += renderSingleLegendCol(layer2Var, isIQR2);
     }
     box.innerHTML = html;
@@ -1076,9 +1071,9 @@ function generateContoursClient(gridObj, paletteType, cfg) {
 async function ensureDataLoaded(side, varName, memberIdx, stepIdx) {
     var st = modelsState[side];
     const cacheKey = `${st.currentModel}_${st.currentRunId}_${varName}_${memberIdx}_${stepIdx}`;
-    const vCfg = (st.config && st.config.variables_config[varName]) || {};
-    var hasMultiple = st.config && st.config.member_names.length > 1;
-    var iqrIdx = st.config ? st.config.member_names.length - 1 : 0;
+    const vCfg = (st.config && st.config.variables_config && st.config.variables_config[varName]) || {};
+    var hasMultiple = st.config && st.config.member_names && st.config.member_names.length > 1;
+    var iqrIdx = hasMultiple ? (st.config.member_names.length - 1) : 0;
     const isIQR = (hasMultiple && vCfg.has_ensemble && memberIdx === iqrIdx);
     const paletteType = isIQR ? ("iqr_" + (vCfg.palette || "wind")) : (vCfg.palette || "wind");
 
@@ -1137,7 +1132,7 @@ function initMapInstance(domId) {
 
     var relief = L.tileLayer(swisstopo_relief_url, {
         pane: 'reliefPane',
-        attribution: '&copy; swisstopo | Wetterdaten: &copy; MeteoSchweiz, DWD & Météo-France',
+        attribution: '&copy; swisstopo | Wetter: &copy; MeteoSchweiz, DWD & Météo-France',
         maxZoom: 15, maxNativeZoom: 14
     }).addTo(m);
 
@@ -1223,7 +1218,8 @@ async function init() {
             var steps = dayTimesteps[curDay] || [];
             if (steps.length === 0) return;
 
-            var times = modelsState.left.times;
+            var effectiveSide = isSplitActive ? 'right' : 'right';
+            var times = modelsState[effectiveSide].times || modelsState.left.times;
             var bestIdx = steps[0];
             var minDiff = 999;
             steps.forEach(idx => {
@@ -1257,7 +1253,7 @@ async function init() {
         }
 
         await loadModelAndRun('left', 'icon-ch1');
-        await loadModelAndRun('right', 'arome');
+        await loadModelAndRun('right', 'icon-ch1'); // Standardmässig rechts = Single-Hauptansicht
         updateCityLabels();
     } catch (err) {
         console.error("Fehler bei init():", err);
@@ -1265,8 +1261,9 @@ async function init() {
 }
 
 async function updateForecast() {
-    var sidesToUpdate = isSplitActive ? ['left', 'right'] : ['left'];
-    var times = modelsState.left.times;
+    var sidesToUpdate = isSplitActive ? ['left', 'right'] : ['right'];
+    var effectiveSide = isSplitActive ? 'left' : 'right';
+    var times = modelsState[effectiveSide].times || modelsState.right.times;
     if (!times || !times[currentStepIdx]) return;
 
     var currentDayName = getDayNameForStep(currentStepIdx);
@@ -1299,8 +1296,8 @@ async function updateForecast() {
     var hourMin = tInfo.local_str.split(" ")[1].substring(0, 5);
     document.getElementById("currentStepLabel").innerText = parts[0] + "." + parts[1] + " " + hourMin + " LT";
 
-    var cfgL = modelsState.left.config;
-    var refParts = cfgL ? cfgL.ref_time_utc.split(" ") : ["01.01.", "00:00"];
+    var cfgCurrent = modelsState[effectiveSide].config;
+    var refParts = cfgCurrent ? cfgCurrent.ref_time_utc.split(" ") : ["01.01.", "00:00"];
     var refDateParts = refParts[0].split(".");
     var refTimeHour = refParts[1].split(":")[0];
     
@@ -1309,7 +1306,7 @@ async function updateForecast() {
         var modR = getModelShortLabel(modelsState.right.currentModel);
         document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z | L: ${modL} | R: ${modR}`;
     } else {
-        var modShort = getModelShortLabel(modelsState.left.currentModel);
+        var modShort = getModelShortLabel(modelsState.right.currentModel);
         document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z ${modShort}`;
     }
 
@@ -1318,37 +1315,35 @@ async function updateForecast() {
         if (btn) btn.classList.toggle("active", d === currentDayName);
     });
 
+    // Voll ausgeschriebenes Label auf dem Button
     ['left', 'right'].forEach(side => {
         var st = modelsState[side];
         var lbl = document.getElementById(side === 'left' ? "lblMemberBtnLeft" : "lblMemberBtnRight");
-        if (lbl && st.config) {
-            var mName = st.config.member_names[st.currentMemberIdx] || "HL";
-            lbl.innerText = (mName === "Hauptlauf" ? "HL" : mName) + " ▾";
+        if (lbl && st.config && st.config.member_names) {
+            var mName = st.config.member_names[st.currentMemberIdx] || "Hauptlauf";
+            lbl.innerText = mName + " ▾";
         }
     });
 
-    if (cfgL) {
-        for (var i = 0; i < cfgL.member_names.length; i++) {
-            var btn = document.getElementById("member-btn-" + i);
-            if (btn) btn.classList.toggle("active", i === modelsState.left.currentMemberIdx);
-            var btnL = document.getElementById("left-member-btn-" + i);
-            if (btnL) btnL.classList.toggle("active", i === modelsState.left.currentMemberIdx);
+    ['left', 'right'].forEach(side => {
+        var st = modelsState[side];
+        if (st.config && st.config.member_names) {
+            for (var i = 0; i < st.config.member_names.length; i++) {
+                var btn = document.getElementById((side === 'left' ? "left-" : "right-") + "member-btn-" + i);
+                if (btn) btn.classList.toggle("active", i === st.currentMemberIdx);
+            }
         }
-    }
-    var cfgR = modelsState.right.config;
-    if (cfgR) {
-        for (var j = 0; j < cfgR.member_names.length; j++) {
-            var btnR = document.getElementById("right-member-btn-" + j);
-            if (btnR) btnR.classList.toggle("active", j === modelsState.right.currentMemberIdx);
-        }
-    }
+    });
 
     updateEnsembleToggleState();
     updateLegend();
-    renderContours('left');
-    drawVisibleArrows('left');
 
     if (isSplitActive) {
+        renderContours('left');
+        drawVisibleArrows('left');
+        renderContours('right');
+        drawVisibleArrows('right');
+    } else {
         renderContours('right');
         drawVisibleArrows('right');
     }
@@ -1439,8 +1434,8 @@ function drawVisibleArrows(side) {
     var arrowVar = null;
     var arrowMember = 0;
     var vCfg1 = st.config.variables_config[layer1Var];
-    var hasMultiple = st.config.member_names.length > 1;
-    var iqrIdx = st.config.member_names.length - 1;
+    var hasMultiple = st.config.member_names && st.config.member_names.length > 1;
+    var iqrIdx = hasMultiple ? (st.config.member_names.length - 1) : 0;
     
     if (vCfg1 && vCfg1.has_arrows && (!hasMultiple || st.currentMemberIdx < iqrIdx - 5)) {
         arrowVar = layer1Var;
@@ -1471,7 +1466,6 @@ function drawVisibleArrows(side) {
     else if (zoom === 13) step = 2;
     else if (zoom >= 14) step = 1;
 
-    // Für 200x120-Gitter (CH2 & D2) Schrittweite leicht reduzieren für harmonische Pfeildichte
     if (st.config.nx <= 200) {
         step = Math.max(1, Math.round(step / 2));
     }
