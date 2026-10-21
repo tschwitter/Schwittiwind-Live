@@ -545,26 +545,24 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
         "ref_lat": grid_info["ref_lat"]
     }
 
-# ================= ECMWF 0.1° (IFS + 50 ENSEMBLE MEMBER) FETCHER =================
-def _parse_ecmwf_subgrid(grib_path, lead_hour, is_ens=False):
-    """Extrahiert 10u, 10v, 10fg aus ECMWF 0.1° GRIB2 und schneidet auf die Schweiz zu."""
+# ================= ECMWF 0.1° (IFS 10M WIND + 50 ENSEMBLE MEMBER) FETCHER =================
+def _parse_ecmwf_subgrid(grib_path, is_ens=False):
+    """Extrahiert 10u und 10v aus ECMWF 0.1° GRIB2 und schneidet auf die Schweiz zu."""
     try:
         with SilenceStderr():
             datasets = cfgrib.open_datasets(grib_path)
     except Exception:
-        return None, None, None, None, None
+        return None, None, None, None
 
-    u_da, v_da, g_da = None, None, None
+    u_da, v_da = None, None
     for ds in datasets:
         if '10u' in ds: u_da = ds['10u']
         elif 'u10' in ds: u_da = ds['u10']
         if '10v' in ds: v_da = ds['10v']
         elif 'v10' in ds: v_da = ds['v10']
-        if '10fg' in ds: g_da = ds['10fg']
-        elif 'fg10' in ds: g_da = ds['fg10']
 
     if u_da is None or v_da is None:
-        return None, None, None, None, None
+        return None, None, None, None
 
     lat_name = 'latitude' if 'latitude' in u_da.coords else 'lat'
     lon_name = 'longitude' if 'longitude' in u_da.coords else 'lon'
@@ -576,11 +574,6 @@ def _parse_ecmwf_subgrid(grib_path, lead_hour, is_ens=False):
     u_sub = u_da.sel({lat_name: lat_slice, lon_name: lon_slice}).values
     v_sub = v_da.sel({lat_name: lat_slice, lon_name: lon_slice}).values
 
-    if lead_hour == 0 or g_da is None:
-        g_sub = np.full_like(u_sub, np.nan)
-    else:
-        g_sub = g_da.sel({lat_name: lat_slice, lon_name: lon_slice}).values
-
     sub_lats = u_da[lat_name].sel({lat_name: lat_slice}).values
     sub_lons = u_da[lon_name].sel({lon_name: lon_slice}).values
     glon, glat = np.meshgrid(sub_lons, sub_lats)
@@ -590,53 +583,50 @@ def _parse_ecmwf_subgrid(grib_path, lead_hour, is_ens=False):
         if u_sub.ndim == 3:
             num_m = u_sub.shape[0]
             pts = u_sub.shape[1] * u_sub.shape[2]
-            return u_sub.reshape(num_m, pts), v_sub.reshape(num_m, pts), g_sub.reshape(num_m, pts), glon.ravel(), glat.ravel()
+            return u_sub.reshape(num_m, pts), v_sub.reshape(num_m, pts), glon.ravel(), glat.ravel()
         else:
-            return u_sub.ravel()[np.newaxis, :], v_sub.ravel()[np.newaxis, :], g_sub.ravel()[np.newaxis, :], glon.ravel(), glat.ravel()
+            return u_sub.ravel()[np.newaxis, :], v_sub.ravel()[np.newaxis, :], glon.ravel(), glat.ravel()
     else:
-        return u_sub.ravel(), v_sub.ravel(), g_sub.ravel(), glon.ravel(), glat.ravel()
+        return u_sub.ravel(), v_sub.ravel(), glon.ravel(), glat.ravel()
 
 def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
-    """Lädt Hauptlauf (HRES fc) und alle 50 Ensemble-Member (pf) für einen Zeitschritt."""
+    """Lädt Hauptlauf (HRES fc) und alle 50 Ensemble-Member (pf) nur für 10m Wind."""
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ctrl, \
          tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ens:
         path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
 
-    u_h, v_h, g_h = None, None, None
-    u_e, v_e, g_e = None, None, None
+    u_h, v_h = None, None
+    u_e, v_e = None, None
     lons, lats = None, None
 
-    # Hauptlauf Stream: 00z/12z ist 'oper', 06z/18z ist 'scda'
+    # Stream-Auswahl: 00z/12z ist 'oper', 06z/18z ist 'scda'
     hl_stream = "oper" if time_hh in [0, 12] else "scda"
 
-    # Böen-Parameter 10fg existiert bei step=0 physikalisch nicht
-    fetch_params = ["10u", "10v"] if step_hour == 0 else ["10u", "10v", "10fg"]
-
-    # 1. Hauptlauf (type="fc")
+    # 1. Hauptlauf (fc) nur für 10u und 10v
     try:
         client.retrieve(
             date=date_ymd, time=time_hh, step=step_hour,
             stream=hl_stream, type="fc", levtype="sfc",
-            param=fetch_params, target=path_ctrl
+            param=["10u", "10v"], target=path_ctrl
         )
-        u_h, v_h, g_h, lons, lats = _parse_ecmwf_subgrid(path_ctrl, step_hour, is_ens=False)
+        u_h, v_h, lons, lats = _parse_ecmwf_subgrid(path_ctrl, is_ens=False)
     except Exception as e:
         print(f"⚠️ Hinweis: Hauptlauf (+{step_hour}h) nicht geladen: {e}", flush=True)
 
-    # 2. 50 Ensemble-Member (stream="enfo", type="pf")
+    # 2. 50 Ensemble-Member (pf) nur für 10u und 10v
     try:
         client.retrieve(
             date=date_ymd, time=time_hh, step=step_hour,
             stream="enfo", type="pf", levtype="sfc",
-            param=fetch_params, target=path_ens
+            param=["10u", "10v"], target=path_ens
         )
-        u_e, v_e, g_e, elons, elats = _parse_ecmwf_subgrid(path_ens, step_hour, is_ens=True)
+        u_e, v_e, elons, elats = _parse_ecmwf_subgrid(path_ens, is_ens=True)
         if lons is None:
             lons, lats = elons, elats
     except Exception as e:
         print(f"⚠️ Hinweis: Ensemble (+{step_hour}h) nicht geladen: {e}", flush=True)
 
-    # Temporäre GRIB2-Dateien aufräumen
+    # Dateien sofort löschen um Plattenplatz zu schonen
     for p in [path_ctrl, path_ens]:
         if os.path.exists(p):
             try:
@@ -644,15 +634,14 @@ def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
             except Exception:
                 pass
 
-    # Falls der Hauptlauf fehlte, aber Ensemble da ist: Nimm Member 0 als Fallback
     if u_h is None and u_e is not None:
-        u_h, v_h, g_h = u_e[0], v_e[0], g_e[0]
+        u_h, v_h = u_e[0], v_e[0]
 
-    return u_h, v_h, g_h, u_e, v_e, g_e, lons, lats
+    return u_h, v_h, u_e, v_e, lons, lats
 
 def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     from ecmwf.opendata import Client
-    print(f"-> Lade ECMWF 0.1° (Wind & Böen inkl. 50 Ensemble-Member) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
+    print(f"-> Lade ECMWF 0.1° (10m Wind inkl. 50 Ensemble-Member via Azure) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
 
     try:
         ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
@@ -665,20 +654,18 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     all_steps = config.get_model_step_hours("ecmwf", ref_dt)
     target_steps = all_steps[start_step : end_step + 1]
 
-    # Azure-Mirror verwenden: Verhindert AWS S3 '503 Slow Down' Rate-Limits!
+    # Stabile, nicht-gedrosselte Azure-Quelle
     try:
         client = Client(source="azure", model="ifs", resol="0p1")
     except Exception:
         client = Client(source="ecmwf", model="ifs", resol="0p1")
 
-    u_h_list, v_h_list, g_h_list = [], [], []
-    u_e_list, v_e_list, g_e_list = [], [], []
+    u_h_list, v_h_list = [], []
+    u_e_list, v_e_list = [], []
     ref_lon, ref_lat = None, None
 
-    # Schritte innerhalb des Runners sequenziell abrufen,
-    # da die Parallelisierung bereits über die GitHub-Actions-Matrix läuft!
     for sh in target_steps:
-        u_h, v_h, g_h, u_e, v_e, g_e, lons, lats = fetch_ecmwf_single_step(client, date_ymd, time_hh, sh)
+        u_h, v_h, u_e, v_e, lons, lats = fetch_ecmwf_single_step(client, date_ymd, time_hh, sh)
 
         if u_h is not None and ref_lon is None:
             ref_lon, ref_lat = lons, lats
@@ -689,11 +676,9 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
 
         u_h_list.append(u_h if u_h is not None else np.full(pts, np.nan, dtype=np.float32))
         v_h_list.append(v_h if v_h is not None else np.full(pts, np.nan, dtype=np.float32))
-        g_h_list.append(g_h if g_h is not None else np.full(pts, np.nan, dtype=np.float32))
 
         u_e_list.append(u_e if u_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
         v_e_list.append(v_e if v_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
-        g_e_list.append(g_e if g_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
 
     if ref_lon is None:
         raise RuntimeError(f"Konnte für ECMWF keine Gitterpunkte extrahieren.")
@@ -702,10 +687,8 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         "surface": {
             "u_h": xr.DataArray(np.stack(u_h_list, axis=0), dims=["lead_time", "cell"]),
             "v_h": xr.DataArray(np.stack(v_h_list, axis=0), dims=["lead_time", "cell"]),
-            "g_h": xr.DataArray(np.stack(g_h_list, axis=0), dims=["lead_time", "cell"]),
             "u_e": xr.DataArray(np.stack(u_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
-            "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
-            "g_e": xr.DataArray(np.stack(g_e_list, axis=0), dims=["lead_time", "eps", "cell"])
+            "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"])
         },
         "altitude_hl": {},
         "altitude_ens": {},
