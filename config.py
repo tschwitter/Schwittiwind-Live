@@ -37,7 +37,7 @@ MODELS_CONFIG = {
         "hours": 33,
         "max_members": 11,
         "max_runs": 8,
-        "active_variables": [],
+        "active_variables": ["wind"],
         #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
         "ensemble_variables": [],
         #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"
