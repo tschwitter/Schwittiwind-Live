@@ -88,8 +88,8 @@ MODELS_CONFIG = {
     "ecmwf": {
         "name": "ECMWF (0.1°)",
         "collection": "ifs-0p1",
-        "nx": 100,
-        "ny": 48,
+        "nx": 200,
+        "ny": 120,
         "max_members": 51,  # 1 Hauptlauf + 50 Ensemble-Member
         "max_runs": 4,      # Letzte 4 Läufe
         "active_variables": ["wind"],
