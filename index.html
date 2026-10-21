@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Wetter & Wind (ICON CH1, CH2, D2 & AROME HD)</title>
+    <title>Wetter & Wind (ICON CH1, CH2, D2, AROME & ECMWF 0.1°)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=42" />
+    <link rel="stylesheet" href="style.css?v=43" />
 </head>
 <body>
 
@@ -40,7 +40,7 @@
         <a href="#" class="settings-control-btn collapse-control-btn" id="collapseBtn" onclick="toggleMobileModelPanel(false)" title="Modellauswahl zuklappen">▶</a>
     </div>
 
-    <!-- MODELL-AUSWAHL LINKS (NUR IM SPLITSCREEN SICHTBAR) -->
+    <!-- MODELL-AUSWAHL LINKS (SPLITSCREEN) -->
     <div class="model-select-header model-select-left mobile-collapsed" id="modelSelectLeft">
         <button class="model-tab-btn" onclick="toggleMobileModelPanel(true)">
             <span id="tabModelLabelLeft">CH1</span>
@@ -55,6 +55,10 @@
                     </button>
                     <button class="model-btn" id="btnModel-left-icon-d2" onclick="handleModelButtonClick('icon-d2', 'left')">
                         <span class="model-title">D2 ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
+                    <button class="model-btn" id="btnModel-left-ecmwf" onclick="handleModelButtonClick('ecmwf', 'left')">
+                        <span class="model-title">EC ▾</span>
                         <span class="model-time">--</span>
                     </button>
                 </div>
@@ -93,7 +97,7 @@
         </div>
     </div>
 
-    <!-- MODELL-AUSWAHL RECHTS (STANDARD: HAUPT-AUSWAHL / SPLIT: RECHTE KARTE) -->
+    <!-- MODELL-AUSWAHL RECHTS -->
     <div class="model-select-header model-select-right mobile-collapsed" id="modelSelectRight">
         <button class="model-tab-btn" onclick="toggleMobileModelPanel(true)">
             <span id="tabModelLabelRight">D2</span>
@@ -108,6 +112,10 @@
                     </button>
                     <button class="model-btn" id="btnModel-right-icon-d2" onclick="handleModelButtonClick('icon-d2', 'right')">
                         <span class="model-title">D2 ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
+                    <button class="model-btn" id="btnModel-right-ecmwf" onclick="handleModelButtonClick('ecmwf', 'right')">
+                        <span class="model-title">EC ▾</span>
                         <span class="model-time">--</span>
                     </button>
                 </div>
@@ -151,11 +159,13 @@
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-left-icon-ch2"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-left-arome"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-left-icon-d2"></div>
+    <div class="floating-popup runs-dropdown-popup" id="runDropdown-left-ecmwf"></div>
 
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-icon-ch1"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-icon-ch2"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-arome"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-icon-d2"></div>
+    <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-ecmwf"></div>
 
     <div class="floating-popup layer2-dropdown-popup" id="layer2Dropdown"></div>
 
@@ -241,6 +251,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=42"></script>
+    <script src="app.js?v=43"></script>
 </body>
 </html>
