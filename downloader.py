@@ -552,8 +552,8 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
 # ================= ECMWF 0.1° ULTRA-FAST ECCODES DECODER =================
 def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
     """
-    Parst GRIB2 in C mit ecCodes in unter 0.2 Sekunden.
-    Extrahiert direkt die Schweizer Bounding-Box für 10u und 10v.
+    Parst GRIB2 in C mit ecCodes unter Auswertung der echten Gitter-Header.
+    Verhindert Nord-Süd- oder Ost-West-Spiegelungen garantiert.
     """
     if not os.path.exists(grib_path) or os.path.getsize(grib_path) < 1000:
         return None, None, None, None
@@ -573,7 +573,7 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
                 try:
                     param = eccodes.codes_get(gid, "shortName")
                     if param not in ["10u", "10v"]:
-                        continue  # 'finally' gibt gid sauber und genau einmal frei!
+                        continue
 
                     try:
                         m_num = int(eccodes.codes_get(gid, "perturbationNumber"))
@@ -587,19 +587,32 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
                     n_lats = int(eccodes.codes_get(gid, "Nj"))
                     n_lons = int(eccodes.codes_get(gid, "Ni"))
 
+                    la1 = float(eccodes.codes_get(gid, "latitudeOfFirstGridPointInDegrees"))
+                    lo1 = float(eccodes.codes_get(gid, "longitudeOfFirstGridPointInDegrees"))
+                    d_lat = float(eccodes.codes_get(gid, "jDirectionIncrementInDegrees"))
+                    d_lon = float(eccodes.codes_get(gid, "iDirectionIncrementInDegrees"))
+                    j_scans_pos = int(eccodes.codes_get(gid, "jScansPositively"))
+
                     matrix = vals.reshape(n_lats, n_lons)
 
-                    # Schweizer Indizes (0.1° globales Gitter)
-                    lat_top_idx = int(round((90.0 - config.LAT_MAX) / 0.1))
-                    lat_bot_idx = int(round((90.0 - config.LAT_MIN) / 0.1)) + 1
-                    lon_left_idx = int(round(config.LON_MIN / 0.1))
-                    lon_right_idx = int(round(config.LON_MAX / 0.1)) + 1
+                    if j_scans_pos == 1:
+                        lat_arr = la1 + np.arange(n_lats) * d_lat
+                    else:
+                        lat_arr = la1 - np.arange(n_lats) * d_lat
 
-                    sub = matrix[lat_top_idx:lat_bot_idx, lon_left_idx:lon_right_idx]
+                    lon_arr = (lo1 + np.arange(n_lons) * d_lon + 180.0) % 360.0 - 180.0
+
+                    r_mask = np.where((lat_arr >= config.LAT_MIN) & (lat_arr <= config.LAT_MAX))[0]
+                    c_mask = np.where((lon_arr >= config.LON_MIN) & (lon_arr <= config.LON_MAX))[0]
+
+                    r_min, r_max = r_mask[0], r_mask[-1] + 1
+                    c_min, c_max = c_mask[0], c_mask[-1] + 1
+
+                    sub = matrix[r_min:r_max, c_min:c_max]
 
                     if ref_lons is None:
-                        sub_lats = 90.0 - np.arange(lat_top_idx, lat_bot_idx) * 0.1
-                        sub_lons = np.arange(lon_left_idx, lon_right_idx) * 0.1
+                        sub_lats = lat_arr[r_min:r_max]
+                        sub_lons = lon_arr[c_min:c_max]
                         glon, glat = np.meshgrid(sub_lons, sub_lats)
                         ref_lons = glon.ravel().astype(np.float32)
                         ref_lats = glat.ravel().astype(np.float32)
@@ -638,10 +651,7 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
         return None, None, None, None
 
 def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
-    """
-    Lädt nur die Surface-Dateien (-sfc) per kontinuierlichem High-Speed-Stream (250 Mbit/s)
-    und extrahiert 10u & 10v mit ecCodes in C-Geschwindigkeit (0.15s).
-    """
+    """Lädt die Dateien per kontinuierlichem High-Speed-Stream und parst sie via ecCodes."""
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ctrl, \
          tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ens:
         path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
@@ -650,18 +660,17 @@ def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
     u_e, v_e = None, None
     lons, lats = None, None
 
-    # 1. Hauptlauf: Nur die 73 MB Surface-Datei laden (Dauer: ~2s bei 250 Mbit/s)
+    # 1. Hauptlauf (fc) als ganzer Surface-Stream (1 HTTP GET)
     try:
         client.download(
             date=date_ymd, time=time_hh, step=step_hour,
-            stream="oper", type="fc", levtype="sfc",
-            target=path_ctrl
+            type="fc", levtype="sfc", target=path_ctrl
         )
         u_h, v_h, lons, lats = _extract_swiss_subgrid_fast(path_ctrl, is_ens=False)
     except Exception as e:
         print(f"   ⚠️ ECMWF Hauptlauf (+{step_hour}h): {e}", flush=True)
 
-    # 2. Ensemble: Nur die 435 MB Surface-Datei für alle 50 Member laden (Dauer: ~14s bei 250 Mbit/s)
+    # 2. 50 Ensemble-Member (ef) als ganzer Surface-Stream (1 HTTP GET)
     try:
         client.download(
             date=date_ymd, time=time_hh, step=step_hour,
@@ -674,7 +683,6 @@ def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
     except Exception as e:
         print(f"   ⚠️ ECMWF Ensemble (+{step_hour}h): {e}", flush=True)
 
-    # Lokale temporäre 500-MB-Dateien sofort von der SSD löschen
     for p in [path_ctrl, path_ens]:
         if os.path.exists(p):
             try:
@@ -705,7 +713,6 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     all_steps = config.get_model_step_hours("ecmwf", ref_dt)
     target_steps = all_steps[start_step : end_step + 1]
 
-    # Google Cloud Mirror: Volle Bandbreite (50-100 MB/s)
     try:
         client = Client(source="google", model="ifs", resol="0p1")
     except Exception:
