@@ -50,9 +50,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: dist/data
-          key: hist-runs-v31-${{ github.run_id }}
+          key: hist-runs-v51-${{ github.run_id }}
           restore-keys: |
-            hist-runs-v31-
+            hist-runs-v51-
 
       - name: Schnellprüfung & Vorbereitung (CH1, CH2 & AROME)
         id: prep
@@ -128,14 +128,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 1. Frischer Cache v31 (lädt bestehende Läufe der letzten 24h)
+      # 1. Frischer Cache v51 (lädt bestehende Läufe der letzten 24h)
       - name: Historischen Datenbestand wiederherstellen
         uses: actions/cache/restore@v4
         with:
           path: dist/data
-          key: hist-runs-v31-${{ github.run_id }}
+          key: hist-runs-v51-${{ github.run_id }}
           restore-keys: |
-            hist-runs-v31-
+            hist-runs-v51-
 
       # 2. Basis-Website (Metadaten & index.html) einfügen
       - name: Basis-Website abrufen
@@ -159,13 +159,13 @@ jobs:
           echo "=== DATEIGRÖSSE VOR DEPLOY (Ziel: ~350 MB) ==="
           du -sh dist/ dist/data/* || true
 
-      # 5. Aktualisierten Datenbestand im Cache v31 sichern
+      # 5. Aktualisierten Datenbestand im Cache v51 sichern
       - name: Aktualisierten Datenbestand cachen
         uses: actions/cache/save@v4
         if: always()
         with:
           path: dist/data
-          key: hist-runs-v31-${{ github.run_id }}
+          key: hist-runs-v51-${{ github.run_id }}
 
       - name: GitHub Pages konfigurieren
         uses: actions/configure-pages@v5
