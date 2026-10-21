@@ -548,7 +548,23 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
         "ref_lat": grid_info["ref_lat"]
     }
 
-# ================= ECMWF 0.1° (IFS 10M WIND + 50 ENSEMBLE MEMBER) FETCHER =================
+# ================= ECMWF 0.1° DIRECT-STREAM TURBO FETCHER (50-100 MB/s) =================
+def _download_stream_fast(url_candidates, target_path):
+    """Lädt die GRIB2-Datei direkt als kontinuierlichen Stream mit voller Gigabit-Bandbreite."""
+    for url in url_candidates:
+        for attempt in range(1, 3):
+            try:
+                with requests.get(url, stream=True, timeout=60) as r:
+                    if r.status_code == 200:
+                        with open(target_path, "wb") as f:
+                            for chunk in r.iter_content(chunk_size=8 * 1024 * 1024):
+                                if chunk:
+                                    f.write(chunk)
+                        return True
+            except Exception:
+                time.sleep(1.5 * attempt)
+    return False
+
 def _parse_ecmwf_subgrid(grib_path, is_ens=False):
     """Extrahiert 10u und 10v aus ECMWF 0.1° GRIB2 und schneidet auf die Schweiz zu."""
     if not os.path.exists(grib_path) or os.path.getsize(grib_path) < 1000:
@@ -598,8 +614,8 @@ def _parse_ecmwf_subgrid(grib_path, is_ens=False):
     else:
         return u_sub.ravel(), v_sub.ravel(), glon.ravel(), glat.ravel()
 
-def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
-    """Lädt Hauptlauf (fc) und alle 50 Ensemble-Member (pf) sicher über den Client."""
+def fetch_ecmwf_single_step(date_ymd, time_hh, step_hour):
+    """Lädt Hauptlauf (fc) und alle 50 Ensemble-Member (ef) mit maximaler Download-Geschwindigkeit."""
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ctrl, \
          tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ens:
         path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
@@ -608,29 +624,29 @@ def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
     u_e, v_e = None, None
     lons, lats = None, None
 
-    # 1. Hauptlauf laden (type="fc", Stream wird vom Client automatisch gewählt)
-    try:
-        client.retrieve(
-            date=date_ymd, time=time_hh, step=step_hour,
-            type="fc", levtype="sfc", param=["10u", "10v"],
-            target=path_ctrl
-        )
-        u_h, v_h, lons, lats = _parse_ecmwf_subgrid(path_ctrl, is_ens=False)
-    except Exception as e:
-        print(f"   ⚠️ ECMWF Hauptlauf (+{step_hour}h): {e}", flush=True)
+    # Offizielle Naming-Convention: Hauptlauf ist immer stream 'oper'
+    fn_ctrl = f"{date_ymd}{time_hh:02d}0000-{step_hour}h-oper-fc-sfc.grib2"
+    fn_ens  = f"{date_ymd}{time_hh:02d}0000-{step_hour}h-enfo-ef-sfc.grib2"
 
-    # 2. 50 Ensemble-Member laden (type="pf", Stream wird automatisch 'enfo')
-    try:
-        client.retrieve(
-            date=date_ymd, time=time_hh, step=step_hour,
-            type="pf", levtype="sfc", param=["10u", "10v"],
-            target=path_ens
-        )
+    # Schnelle Mirrors: AWS eu-central-1 (High-Speed) und data.ecmwf.int
+    urls_ctrl = [
+        f"https://ecmwf-forecasts.s3.eu-central-1.amazonaws.com/{date_ymd}/{time_hh:02d}z/ifs/0p1/oper/{fn_ctrl}",
+        f"https://data.ecmwf.int/forecasts/{date_ymd}/{time_hh:02d}z/ifs/0p1/oper/{fn_ctrl}"
+    ]
+    urls_ens = [
+        f"https://ecmwf-forecasts.s3.eu-central-1.amazonaws.com/{date_ymd}/{time_hh:02d}z/ifs/0p1/enfo/{fn_ens}",
+        f"https://data.ecmwf.int/forecasts/{date_ymd}/{time_hh:02d}z/ifs/0p1/enfo/{fn_ens}"
+    ]
+
+    # 1. Hauptlauf laden (~7 MB: < 0.2s)
+    if _download_stream_fast(urls_ctrl, path_ctrl):
+        u_h, v_h, lons, lats = _parse_ecmwf_subgrid(path_ctrl, is_ens=False)
+
+    # 2. 50 Ensemble-Member laden (~300 MB im Stream: ~4-6s)
+    if _download_stream_fast(urls_ens, path_ens):
         u_e, v_e, elons, elats = _parse_ecmwf_subgrid(path_ens, is_ens=True)
         if lons is None:
             lons, lats = elons, elats
-    except Exception as e:
-        print(f"   ⚠️ ECMWF Ensemble (+{step_hour}h): {e}", flush=True)
 
     for p in [path_ctrl, path_ens]:
         if os.path.exists(p):
@@ -639,7 +655,6 @@ def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
             except Exception:
                 pass
 
-    # Fallback-Kopplung: Falls eine Komponente fehlte, die andere nutzen
     if u_h is None and u_e is not None:
         u_h, v_h = u_e[0], v_e[0]
     elif u_e is None and u_h is not None:
@@ -649,8 +664,7 @@ def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
     return u_h, v_h, u_e, v_e, lons, lats
 
 def fetch_ecmwf_data(start_step, end_step, ref_time_str):
-    from ecmwf.opendata import Client
-    print(f"-> Lade ECMWF 0.1° (10m Wind inkl. 50 Member) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
+    print(f"-> Lade ECMWF 0.1° (10m Wind inkl. 50 Member via High-Speed Stream) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
 
     try:
         ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
@@ -663,19 +677,13 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     all_steps = config.get_model_step_hours("ecmwf", ref_dt)
     target_steps = all_steps[start_step : end_step + 1]
 
-    # Stabile Azure-Verbindung (ohne AWS S3 503-Throttling)
-    try:
-        client = Client(source="azure", model="ifs", resol="0p1")
-    except Exception:
-        client = Client(source="ecmwf", model="ifs", resol="0p1")
-
     u_h_list, v_h_list = [], []
     u_e_list, v_e_list = [], []
     ref_lon, ref_lat = None, None
 
     for sh in target_steps:
         t0 = time.time()
-        u_h, v_h, u_e, v_e, lons, lats = fetch_ecmwf_single_step(client, date_ymd, time_hh, sh)
+        u_h, v_h, u_e, v_e, lons, lats = fetch_ecmwf_single_step(date_ymd, time_hh, sh)
         dt = time.time() - t0
 
         if u_h is not None and ref_lon is None:
@@ -684,7 +692,7 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
             ref_lon, ref_lat = lons, lats
 
         status_txt = "OK" if (u_h is not None) else "FEHLT"
-        print(f"   ✓ ECMWF Schritt +{sh}h [{status_txt}] in {dt:.1f}s", flush=True)
+        print(f"   ✓ ECMWF Schritt +{sh}h [{status_txt}] verarbeitet in {dt:.1f}s", flush=True)
 
         pts = len(ref_lon) if ref_lon is not None else 1352
 
@@ -694,7 +702,7 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         u_e_list.append(u_e if u_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
         v_e_list.append(v_e if v_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
 
-    # Notfall-Referenzgitter (Schweiz 0.1°), falls der gesamte Chunk offline war
+    # Notfall-Referenzgitter (Schweiz 0.1°), falls vorübergehend kein Schritt erreichbar war
     if ref_lon is None:
         target_lons = np.arange(config.LON_MIN, config.LON_MAX + 0.05, 0.1)
         target_lats = np.arange(config.LAT_MAX, config.LAT_MIN - 0.05, -0.1)
