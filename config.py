@@ -37,9 +37,9 @@ MODELS_CONFIG = {
         "hours": 33,
         "max_members": 11,
         "max_runs": 8,
-        "active_variables": [],
+        "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"],
         #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
-        "ensemble_variables": [],
+        "ensemble_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"],
         #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"
         "max_chunks": 4
     },
@@ -52,9 +52,9 @@ MODELS_CONFIG = {
         "hours": 120,
         "max_members": 21,
         "max_runs": 4,
-        "active_variables": [],
+        "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"],
         #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"
-        "ensemble_variables": [],
+        "ensemble_variables": ["wind", "gust", "sun", "dbz"],
         #"wind", "gust", "sun", "dbz"
         "max_chunks": 3
     },
@@ -66,7 +66,7 @@ MODELS_CONFIG = {
         "hours": 42,
         "max_members": 1,
         "max_runs": 8,
-        "active_variables": ["wind"],
+        "active_variables": ["wind", "gust"],
         #"wind", "gust"
         "ensemble_variables": [],
         "max_chunks": 1
@@ -79,9 +79,9 @@ MODELS_CONFIG = {
         "hours": 48,
         "max_members": 21,  
         "max_runs": 8,
-        "active_variables": [],
+        "active_variables": ["wind", "gust"],
         #"wind", "gust"
-        "ensemble_variables": [],
+        "ensemble_variables": ["wind", "gust"],
         #"wind", "gust"
         "max_chunks": 2
     },
