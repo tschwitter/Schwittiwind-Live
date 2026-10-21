@@ -4,7 +4,6 @@ import sys
 import json
 import shutil
 import argparse
-import urllib.request
 from datetime import timedelta, datetime
 from zoneinfo import ZoneInfo
 from multiprocessing import get_context
@@ -33,10 +32,55 @@ def load_existing_runs(model_name):
 
     return valid_runs
 
-def check_arome_new_data():
-    """Prüft die Verfügbarkeit des neuesten 3-stündigen AROME-Laufs auf Open Data."""
-    import requests
+def check_ecmwf_new_data():
+    """Prüft die Verfügbarkeit des neuesten 0.1° ECMWF-Laufs über Open Data."""
+    from ecmwf.opendata import Client
 
+    now_utc = datetime.now(ZoneInfo("UTC"))
+    existing_runs = load_existing_runs("ecmwf")
+    latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
+
+    candidate_hours = [0, 6, 12, 18]
+    candidates = []
+    for days_back in [0, 1]:
+        d = now_utc.date() - timedelta(days=days_back)
+        for h in candidate_hours:
+            dt = datetime(d.year, d.month, d.day, h, 0, 0, tzinfo=ZoneInfo("UTC"))
+            if dt <= now_utc:
+                candidates.append(dt)
+
+    candidates.sort(reverse=True)
+    client = Client(source="azure", model="ifs", resol="0p1")
+
+    for run_dt in candidates[:4]:
+        date_ymd = int(run_dt.strftime("%Y%m%d"))
+        cycle_hh = int(run_dt.strftime("%H"))
+        run_id = run_dt.strftime("%Y%m%d_%H")
+        iso_str = run_dt.strftime("%Y-%m-%dT%H:00:00Z")
+        ref_str = run_dt.strftime("%d.%m.%Y %H:00 UTC")
+
+        # Letzter zu prüfender Schritt: 240h für 00Z/12Z, 144h für 06Z/18Z
+        check_step = 240 if cycle_hh in [0, 12] else 144
+        try:
+            # Client.latest prüft ob der Schritt verfügbar ist
+            res_dt = client.latest(
+                date=date_ymd, time=cycle_hh, step=check_step,
+                stream="enfo", type="pf", levtype="sfc"
+            )
+            if res_dt:
+                is_new = (latest_known_id != run_id)
+                if not is_new:
+                    print(f"-> [ecmwf] Lauf {run_id} ist bereits aktuell.", flush=True)
+                    return False, ref_str, iso_str, run_id, run_dt
+                print(f"✓ [ecmwf] Neuer Lauf {run_id} ist vollständig bis +{check_step}h bereit!", flush=True)
+                return True, ref_str, iso_str, run_id, run_dt
+        except Exception:
+            pass
+
+    return False, None, "latest", None, None
+
+def check_arome_new_data():
+    import requests
     now_utc = datetime.now(ZoneInfo("UTC"))
     existing_runs = load_existing_runs("arome")
     latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
@@ -73,9 +117,7 @@ def check_arome_new_data():
     return False, None, "latest", None, None
 
 def check_icond2_new_data():
-    """Prüft die Verfügbarkeit des neuesten 3-stündigen ICON-D2-EPS-Laufs auf DWD Open Data."""
     import requests
-
     now_utc = datetime.now(ZoneInfo("UTC"))
     existing_runs = load_existing_runs("icon-d2")
     latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
@@ -98,7 +140,6 @@ def check_icond2_new_data():
         run_id = run_dt.strftime("%Y%m%d_%H")
         ref_str = run_dt.strftime("%d.%m.%Y %H:00 UTC")
 
-        # Prüfung auf die 48h-Ensemble-Datei von DWD Open Data
         test_url = f"https://opendata.dwd.de/weather/nwp/icon-d2-eps/grib/{cycle_hh}/u_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_048_2d_u_10m.grib2.bz2"
         try:
             r = requests.head(test_url, timeout=5)
@@ -115,13 +156,14 @@ def check_icond2_new_data():
     return False, None, "latest", None, None
 
 def check_model_new_data(model_name):
+    if model_name == "ecmwf":
+        return check_ecmwf_new_data()
     if model_name == "arome":
         return check_arome_new_data()
     if model_name == "icon-d2":
         return check_icond2_new_data()
 
     from meteodatalab import ogd_api
-
     model_cfg = config.MODELS_CONFIG[model_name]
     existing_runs = load_existing_runs(model_name)
     latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
@@ -154,10 +196,7 @@ def check_model_new_data(model_name):
         print(f"-> [{model_name}] Lauf {run_id} ist bereits aktuell.", flush=True)
         return False, latest_ref_str, iso_str, run_id, latest_dt
 
-    if model_name == "icon-ch1":
-        required_hours = 33
-    else:
-        required_hours = 120 if latest_dt.hour in [0, 12] else 45
+    required_hours = 33 if model_name == "icon-ch1" else (120 if latest_dt.hour in [0, 12] else 45)
 
     try:
         check_final = ogd_api.Request(
@@ -202,8 +241,9 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
         else:
             ref_dt = datetime.now(ZoneInfo("UTC"))
 
+        step_hours = config.get_model_step_hours(model_name, ref_dt)
         times_by_step = []
-        for h in range(model_cfg["hours"] + 1):
+        for h in step_hours:
             valid_local = (ref_dt + timedelta(hours=h)).astimezone(local_tz)
             times_by_step.append({
                 "step_hours": h,
@@ -265,13 +305,13 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
             "ref_time_utc": ref_time_str
         }
         updated_runs = [new_entry] + existing_runs
-        max_runs = model_cfg.get("max_runs", 8)
+        max_runs = model_cfg.get("max_runs", 4)
         valid_runs = updated_runs[:max_runs]
 
         with open(f"{model_base_dir}/runs.json", "w") as f:
             json.dump(valid_runs, f)
 
-    print(f"✓ Metadaten für [{model_name} / {run_id}] bereitgestellt ({nx}x{ny})!", flush=True)
+    print(f"✓ Metadaten für [{model_name} / {run_id}] bereitgestellt ({nx}x{ny}, {len(times_by_step)} Schritte)!", flush=True)
 
 def prune_old_runs():
     print("--- PRUNING: Bereinige Läufe & Historie ---", flush=True)
@@ -332,7 +372,7 @@ def process_single_local_step(args):
         for m_idx, d in d_by_member.items():
             exporter.export_variable_step(model_name, run_id, var_name, m_idx, global_step_idx, d)
 
-    print(f"✓ [{model_name}/{run_id}] Fertig Zeitschritt +{global_step_idx}h", flush=True)
+    print(f"✓ [{model_name}/{run_id}] Fertig Zeitschritt Index {global_step_idx}", flush=True)
     return global_step_idx
 
 def run_chunk(model_name, run_id, start_step, end_step, ref_time_str):
@@ -397,7 +437,10 @@ def main():
             if should_run_m and run_id:
                 any_new = True
                 prepare_model_base_site(m_name, latest_ref_str, iso_str, run_id, run_dt)
-                total_steps = m_cfg["hours"] + 1
+                
+                step_hours = config.get_model_step_hours(m_name, run_dt)
+                total_steps = len(step_hours)
+                
                 c_list = get_dynamic_chunks(total_steps, max_chunks=m_cfg.get("max_chunks", 4))
                 for c in c_list:
                     all_chunks.append({
