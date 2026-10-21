@@ -92,8 +92,8 @@ MODELS_CONFIG = {
         "ny": 48,
         "max_members": 51,  # 1 Hauptlauf + 50 Ensemble-Member
         "max_runs": 4,      # Letzte 4 Läufe
-        "active_variables": ["wind", "gust"],
-        "ensemble_variables": ["wind", "gust"],
+        "active_variables": ["wind"],
+        "ensemble_variables": ["wind"],
         "max_chunks": 4
     }
 }
