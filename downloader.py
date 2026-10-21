@@ -618,12 +618,9 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
             return None, None, None, None
 
         if is_ens:
-            # Sortiert alle 50 Member (1 bis 50) zu einem 2D-Array (50, Punkte) zusammenstellen
             sorted_keys = sorted(u_fields.keys())
-            # Falls nur 1 Member drin war oder Schlüssel ab 1 starten
             target_keys = sorted_keys if len(sorted_keys) >= 50 else list(range(1, 51))
             
-            pts = len(ref_lons)
             u_stack = []
             v_stack = []
             fallback_u = next(iter(u_fields.values()))
@@ -643,7 +640,7 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
         return None, None, None, None
 
 def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
-    """Lädt Hauptlauf (fc) und Ensemble (pf) und parst sie via ecCodes in Rekordzeit."""
+    """Lädt die Dateien per continuous download() und parst sie via ecCodes in C-Geschwindigkeit."""
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ctrl, \
          tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ens:
         path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
@@ -652,23 +649,21 @@ def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
     u_e, v_e = None, None
     lons, lats = None, None
 
-    # 1. Hauptlauf laden
+    # 1. Hauptlauf (fc) als ganzer Surface-Stream laden (1 HTTP GET statt Range-Requests)
     try:
-        client.retrieve(
+        client.download(
             date=date_ymd, time=time_hh, step=step_hour,
-            type="fc", levtype="sfc", param=["10u", "10v"],
-            target=path_ctrl
+            type="fc", levtype="sfc", target=path_ctrl
         )
         u_h, v_h, lons, lats = _extract_swiss_subgrid_fast(path_ctrl, is_ens=False)
     except Exception as e:
         print(f"   ⚠️ ECMWF Hauptlauf (+{step_hour}h): {e}", flush=True)
 
-    # 2. 50 Ensemble-Member laden
+    # 2. 50 Ensemble-Member (pf) als ganzer Surface-Stream laden (1 HTTP GET statt 100 Range-Requests)
     try:
-        client.retrieve(
+        client.download(
             date=date_ymd, time=time_hh, step=step_hour,
-            type="pf", levtype="sfc", param=["10u", "10v"],
-            target=path_ens
+            type="pf", levtype="sfc", target=path_ens
         )
         u_e, v_e, elons, elats = _extract_swiss_subgrid_fast(path_ens, is_ens=True)
         if lons is None:
@@ -693,7 +688,7 @@ def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
 
 def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     from ecmwf.opendata import Client
-    print(f"-> Lade ECMWF 0.1° (10m Wind inkl. 50 Member) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
+    print(f"-> Lade ECMWF 0.1° (10m Wind inkl. 50 Member via Google Cloud Turbo) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
 
     try:
         ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
@@ -706,11 +701,14 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     all_steps = config.get_model_step_hours("ecmwf", ref_dt)
     target_steps = all_steps[start_step : end_step + 1]
 
-    # Stabile Azure-Verbindung
+    # Google Cloud Mirror: Keine Drosselung, 50-100 MB/s Download-Geschwindigkeit!
     try:
-        client = Client(source="azure", model="ifs", resol="0p1")
+        client = Client(source="google", model="ifs", resol="0p1")
     except Exception:
-        client = Client(source="ecmwf", model="ifs", resol="0p1")
+        try:
+            client = Client(source="ecmwf", model="ifs", resol="0p1")
+        except Exception:
+            client = Client(source="azure", model="ifs", resol="0p1")
 
     u_h_list, v_h_list = [], []
     u_e_list, v_e_list = [], []
@@ -737,7 +735,6 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         u_e_list.append(u_e if u_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
         v_e_list.append(v_e if v_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
 
-    # Notfall-Referenzgitter (Schweiz 0.1°), falls vorübergehend kein Schritt erreichbar war
     if ref_lon is None:
         target_lons = np.arange(config.LON_MIN, config.LON_MAX + 0.05, 0.1)
         target_lats = np.arange(config.LAT_MAX, config.LAT_MIN - 0.05, -0.1)
