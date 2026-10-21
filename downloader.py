@@ -552,7 +552,7 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
 # ================= ECMWF 0.1° ULTRA-FAST ECCODES DECODER =================
 def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
     """
-    Parst GRIB2 in C mit ecCodes in unter 0.2 Sekunden (Faktor 500 schneller als cfgrib).
+    Parst GRIB2 in C mit ecCodes in unter 0.2 Sekunden.
     Extrahiert direkt die Schweizer Bounding-Box für 10u und 10v.
     """
     if not os.path.exists(grib_path) or os.path.getsize(grib_path) < 1000:
@@ -573,25 +573,23 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
                 try:
                     param = eccodes.codes_get(gid, "shortName")
                     if param not in ["10u", "10v"]:
-                        eccodes.codes_release(gid)
-                        continue
+                        continue  # 'finally' gibt gid sauber und genau einmal frei!
 
-                    # Member-Nummer ermitteln (0 für Hauptlauf / 1..50 für Ensemble)
                     try:
-                        m_num = eccodes.codes_get(gid, "perturbationNumber")
+                        m_num = int(eccodes.codes_get(gid, "perturbationNumber"))
                     except Exception:
-                        m_num = 0
+                        try:
+                            m_num = int(eccodes.codes_get(gid, "number"))
+                        except Exception:
+                            m_num = 0
 
-                    # 1D-Werte extrahieren (in C-Geschwindigkeit)
                     vals = eccodes.codes_get_values(gid)
-                    n_lats = eccodes.codes_get(gid, "Nj")
-                    n_lons = eccodes.codes_get(gid, "Ni")
+                    n_lats = int(eccodes.codes_get(gid, "Nj"))
+                    n_lons = int(eccodes.codes_get(gid, "Ni"))
 
-                    # Gittermatrix formen (1801 x 3600)
                     matrix = vals.reshape(n_lats, n_lons)
 
-                    # Schweizer Indizes berechnen (0.1° globales Gitter)
-                    # Lat: 90.0 bis -90.0 | Lon: 0.0 bis 359.9
+                    # Schweizer Indizes (0.1° globales Gitter)
                     lat_top_idx = int(round((90.0 - config.LAT_MAX) / 0.1))
                     lat_bot_idx = int(round((90.0 - config.LAT_MIN) / 0.1)) + 1
                     lon_left_idx = int(round(config.LON_MIN / 0.1))
@@ -640,7 +638,7 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
         return None, None, None, None
 
 def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
-    """Lädt die Dateien per continuous download() und parst sie via ecCodes in C-Geschwindigkeit."""
+    """Lädt die Dateien per continuous download() und parst sie via ecCodes."""
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ctrl, \
          tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ens:
         path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
@@ -649,7 +647,7 @@ def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
     u_e, v_e = None, None
     lons, lats = None, None
 
-    # 1. Hauptlauf (fc) als ganzer Surface-Stream laden (1 HTTP GET statt Range-Requests)
+    # 1. Hauptlauf (fc) als ganzer Surface-Stream
     try:
         client.download(
             date=date_ymd, time=time_hh, step=step_hour,
@@ -659,7 +657,7 @@ def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
     except Exception as e:
         print(f"   ⚠️ ECMWF Hauptlauf (+{step_hour}h): {e}", flush=True)
 
-    # 2. 50 Ensemble-Member (pf) als ganzer Surface-Stream laden (1 HTTP GET statt 100 Range-Requests)
+    # 2. 50 Ensemble-Member (pf) als ganzer Surface-Stream
     try:
         client.download(
             date=date_ymd, time=time_hh, step=step_hour,
@@ -701,7 +699,7 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     all_steps = config.get_model_step_hours("ecmwf", ref_dt)
     target_steps = all_steps[start_step : end_step + 1]
 
-    # Google Cloud Mirror: Keine Drosselung, 50-100 MB/s Download-Geschwindigkeit!
+    # Google Cloud Mirror: Volle Bandbreite (50-100 MB/s)
     try:
         client = Client(source="google", model="ifs", resol="0p1")
     except Exception:
