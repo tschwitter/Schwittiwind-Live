@@ -240,7 +240,7 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
             results_by_alt[alt] = slices[0].expand_dims("lead_time")
     return results_by_alt
 
-# ================= AROME HD FETCHER =================
+# ================= AROME HD (MÉTÉO-FRANCE) FETCHER =================
 def fetch_arome_single_hour(ref_iso, lead_hour):
     urls = [
         f"https://meteofrance-pnt.s3.rbx.io.cloud.ovh.net/pnt/{ref_iso}/arome/001/SP1/arome__001__SP1__{lead_hour:02d}H__{ref_iso}.grib2",
@@ -308,8 +308,10 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
         return None, None, None, None, None
     finally:
         if os.path.exists(tmp_path):
-            try: os.remove(tmp_path)
-            except Exception: pass
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
 
 def fetch_arome_hd_data(start_step, end_step, ref_time_str):
     print(f"-> Lade AROME HD (Wind & Böen) für Schritte {start_step} bis {end_step} ({ref_time_str})...", flush=True)
@@ -337,8 +339,10 @@ def fetch_arome_hd_data(start_step, end_step, ref_time_str):
             "v_h": xr.DataArray(np.stack(v_list, axis=0), dims=["lead_time", "cell"]),
             "g_h": xr.DataArray(np.stack(g_list, axis=0), dims=["lead_time", "cell"])
         },
-        "altitude_hl": {}, "altitude_ens": {},
-        "ref_lon": ref_lon, "ref_lat": ref_lat
+        "altitude_hl": {},
+        "altitude_ens": {},
+        "ref_lon": ref_lon,
+        "ref_lat": ref_lat
     }
 
 # ================= DWD ICON-D2 FETCHER =================
@@ -436,11 +440,14 @@ def _load_icond2_grid_coords(ref_iso):
     finally:
         for p in [path_lat, path_lon]:
             if os.path.exists(p):
-                try: os.remove(p)
-                except Exception: pass
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
 
 def _extract_grib_array(raw_bytes, valid_indices, is_ensemble=False):
-    if raw_bytes is None: return None
+    if raw_bytes is None:
+        return None
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp:
         tmp.write(raw_bytes)
         tmp_path = tmp.name
@@ -453,10 +460,12 @@ def _extract_grib_array(raw_bytes, valid_indices, is_ensemble=False):
         ds.close()
 
         if is_ensemble:
-            if vals.ndim == 1: vals = vals[np.newaxis, :]
+            if vals.ndim == 1:
+                vals = vals[np.newaxis, :]
             elif vals.ndim > 2:
                 vals = np.squeeze(vals)
-                if vals.ndim == 1: vals = vals[np.newaxis, :]
+                if vals.ndim == 1:
+                    vals = vals[np.newaxis, :]
             return vals[:, valid_indices].astype(np.float32)
         else:
             return vals.ravel()[valid_indices].astype(np.float32)
@@ -464,8 +473,10 @@ def _extract_grib_array(raw_bytes, valid_indices, is_ensemble=False):
         return None
     finally:
         if os.path.exists(tmp_path):
-            try: os.remove(tmp_path)
-            except Exception: pass
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
 
 def fetch_icond2_single_hour(ref_iso, lead_hour, grid_info):
     try:
@@ -528,13 +539,15 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
             "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
             "g_e": xr.DataArray(np.stack(g_e_list, axis=0), dims=["lead_time", "eps", "cell"])
         },
-        "altitude_hl": {}, "altitude_ens": {},
-        "ref_lon": grid_info["ref_lon"], "ref_lat": grid_info["ref_lat"]
+        "altitude_hl": {},
+        "altitude_ens": {},
+        "ref_lon": grid_info["ref_lon"],
+        "ref_lat": grid_info["ref_lat"]
     }
 
 # ================= ECMWF 0.1° (IFS + 50 ENSEMBLE MEMBER) FETCHER =================
 def _parse_ecmwf_subgrid(grib_path, lead_hour, is_ens=False):
-    """Extrahiert u10, v10, 10fg aus ECMWF 0.1° GRIB2 und schneidet auf die Schweiz zu."""
+    """Extrahiert 10u, 10v, 10fg aus ECMWF 0.1° GRIB2 und schneidet auf die Schweiz zu."""
     try:
         with SilenceStderr():
             datasets = cfgrib.open_datasets(grib_path)
@@ -573,45 +586,69 @@ def _parse_ecmwf_subgrid(grib_path, lead_hour, is_ens=False):
     glon, glat = np.meshgrid(sub_lons, sub_lats)
 
     if is_ens:
-        # Array-Dimension: (50 Member, Punkte)
-        num_m = u_sub.shape[0]
-        pts = u_sub.shape[1] * u_sub.shape[2]
-        return u_sub.reshape(num_m, pts), v_sub.reshape(num_m, pts), g_sub.reshape(num_m, pts), glon.ravel(), glat.ravel()
+        # Dim: (Member, Lat, Lon) -> (50, Punkte)
+        if u_sub.ndim == 3:
+            num_m = u_sub.shape[0]
+            pts = u_sub.shape[1] * u_sub.shape[2]
+            return u_sub.reshape(num_m, pts), v_sub.reshape(num_m, pts), g_sub.reshape(num_m, pts), glon.ravel(), glat.ravel()
+        else:
+            return u_sub.ravel()[np.newaxis, :], v_sub.ravel()[np.newaxis, :], g_sub.ravel()[np.newaxis, :], glon.ravel(), glat.ravel()
     else:
         return u_sub.ravel(), v_sub.ravel(), g_sub.ravel(), glon.ravel(), glat.ravel()
 
 def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
-    """Lädt Control (Hauptlauf) und alle 50 Ensemble-Member für einen Zeitschritt."""
+    """Lädt Hauptlauf (HRES fc) und alle 50 Ensemble-Member (pf) für einen Zeitschritt."""
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ctrl, \
          tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ens:
         path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
 
+    u_h, v_h, g_h = None, None, None
+    u_e, v_e, g_e = None, None, None
+    lons, lats = None, None
+
+    # Hauptlauf Stream: 00z/12z ist 'oper', 06z/18z ist 'scda'
+    hl_stream = "oper" if time_hh in [0, 12] else "scda"
+
+    # Böen-Parameter 10fg existiert bei step=0 physikalisch nicht
+    fetch_params = ["10u", "10v"] if step_hour == 0 else ["10u", "10v", "10fg"]
+
+    # 1. Hauptlauf (type="fc")
     try:
-        # 1. Hauptlauf (Control / cf)
         client.retrieve(
             date=date_ymd, time=time_hh, step=step_hour,
-            stream="enfo", type="cf", levtype="sfc",
-            param=["10u", "10v", "10fg"], target=path_ctrl
+            stream=hl_stream, type="fc", levtype="sfc",
+            param=fetch_params, target=path_ctrl
         )
         u_h, v_h, g_h, lons, lats = _parse_ecmwf_subgrid(path_ctrl, step_hour, is_ens=False)
+    except Exception as e:
+        print(f"⚠️ Hinweis: Hauptlauf (+{step_hour}h) nicht geladen: {e}", flush=True)
 
-        # 2. 50 Ensemble-Member (pf)
+    # 2. 50 Ensemble-Member (stream="enfo", type="pf")
+    try:
         client.retrieve(
             date=date_ymd, time=time_hh, step=step_hour,
             stream="enfo", type="pf", levtype="sfc",
-            param=["10u", "10v", "10fg"], target=path_ens
+            param=fetch_params, target=path_ens
         )
-        u_e, v_e, g_e, _, _ = _parse_ecmwf_subgrid(path_ens, step_hour, is_ens=True)
-
-        return u_h, v_h, g_h, u_e, v_e, g_e, lons, lats
+        u_e, v_e, g_e, elons, elats = _parse_ecmwf_subgrid(path_ens, step_hour, is_ens=True)
+        if lons is None:
+            lons, lats = elons, elats
     except Exception as e:
-        print(f"⚠️ Fehler bei ECMWF Schritt +{step_hour}h: {e}", flush=True)
-        return None, None, None, None, None, None, None, None
-    finally:
-        for p in [path_ctrl, path_ens]:
-            if os.path.exists(p):
-                try: os.remove(p)
-                except Exception: pass
+        print(f"⚠️ Hinweis: Ensemble (+{step_hour}h) nicht geladen: {e}", flush=True)
+
+    # Temporäre GRIB2-Dateien aufräumen
+    for p in [path_ctrl, path_ens]:
+        if os.path.exists(p):
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+
+    # Falls der Hauptlauf fehlte, aber Ensemble da ist: Nimm Member 0 als Fallback
+    if u_h is None and u_e is not None:
+        u_h, v_h, g_h = u_e[0], v_e[0], g_e[0]
+
+    return u_h, v_h, g_h, u_e, v_e, g_e, lons, lats
 
 def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     from ecmwf.opendata import Client
@@ -628,8 +665,8 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     all_steps = config.get_model_step_hours("ecmwf", ref_dt)
     target_steps = all_steps[start_step : end_step + 1]
 
-    # Schneller Azure/AWS-Mirror für ECMWF Open Data
-    client = Client(source="azure", model="ifs", resol="0p1")
+    # Offizieller ECMWF Open-Data Client
+    client = Client(source="ecmwf", model="ifs", resol="0p1")
 
     u_h_list, v_h_list, g_h_list = [], [], []
     u_e_list, v_e_list, g_e_list = [], [], []
@@ -639,6 +676,8 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         u_h, v_h, g_h, u_e, v_e, g_e, lons, lats = fetch_ecmwf_single_step(client, date_ymd, time_hh, sh)
 
         if u_h is not None and ref_lon is None:
+            ref_lon, ref_lat = lons, lats
+        elif u_e is not None and ref_lon is None:
             ref_lon, ref_lat = lons, lats
 
         pts = len(ref_lon) if ref_lon is not None else 1352
@@ -651,6 +690,9 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         v_e_list.append(v_e if v_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
         g_e_list.append(g_e if g_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
 
+    if ref_lon is None:
+        raise RuntimeError(f"Konnte für ECMWF keine Gitterpunkte aus den Schritten {target_steps} extrahieren. Daten sind auf Open Data eventuell noch nicht verfügbar.")
+
     return {
         "surface": {
             "u_h": xr.DataArray(np.stack(u_h_list, axis=0), dims=["lead_time", "cell"]),
@@ -660,8 +702,10 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
             "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
             "g_e": xr.DataArray(np.stack(g_e_list, axis=0), dims=["lead_time", "eps", "cell"])
         },
-        "altitude_hl": {}, "altitude_ens": {},
-        "ref_lon": ref_lon, "ref_lat": ref_lat
+        "altitude_hl": {},
+        "altitude_ens": {},
+        "ref_lon": ref_lon,
+        "ref_lat": ref_lat
     }
 
 # ================= ALLGEMEINER DISPATCHER =================
@@ -694,7 +738,8 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
                 ds_pilot = ogd_api.get_from_ogd(req_pilot)
             break
         except Exception as e:
-            if attempt == 3: raise e
+            if attempt == 3:
+                raise e
             time.sleep(3)
 
     lats = ds_pilot.coords['lat'].values
