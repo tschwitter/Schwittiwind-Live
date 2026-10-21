@@ -40,6 +40,29 @@ def check_ecmwf_new_data():
     existing_runs = load_existing_runs("ecmwf")
     latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
 
+    # Schnelle und offizielle Quelle für 0.1°
+    client = Client(source="ecmwf", model="ifs", resol="0p1")
+
+    # 1. Ermittle den neuesten verfügbaren Lauf direkt über ECMWF
+    try:
+        latest_dt = client.latest(stream="oper", type="fc", levtype="sfc", step=24)
+        if latest_dt is not None:
+            latest_dt = latest_dt.replace(tzinfo=ZoneInfo("UTC"))
+            run_id = latest_dt.strftime("%Y%m%d_%H")
+            iso_str = latest_dt.strftime("%Y-%m-%dT%H:00:00Z")
+            ref_str = latest_dt.strftime("%d.%m.%Y %H:00 UTC")
+
+            is_new = (latest_known_id != run_id)
+            if not is_new:
+                print(f"-> [ecmwf] Lauf {run_id} ist bereits aktuell.", flush=True)
+                return False, ref_str, iso_str, run_id, latest_dt
+
+            print(f"✓ [ecmwf] Neuer 0.1° Lauf {run_id} ist bereit!", flush=True)
+            return True, ref_str, iso_str, run_id, latest_dt
+    except Exception as e:
+        print(f"-> Hinweis: [ecmwf] Automatische client.latest() Abfrage fehlgeschlagen ({e}). Prüfe Kandidaten manuell...", flush=True)
+
+    # 2. Fallback: Manuelle Kandidaten-Prüfung (00z, 06z, 12z, 18z)
     candidate_hours = [0, 6, 12, 18]
     candidates = []
     for days_back in [0, 1]:
@@ -50,7 +73,6 @@ def check_ecmwf_new_data():
                 candidates.append(dt)
 
     candidates.sort(reverse=True)
-    client = Client(source="azure", model="ifs", resol="0p1")
 
     for run_dt in candidates[:4]:
         date_ymd = int(run_dt.strftime("%Y%m%d"))
@@ -59,25 +81,24 @@ def check_ecmwf_new_data():
         iso_str = run_dt.strftime("%Y-%m-%dT%H:00:00Z")
         ref_str = run_dt.strftime("%d.%m.%Y %H:00 UTC")
 
-        # Letzter zu prüfender Schritt: 240h für 00Z/12Z, 144h für 06Z/18Z
-        check_step = 240 if cycle_hh in [0, 12] else 144
+        # Prüfe, ob mindestens Schritt 0 oder 12 verfügbar ist
+        test_url = f"https://data.ecmwf.int/forecasts/{date_ymd}/{cycle_hh:02d}z/ifs/0p1/enfo/{date_ymd}{cycle_hh:02d}0000-0h-enfo-ef-sfc.grib2"
         try:
-            # Client.latest prüft ob der Schritt verfügbar ist
-            res_dt = client.latest(
-                date=date_ymd, time=cycle_hh, step=check_step,
-                stream="enfo", type="pf", levtype="sfc"
-            )
-            if res_dt:
+            import requests
+            r = requests.head(test_url, timeout=5)
+            if r.status_code == 200:
                 is_new = (latest_known_id != run_id)
                 if not is_new:
                     print(f"-> [ecmwf] Lauf {run_id} ist bereits aktuell.", flush=True)
                     return False, ref_str, iso_str, run_id, run_dt
-                print(f"✓ [ecmwf] Neuer Lauf {run_id} ist vollständig bis +{check_step}h bereit!", flush=True)
+                print(f"✓ [ecmwf] Neuer Lauf {run_id} gefunden via Index!", flush=True)
                 return True, ref_str, iso_str, run_id, run_dt
         except Exception:
             pass
 
-    return False, None, "latest", None, None
+    # Wenn selbst die Prüfung fehlschlägt, aber --force aktiv ist, nimm den jüngsten Kandidaten als Fallback
+    fallback_dt = candidates[0]
+    return False, fallback_dt.strftime("%d.%m.%Y %H:00 UTC"), fallback_dt.strftime("%Y-%m-%dT%H:00:00Z"), fallback_dt.strftime("%Y%m%d_%H"), fallback_dt
 
 def check_arome_new_data():
     import requests
