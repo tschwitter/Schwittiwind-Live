@@ -132,6 +132,27 @@ function getActiveStateSide(domSide) {
     return isSplitActive ? domSide : 'left';
 }
 
+function getStepIdxForSide(domSide) {
+    var stateSide = getActiveStateSide(domSide);
+    var st = modelsState[stateSide];
+    if (!st || !st.times || st.times.length === 0) return 0;
+
+    var baseTimes = modelsState.left.times;
+    if (!baseTimes || !baseTimes[currentStepIdx]) return 0;
+    var targetForecastHour = baseTimes[currentStepIdx].step_hours;
+
+    var bestIdx = 0;
+    var minDiff = 9999;
+    for (var i = 0; i < st.times.length; i++) {
+        var diff = Math.abs(st.times[i].step_hours - targetForecastHour);
+        if (diff < minDiff) {
+            minDiff = diff;
+            bestIdx = i;
+        }
+    }
+    return bestIdx;
+}
+
 function modelHasEnsembleForCurrentVar(stateSide) {
     var st = modelsState[stateSide];
     if (!st || !st.config) return false;
@@ -1372,8 +1393,9 @@ async function updateForecast() {
         for (const side of sidesToUpdate) {
             var st = modelsState[side];
             if (!st.config) continue;
-            var maxSteps = (st.times ? st.times.length : 100);
-            var stepForSide = Math.min(currentStepIdx, maxSteps - 1);
+
+            // Synchronisiere Schritt basierend auf Prognosestunde
+            var stepForSide = getStepIdxForSide(side);
 
             if (!modelHasEnsembleForCurrentVar(side)) {
                 st.currentMemberIdx = 0;
@@ -1456,8 +1478,7 @@ function renderContours(side) {
     if (!st.config || !targetMap) return;
 
     if (st.contourLayer1) targetMap.removeLayer(st.contourLayer1);
-    var maxSteps = (st.times ? st.times.length : 100);
-    var stepForSide = Math.min(currentStepIdx, maxSteps - 1);
+    var stepForSide = getStepIdxForSide(side);
 
     const key1 = `${st.currentModel}_${st.currentRunId}_${layer1Var}_${st.currentMemberIdx}_${stepForSide}`;
     
@@ -1550,8 +1571,7 @@ function drawVisibleArrows(side) {
 
     if (!arrowVar) return;
 
-    var maxSteps = (st.times ? st.times.length : 100);
-    var stepForSide = Math.min(currentStepIdx, maxSteps - 1);
+    var stepForSide = getStepIdxForSide(side);
     const cacheKey = `${st.currentModel}_${st.currentRunId}_${arrowVar}_${arrowMember}_${stepForSide}`;
     const gridData = cacheGrid[cacheKey];
     if (!gridData || !gridData.s || !gridData.d) return;
@@ -1619,6 +1639,8 @@ function drawVisibleArrows(side) {
             ctx.rotate(dir * Math.PI / 180.0);
             ctx.scale(scale, scale);
 
+            // Pfeil zeigt per Default nach oben (0° = Nord).
+            // Bei 90° Drehung (Westwind, u > 0) zeigt er nach rechts (Osten = Strömungsrichtung).
             ctx.beginPath();
             ctx.moveTo(0, -10.5);
             ctx.lineTo(4.2, -3.0);
