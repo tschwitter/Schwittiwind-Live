@@ -49,7 +49,7 @@ html, body {
 
 .wind-arrow-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
 
-/* --- LEAFLET ATTRIBUTION (DEZENT & IM SPLITMODUS LINKS AUSGEBLENDET) --- */
+/* --- LEAFLET ATTRIBUTION --- */
 .leaflet-control-attribution {
     font-size: 8px !important;
     line-height: 10px !important;
@@ -64,7 +64,6 @@ html, body {
     text-decoration: none !important;
 }
 
-/* Linke Attribution im Splitscreen komplett ausblenden */
 body.split-active #mapLeft .leaflet-control-attribution,
 #mapsWrapper.split-view #mapLeft .leaflet-control-attribution {
     display: none !important;
@@ -74,7 +73,7 @@ body.split-active #mapLeft .leaflet-control-attribution,
 .custom-settings-control {
     position: fixed;
     top: 10px;
-    right: 171px;
+    right: 191px;
     z-index: 10000;
     pointer-events: auto;
     display: flex;
@@ -191,7 +190,7 @@ body.split-active #mapLeft .leaflet-control-attribution,
     background-color: #e9ecef !important;
 }
 
-/* --- OBERES KONTROLL-PANEL (MITTE) --- */
+/* --- OBERES KONTROLL-PANEL --- */
 .top-control-panel {
     position: fixed;
     top: 6px; left: 50%;
@@ -222,7 +221,6 @@ body.split-active #mapLeft .leaflet-control-attribution,
     z-index: 2;
 }
 
-/* Identische dunkle Farbgebung wie .top-row */
 .sub-nav-row {
     background-color: rgba(33, 43, 54, 0.94) !important;
     border: 1px solid rgba(255, 255, 255, 0.18) !important;
@@ -333,7 +331,7 @@ body.split-active #mapLeft .leaflet-control-attribution,
 .model-select-header {
     position: fixed;
     top: 10px;
-    width: 155px;
+    width: 175px;
     z-index: 10000;
     box-sizing: border-box;
 }
@@ -342,13 +340,8 @@ body.split-active #mapLeft .leaflet-control-attribution,
 .model-select-left { display: none; left: 10px; }
 body.split-active .model-select-left { display: block; }
 
-.model-tab-btn {
-    display: none;
-}
-
-.model-content-wrap {
-    width: 100%;
-}
+.model-tab-btn { display: none; }
+.model-content-wrap { width: 100%; }
 
 .model-toggle-column {
     display: flex;
@@ -445,7 +438,7 @@ body.split-active .model-select-left { display: block; }
     top: calc(100% + 4px) !important;
     left: 0 !important;
     right: 0 !important;
-    width: 155px !important;
+    width: 175px !important;
     max-height: calc(100vh - 120px) !important;
     z-index: 100010 !important;
 }
@@ -490,7 +483,6 @@ body.split-active .model-select-left { display: block; }
     color: #ffffff !important;
 }
 
-/* ZENTRIERTER MEMBERS-BUTTON MIT PFEIL DIREKT DAHINTER */
 .member-section-toggle {
     width: 100%;
     background: rgba(255,255,255,0.06);
@@ -580,7 +572,7 @@ body.split-active .model-select-left { display: block; }
 .layer2-dropdown-popup::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
 
 .runs-dropdown-popup {
-    width: 155px;
+    width: 175px;
     max-height: 260px;
     overflow-y: auto;
     flex-direction: column;
@@ -621,10 +613,9 @@ body.split-active .model-select-left { display: block; }
 .dropdown-item.clear { background: rgba(217, 83, 79, 0.3); color: #ff8a80; }
 .dropdown-item.clear:hover { background: #d9534f; color: white; }
 
-/* Einstellungs-Popup */
 .settings-popup {
     top: 48px;
-    right: 171px;
+    right: 191px;
     left: auto;
     width: 260px;
 }
@@ -820,22 +811,19 @@ body.split-active .model-select-left { display: block; }
 
 /* --- RESPONSIVES MOBILE DESIGN --- */
 @media (max-width: 768px) {
-    /* Wenn Modellauswahl ausgeklappt ist: Top-Panel sanft ausblenden */
     body.mobile-models-expanded .top-control-panel {
         opacity: 0 !important;
         pointer-events: none !important;
         transform: translate(-50%, -10px) !important;
     }
 
-    /* Modellauswahl unterhalb der Parameter- und 2.-Ebene-Leiste platzieren */
     .model-select-header {
-        top: 64px !important; /* SAUBER UNTERHALB DER LEISTE */
+        top: 64px !important;
         width: auto;
     }
     .model-select-right { right: 6px; }
     .model-select-left { left: 6px; }
 
-    /* HOCHKANT-REITER: GEGEN DEN UHRZEIGERSINN GEDREHT (-90deg) */
     .model-tab-btn {
         display: flex;
         align-items: center;
@@ -869,7 +857,7 @@ body.split-active .model-select-left { display: block; }
     }
 
     .model-select-header:not(.mobile-collapsed) {
-        width: 145px;
+        width: 165px;
     }
     .model-select-header:not(.mobile-collapsed) .model-tab-btn {
         display: none !important;
@@ -878,16 +866,15 @@ body.split-active .model-select-left { display: block; }
         display: block !important;
     }
 
-    /* Buttons ebenfalls auf top: 64px absenken, damit sie nicht überlappen */
     .custom-settings-control {
-        top: 64px !important; /* SAUBER UNTERHALB DER LEISTE */
+        top: 64px !important;
         right: 40px;
         height: 64px;
         gap: 3px;
     }
 
     body.mobile-models-expanded .custom-settings-control {
-        right: 156px !important;
+        right: 176px !important;
         height: 98px !important;
     }
     body.mobile-models-expanded .collapse-control-btn {
@@ -901,12 +888,12 @@ body.split-active .model-select-left { display: block; }
 
     .settings-popup {
         right: 10px;
-        top: 102px !important; /* Passend zum versetzten Zahnrad */
+        top: 102px !important;
         width: 240px;
     }
 
     .model-toggle-column { height: 64px; }
-    .member-dropdown { width: 145px !important; }
+    .member-dropdown { width: 165px !important; }
     .member-btn { font-size: 10.5px; padding: 6px 3px; min-height: 26px; }
     .member-toggle-btn { font-size: 10.5px; padding: 6px 3px; min-height: 26px; }
 
