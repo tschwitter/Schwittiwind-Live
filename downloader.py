@@ -638,7 +638,7 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
         return None, None, None, None
 
 def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
-    """Lädt die Dateien per continuous download() und parst sie via ecCodes."""
+    """Lädt NUR 10u und 10v (~300 MB) über Google Cloud und parst mit ecCodes."""
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ctrl, \
          tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ens:
         path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
@@ -647,21 +647,23 @@ def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
     u_e, v_e = None, None
     lons, lats = None, None
 
-    # 1. Hauptlauf (fc) als ganzer Surface-Stream
+    # 1. Hauptlauf (fc): Nur 10u & 10v laden (~7 MB statt 73 MB!)
     try:
-        client.download(
+        client.retrieve(
             date=date_ymd, time=time_hh, step=step_hour,
-            type="fc", levtype="sfc", target=path_ctrl
+            type="fc", levtype="sfc", param=["10u", "10v"],
+            target=path_ctrl
         )
         u_h, v_h, lons, lats = _extract_swiss_subgrid_fast(path_ctrl, is_ens=False)
     except Exception as e:
         print(f"   ⚠️ ECMWF Hauptlauf (+{step_hour}h): {e}", flush=True)
 
-    # 2. 50 Ensemble-Member (pf) als ganzer Surface-Stream
+    # 2. 50 Ensemble-Member (pf): Nur 10u & 10v laden (~300 MB statt 4.5 GB!)
     try:
-        client.download(
+        client.retrieve(
             date=date_ymd, time=time_hh, step=step_hour,
-            type="pf", levtype="sfc", target=path_ens
+            type="pf", levtype="sfc", param=["10u", "10v"],
+            target=path_ens
         )
         u_e, v_e, elons, elats = _extract_swiss_subgrid_fast(path_ens, is_ens=True)
         if lons is None:
@@ -669,6 +671,7 @@ def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
     except Exception as e:
         print(f"   ⚠️ ECMWF Ensemble (+{step_hour}h): {e}", flush=True)
 
+    # Temporäre GRIBs sofort löschen
     for p in [path_ctrl, path_ens]:
         if os.path.exists(p):
             try:
