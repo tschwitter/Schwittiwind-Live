@@ -4,7 +4,7 @@ var isSyncingMaps = false;
 var isLegendOpen = false;
 var syncRafId = null;
 
-var ALL_MODELS = ["icon-ch1", "icon-ch2", "arome", "icon-d2"];
+var ALL_MODELS = ["icon-ch1", "icon-ch2", "arome", "icon-d2", "ecmwf"];
 var isMobileModelExpanded = false;
 
 var modelsState = {
@@ -22,7 +22,7 @@ var modelsState = {
         canvasRenderer2: null
     },
     right: {
-        currentModel: "icon-d2",
+        currentModel: "ecmwf",
         currentRunId: null,
         currentMemberIdx: 0,
         config: null,
@@ -36,10 +36,10 @@ var modelsState = {
     }
 };
 
-var availableRuns = { "icon-ch1": [], "icon-ch2": [], "arome": [], "icon-d2": [] };
+var availableRuns = { "icon-ch1": [], "icon-ch2": [], "arome": [], "icon-d2": [], "ecmwf": [] };
 var selectedRuns = {
-    left: { "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null },
-    right: { "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null }
+    left: { "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null, "ecmwf": null },
+    right: { "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null, "ecmwf": null }
 };
 
 var verticalNavMode = 'member';
@@ -424,6 +424,7 @@ function getModelShortLabel(m) {
     if (m === "icon-ch1") return "CH1";
     if (m === "icon-ch2") return "CH2";
     if (m === "icon-d2") return "D2";
+    if (m === "ecmwf") return "EC";
     return "AROME";
 }
 
@@ -812,7 +813,6 @@ function navRight() {
     }
 }
 
-// INTELLIGENTE NAVIGATION NACH OBEN (▲)
 function navUp() {
     var side = isSplitActive ? 'right' : 'left';
     if (verticalNavMode === 'run') {
@@ -837,7 +837,6 @@ function navUp() {
     updateForecast();
 }
 
-// INTELLIGENTE NAVIGATION NACH UNTEN (▼)
 function navDown() {
     var side = isSplitActive ? 'right' : 'left';
     if (verticalNavMode === 'run') {
@@ -1182,7 +1181,7 @@ function initMapInstance(domId) {
 
     var relief = L.tileLayer(swisstopo_relief_url, {
         pane: 'reliefPane',
-        attribution: '&copy; swisstopo | Wetter: &copy; MeteoSchweiz, DWD & Météo-France',
+        attribution: '&copy; swisstopo | Wetter: &copy; MeteoSchweiz, DWD, ECMWF & Météo-France',
         maxZoom: 15, maxNativeZoom: 14
     }).addTo(m);
 
@@ -1340,7 +1339,7 @@ async function init() {
         }
 
         await fetchModelFiles('left', 'icon-ch1');
-        await fetchModelFiles('right', 'icon-d2');
+        await fetchModelFiles('right', 'ecmwf');
 
         initNavigationBars();
         initLayer2Dropdown();
