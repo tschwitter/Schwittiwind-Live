@@ -665,15 +665,26 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     all_steps = config.get_model_step_hours("ecmwf", ref_dt)
     target_steps = all_steps[start_step : end_step + 1]
 
-    # Offizieller ECMWF Open-Data Client
-    client = Client(source="ecmwf", model="ifs", resol="0p1")
+    # AWS Cloud-Mirror: Drastisch höhere Download-Geschwindigkeit in GitHub Actions!
+    client = Client(source="aws", model="ifs", resol="0p1")
+
+    # Paralleler Download von bis zu 3 Zeitschritten gleichzeitig zur vollen Auslastung der Bandbreite
+    def _worker(sh):
+        return sh, fetch_ecmwf_single_step(client, date_ymd, time_hh, sh)
+
+    step_results = {}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(_worker, sh) for sh in target_steps]
+        for f in futures:
+            sh, res = f.result()
+            step_results[sh] = res
 
     u_h_list, v_h_list, g_h_list = [], [], []
     u_e_list, v_e_list, g_e_list = [], [], []
     ref_lon, ref_lat = None, None
 
     for sh in target_steps:
-        u_h, v_h, g_h, u_e, v_e, g_e, lons, lats = fetch_ecmwf_single_step(client, date_ymd, time_hh, sh)
+        u_h, v_h, g_h, u_e, v_e, g_e, lons, lats = step_results[sh]
 
         if u_h is not None and ref_lon is None:
             ref_lon, ref_lat = lons, lats
@@ -691,7 +702,7 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         g_e_list.append(g_e if g_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
 
     if ref_lon is None:
-        raise RuntimeError(f"Konnte für ECMWF keine Gitterpunkte aus den Schritten {target_steps} extrahieren. Daten sind auf Open Data eventuell noch nicht verfügbar.")
+        raise RuntimeError(f"Konnte für ECMWF keine Gitterpunkte extrahieren.")
 
     return {
         "surface": {
