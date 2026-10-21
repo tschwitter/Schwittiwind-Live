@@ -60,8 +60,8 @@ MODELS_CONFIG = {
         "nx": 400,
         "ny": 240,
         "hours": 42,
-        "max_members": 1,  # Deterministisch: nur 1 Hauptlauf
-        "max_runs": 8,     # 8 Läufe à 3 Stunden im Archiv
+        "max_members": 1,
+        "max_runs": 8,
         "active_variables": ["wind", "gust"],
         "ensemble_variables": [],
         "max_chunks": 1
@@ -73,12 +73,34 @@ MODELS_CONFIG = {
         "ny": 120,
         "hours": 48,
         "max_members": 21,  
-        "max_runs": 8,     # 8 Läufe à 3 Stunden im Archiv
+        "max_runs": 8,
         "active_variables": ["wind", "gust"],
         "ensemble_variables": ["wind", "gust"],
         "max_chunks": 2
+    },
+    "ecmwf": {
+        "name": "ECMWF (0.1°)",
+        "collection": "ifs-0p1",
+        "nx": 100,
+        "ny": 48,
+        "max_members": 51,  # 1 Hauptlauf + 50 Ensemble-Member
+        "max_runs": 4,      # Letzte 4 Läufe
+        "active_variables": ["wind", "gust"],
+        "ensemble_variables": ["wind", "gust"],
+        "max_chunks": 4
     }
 }
+
+def get_model_step_hours(model_name, ref_dt):
+    """Gibt die Liste der echten Modellstunden zurück."""
+    if model_name == "ecmwf":
+        if ref_dt.hour in [0, 12]:
+            return list(range(0, 145, 3)) + list(range(150, 241, 6))
+        else:
+            return list(range(0, 145, 3))
+    
+    total_hours = MODELS_CONFIG[model_name].get("hours", 33)
+    return list(range(total_hours + 1))
 
 LEVELS = [0, 4, 7, 11, 14, 18, 23, 27, 36, 45, 55, 65, 75, 85, 95, 105, 115, 125, 135, 150]
 COLORS = [
