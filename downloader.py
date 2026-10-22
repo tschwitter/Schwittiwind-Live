@@ -240,7 +240,7 @@ def _fetch_and_slice_single_hour(args):
 def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times, valid_cells, alt_prep, target_alts):
     label = f"{var_name} Höhen {[int(a) for a in target_alts]}m ({'Ensemble' if perturbed else 'Hauptlauf'})"
     # OPTIMIERT: Hauptlauf = 3 Worker | Ensemble = 2 Worker!
-    num_workers = 2 if perturbed else 3
+    num_workers = 3 if perturbed else 3
     print(f"-> Verarbeite {label} ({num_workers} Worker)...", flush=True)
 
     tasks = [
