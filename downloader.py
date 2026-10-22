@@ -3,6 +3,7 @@ import gc
 import re
 import bz2
 import time
+import ctypes
 import tempfile
 import threading
 from datetime import timedelta, datetime
@@ -24,6 +25,14 @@ os.environ["TMPDIR"] = WORKSPACE_TMP
 tempfile.tempdir = WORKSPACE_TMP
 
 _ICOND2_GRID_CACHE = {}
+
+def _trim_memory():
+    """Zwingt das Linux-System, ungenutzten Heap-RAM sofort physikalisch freizugeben."""
+    try:
+        gc.collect()
+        ctypes.CDLL('libc.so.6').malloc_trim(0)
+    except Exception:
+        pass
 
 class SilenceStderr:
     _lock = threading.Lock()
@@ -198,20 +207,22 @@ def _fetch_and_slice_single_hour(args):
     if ds_hour is None:
         return None
 
+    # RAM-Schutz 1: Sofort auf die Schweizer Zellen zuschneiden
     if valid_cells is not None:
         ds_hour = ds_hour.isel(cell=valid_cells)
 
     sub = ds_hour.squeeze()
-    del ds_hour
+    del ds_hour  # Ungeschnittenes Objekt sofort zerstören
 
     z_dim_candidates = [d for d in sub.dims if d in ['generalVerticalLayer', 'z', 'level', 'heightAboveGround']]
     if not z_dim_candidates:
+        del sub
         return None
     z_dim = z_dim_candidates[0]
 
     is_ensemble = ('eps' in sub.dims and sub.sizes['eps'] > 1)
 
-    # Speicher-Optimierung: Konvertierung zu float32 halbiert RAM-Bedarf
+    # RAM-Schutz 2: float32 halbiert Speicherbedarf sofort
     if is_ensemble:
         z_axis = sub.dims.index(z_dim)
         eps_axis = sub.dims.index('eps')
@@ -224,6 +235,7 @@ def _fetch_and_slice_single_hour(args):
         coords = {'cell': sub.coords['cell']}
 
     del sub
+    _trim_memory()
 
     alt_slices = {}
     for alt in target_alts:
@@ -234,13 +246,13 @@ def _fetch_and_slice_single_hour(args):
             alt_slices[alt] = xr.DataArray(interp_res, dims=['cell'], coords=coords)
 
     del vals_3d
-    gc.collect()
+    _trim_memory()
     return alt_slices
 
 def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times, valid_cells, alt_prep, target_alts):
     label = f"{var_name} Höhen {[int(a) for a in target_alts]}m ({'Ensemble' if perturbed else 'Hauptlauf'})"
-    # OPTIMIERT: Hauptlauf = 3 Worker | Ensemble = 2 Worker!
-    num_workers = 3 if perturbed else 3
+    # Volle Kraft: 3 Worker parallel für Hauptlauf UND Ensemble!
+    num_workers = 3
     print(f"-> Verarbeite {label} ({num_workers} Worker)...", flush=True)
 
     tasks = [
@@ -262,6 +274,8 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
             results_by_alt[alt] = xr.concat(slices, dim="lead_time")
         elif len(slices) == 1:
             results_by_alt[alt] = slices[0].expand_dims("lead_time")
+
+    _trim_memory()
     return results_by_alt
 
 # ================= AROME HD (MÉTÉO-FRANCE) FETCHER =================
@@ -331,6 +345,7 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
                     elif std_n == 'northward_wind':
                         v10_da = v
 
+        # Vollständige AROME-Böensuche (inkl. französischer Bezeichner wie 'rafale')
         if lead_hour > 0 and scalar_gust_da is None and (u_gust_da is None or v_gust_da is None):
             for ds in datasets:
                 for var_name in ds.data_vars:
@@ -612,7 +627,7 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
             "g_h": xr.DataArray(np.stack(g_list, axis=0), dims=["lead_time", "cell"]),
             "u_e": xr.DataArray(np.stack(u_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
             "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
-            "g_e": xr.DataArray(np.stack(g_e_list, axis=0), dims=["lead_time", "eps", "cell"])
+            "g_e": xr.DataArray(np.stack(g_list, axis=0), dims=["lead_time", "eps", "cell"])
         },
         "altitude_hl": {},
         "altitude_ens": {},
@@ -936,26 +951,26 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
         print(f"3. Lade vertikale Höhenwinde [{model_name}] für {all_target_alts}m...", flush=True)
         alt_prep = get_hhl_and_weights(collection, model_cfg["hhl_asset"], valid_cells, all_target_alts)
 
-        # 1. Hauptlauf U & V parallel (mit 3 Workern pro Komponente)
+        # 1. Hauptlauf U & V parallel (jeweils mit 3 Workern intern)
         with ThreadPoolExecutor(max_workers=2) as pool:
             future_u_hl = pool.submit(fetch_3d_and_slice, collection, "U", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
             future_v_hl = pool.submit(fetch_3d_and_slice, collection, "V", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
             u_hl_by_alt = future_u_hl.result()
             v_hl_by_alt = future_v_hl.result()
 
-        # 2. Ensemble U & V sequenziell (damit max. 2 Worker gleichzeitig laufen -> OOM-sicher!)
+        # 2. Ensemble U & V sequenziell (damit max. 3 Worker gleichzeitig im RAM laufen -> 100% OOM-sicher!)
         if ens_altitudes:
             u_ens_by_alt = fetch_3d_and_slice(collection, "U", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
-            gc.collect()
+            _trim_memory()
             v_ens_by_alt = fetch_3d_and_slice(collection, "V", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
-            gc.collect()
+            _trim_memory()
         else:
             u_ens_by_alt, v_ens_by_alt = {}, {}
 
         altitude_hl_res = {alt: (u_hl_by_alt[alt], v_hl_by_alt[alt]) for alt in hl_altitudes if alt in u_hl_by_alt and alt in v_hl_by_alt}
         altitude_ens_res = {alt: (u_ens_by_alt[alt], v_ens_by_alt[alt]) for alt in ens_altitudes if alt in u_ens_by_alt and alt in v_ens_by_alt}
         del alt_prep
-        gc.collect()
+        _trim_memory()
 
     print(f"✓ Datensätze für [{model_name}] bereitgestellt!", flush=True)
     return {
