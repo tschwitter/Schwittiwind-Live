@@ -262,6 +262,7 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
             break
 
     if resp is None:
+        print(f"⚠️ AROME Stunde +{lead_hour}h konnte nicht geladen werden.", flush=True)
         return None, None, None, None, None
 
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp:
@@ -271,34 +272,81 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
     try:
         datasets = cfgrib.open_datasets(tmp_path)
         u10_da, v10_da = None, None
-        scalar_gust_da = None
+        u_gust_da, v_gust_da, scalar_gust_da = None, None, None
 
         for ds in datasets:
-            if 'u10' in ds: u10_da = ds['u10']
-            elif '10u' in ds: u10_da = ds['10u']
-            if 'v10' in ds: v10_da = ds['v10']
-            elif '10v' in ds: v10_da = ds['10v']
+            if 'u10' in ds:
+                u10_da = ds['u10']
+            elif '10u' in ds:
+                u10_da = ds['10u']
+            if 'v10' in ds:
+                v10_da = ds['v10']
+            elif '10v' in ds:
+                v10_da = ds['10v']
 
             if lead_hour > 0:
                 for k in ['fg10', '10fg', 'ff_raf', 'wsgsmax']:
                     if k in ds:
                         scalar_gust_da = ds[k]
                         break
+                for ku in ['efg10', 'u10g', 'u_raf']:
+                    if ku in ds:
+                        u_gust_da = ds[ku]
+                        break
+                for kv in ['nfg10', 'v10g', 'v_raf']:
+                    if kv in ds:
+                        v_gust_da = ds[kv]
+                        break
+
+        if u10_da is None or v10_da is None:
+            for ds in datasets:
+                for var_name in ds.data_vars:
+                    v = ds[var_name]
+                    std_n = getattr(v, 'standard_name', '').lower()
+                    if std_n == 'eastward_wind':
+                        u10_da = v
+                    elif std_n == 'northward_wind':
+                        v10_da = v
+
+        # Ausführliche AROME-Böen-Suche (falls GRIB2 mit französischen Rafale-Namen)
+        if lead_hour > 0 and scalar_gust_da is None and (u_gust_da is None or v_gust_da is None):
+            for ds in datasets:
+                for var_name in ds.data_vars:
+                    v = ds[var_name]
+                    long_n = getattr(v, 'long_name', '').lower()
+                    grib_n = getattr(v, 'GRIB_name', '').lower()
+                    name_comb = f"{long_n} {grib_n}"
+                    if 'gust' in name_comb or 'rafale' in name_comb:
+                        if 'eastward' in name_comb or ' u ' in name_comb or name_comb.startswith('u '):
+                            u_gust_da = v
+                        elif 'northward' in name_comb or ' v ' in name_comb or name_comb.startswith('v '):
+                            v_gust_da = v
+                        elif 'maximum' in name_comb or 'speed' in name_comb:
+                            scalar_gust_da = v
 
         lat_coord = 'latitude' if 'latitude' in u10_da.coords else 'lat'
         lon_coord = 'longitude' if 'longitude' in u10_da.coords else 'lon'
 
         lat_vals = u10_da[lat_coord].values
-        lat_slice = slice(config.LAT_MAX, config.LAT_MIN) if lat_vals[0] > lat_vals[-1] else slice(config.LAT_MIN, config.LAT_MAX)
-        lon_slice = slice(config.LON_MIN, config.LON_MAX)
+        if lat_vals[0] > lat_vals[-1]:
+            lat_slice = slice(config.LAT_MAX, config.LAT_MIN)
+        else:
+            lat_slice = slice(config.LAT_MIN, config.LAT_MAX)
 
+        lon_slice = slice(config.LON_MIN, config.LON_MAX)
         u_sub = u10_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
         v_sub = v10_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
 
-        if lead_hour == 0 or scalar_gust_da is None:
+        if lead_hour == 0:
             g_sub = np.full_like(u_sub, np.nan)
-        else:
+        elif scalar_gust_da is not None:
             g_sub = scalar_gust_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
+        elif u_gust_da is not None and v_gust_da is not None:
+            ug_val = u_gust_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
+            vg_val = v_gust_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
+            g_sub = np.sqrt(ug_val**2 + vg_val**2)
+        else:
+            g_sub = np.full_like(u_sub, np.nan)
 
         sub_lats = u10_da[lat_coord].sel({lat_coord: lat_slice}).values
         sub_lons = u10_da[lon_coord].sel({lon_coord: lon_slice}).values
@@ -308,7 +356,8 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
             ds.close()
 
         return u_sub.ravel(), v_sub.ravel(), g_sub.ravel(), glon.ravel(), glat.ravel()
-    except Exception:
+    except Exception as e:
+        print(f"Fehler beim Dekodieren von AROME GRIB2 (+{lead_hour}h): {e}", flush=True)
         return None, None, None, None, None
     finally:
         if os.path.exists(tmp_path):
