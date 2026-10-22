@@ -211,14 +211,16 @@ def _fetch_and_slice_single_hour(args):
 
     is_ensemble = ('eps' in sub.dims and sub.sizes['eps'] > 1)
 
+    # Speicher-Optimierung: Konvertierung zu float32 halbiert RAM-Bedarf
     if is_ensemble:
         z_axis = sub.dims.index(z_dim)
         eps_axis = sub.dims.index('eps')
         cell_axis = sub.dims.index('cell')
-        vals_3d = np.transpose(sub.values, (eps_axis, z_axis, cell_axis))
+        vals_3d = np.transpose(sub.values, (eps_axis, z_axis, cell_axis)).astype(np.float32)
         coords = {c: sub.coords[c] for c in ['eps', 'cell'] if c in sub.coords}
     else:
-        vals_3d = np.moveaxis(sub.values, sub.dims.index(z_dim), 0) if sub.dims[0] != z_dim else sub.values
+        raw_vals = sub.values if sub.dims[0] == z_dim else np.moveaxis(sub.values, sub.dims.index(z_dim), 0)
+        vals_3d = raw_vals.astype(np.float32)
         coords = {'cell': sub.coords['cell']}
 
     del sub
@@ -237,8 +239,8 @@ def _fetch_and_slice_single_hour(args):
 
 def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times, valid_cells, alt_prep, target_alts):
     label = f"{var_name} Höhen {[int(a) for a in target_alts]}m ({'Ensemble' if perturbed else 'Hauptlauf'})"
-    # RAM-Schutz: Ensemble-3D (3.5 GB/h) nur mit 1 Worker, Hauptlauf (300 MB/h) mit 2 Workern
-    num_workers = 1 if perturbed else 2
+    # OPTIMIERT: Hauptlauf = 3 Worker | Ensemble = 2 Worker!
+    num_workers = 2 if perturbed else 3
     print(f"-> Verarbeite {label} ({num_workers} Worker)...", flush=True)
 
     tasks = [
@@ -246,15 +248,8 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
         for lt in lead_times
     ]
 
-    if num_workers == 1:
-        # Streng sequenziell, um OOM-Kills (Exit 137) sicher zu verhindern
-        hourly_results = []
-        for t in tasks:
-            hourly_results.append(_fetch_and_slice_single_hour(t))
-            gc.collect()
-    else:
-        with ThreadPoolExecutor(max_workers=num_workers) as pool:
-            hourly_results = list(pool.map(_fetch_and_slice_single_hour, tasks))
+    with ThreadPoolExecutor(max_workers=num_workers) as pool:
+        hourly_results = list(pool.map(_fetch_and_slice_single_hour, tasks))
 
     valid_hourly = [hr for hr in hourly_results if hr is not None]
     if not valid_hourly:
@@ -614,7 +609,7 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
         "surface": {
             "u_h": xr.DataArray(np.stack(u_h_list, axis=0), dims=["lead_time", "cell"]),
             "v_h": xr.DataArray(np.stack(v_h_list, axis=0), dims=["lead_time", "cell"]),
-            "g_h": xr.DataArray(np.stack(g_h_list, axis=0), dims=["lead_time", "cell"]),
+            "g_h": xr.DataArray(np.stack(g_list, axis=0), dims=["lead_time", "cell"]),
             "u_e": xr.DataArray(np.stack(u_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
             "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
             "g_e": xr.DataArray(np.stack(g_e_list, axis=0), dims=["lead_time", "eps", "cell"])
@@ -918,6 +913,7 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
             if key in ens_vars:
                 tasks_2d.append((f"{key}_e", grib_name, True))
 
+    # 4 parallele Worker für maximale 2D-Netzwerkgeschwindigkeit
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [pool.submit(_fetch_2d_task, k, g, p) for k, g, p in tasks_2d]
         if "sun" in active_vars:
@@ -940,14 +936,14 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
         print(f"3. Lade vertikale Höhenwinde [{model_name}] für {all_target_alts}m...", flush=True)
         alt_prep = get_hhl_and_weights(collection, model_cfg["hhl_asset"], valid_cells, all_target_alts)
 
-        # 1. Hauptlauf U & V (klein: je ~300 MB) parallel
+        # 1. Hauptlauf U & V parallel (mit 3 Workern pro Komponente)
         with ThreadPoolExecutor(max_workers=2) as pool:
             future_u_hl = pool.submit(fetch_3d_and_slice, collection, "U", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
             future_v_hl = pool.submit(fetch_3d_and_slice, collection, "V", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
             u_hl_by_alt = future_u_hl.result()
             v_hl_by_alt = future_v_hl.result()
 
-        # 2. Ensemble U & V (groß: je 3.5 GB) sequenziell nacheinander im RAM halten!
+        # 2. Ensemble U & V sequenziell (damit max. 2 Worker gleichzeitig laufen -> OOM-sicher!)
         if ens_altitudes:
             u_ens_by_alt = fetch_3d_and_slice(collection, "U", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
             gc.collect()
