@@ -193,11 +193,11 @@ def _fetch_and_slice_single_hour(args):
     ds_hour = None
     for attempt in range(1, 4):
         try:
-            with SilenceStderr():
-                ds_hour = ogd_api.get_from_ogd(req)
+            ds_hour = ogd_api.get_from_ogd(req)
             break
-        except Exception:
+        except Exception as e:
             if attempt == 3:
+                print(f"⚠️ FEHLER beim Laden von 3D {var_name} (perturbed={perturbed}, lt={lt}): {e}", flush=True)
                 return None
             time.sleep(2 * attempt)
 
