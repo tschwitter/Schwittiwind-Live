@@ -16,6 +16,12 @@ import eccodes
 from meteodatalab import ogd_api, grib_decoder, data_source
 import config
 
+# ================= DISK-QUOTA FIX =================
+WORKSPACE_TMP = os.path.abspath("tmp_scratch")
+os.makedirs(WORKSPACE_TMP, exist_ok=True)
+os.environ["TMPDIR"] = WORKSPACE_TMP
+tempfile.tempdir = WORKSPACE_TMP
+
 _ICOND2_GRID_CACHE = {}
 
 class SilenceStderr:
@@ -118,10 +124,13 @@ def interpolate_fast_precomputed(da_hour, prep):
     mask = prep["mask_underground"]
     col_idx = prep["col_idx"]
 
-    z_dim = [d for d in da_hour.dims if d in ['generalVerticalLayer', 'z', 'level']][0]
+    sub = da_hour.squeeze()
+    z_dim_candidates = [d for d in sub.dims if d in ['generalVerticalLayer', 'z', 'level', 'heightAboveGround']]
+    if not z_dim_candidates:
+        return None
+    z_dim = z_dim_candidates[0]
 
-    if 'eps' in da_hour.dims and da_hour.sizes['eps'] > 1:
-        sub = da_hour.squeeze()
+    if 'eps' in sub.dims and sub.sizes['eps'] > 1:
         z_axis = sub.dims.index(z_dim)
         eps_axis = sub.dims.index('eps')
         cell_axis = sub.dims.index('cell')
@@ -133,10 +142,9 @@ def interpolate_fast_precomputed(da_hour, prep):
         out_interp = (1.0 - weight) * v_b + weight * v_a
         out_interp[:, mask] = np.nan
 
-        coords = {c: da_hour.coords[c] for c in ['eps', 'cell'] if c in da_hour.coords}
+        coords = {c: sub.coords[c] for c in ['eps', 'cell'] if c in sub.coords}
         return xr.DataArray(out_interp, dims=['eps', 'cell'], coords=coords)
     else:
-        sub = da_hour.squeeze()
         vals_2d = np.moveaxis(sub.values, sub.dims.index(z_dim), 0) if sub.dims[0] != z_dim else sub.values
         v_a = vals_2d[idx_above, col_idx]
         v_b = vals_2d[idx_below, col_idx]
@@ -193,7 +201,8 @@ def _fetch_and_slice_single_hour(args):
     ds_hour = None
     for attempt in range(1, 4):
         try:
-            ds_hour = ogd_api.get_from_ogd(req)
+            with SilenceStderr():
+                ds_hour = ogd_api.get_from_ogd(req)
             break
         except Exception as e:
             if attempt == 3:
@@ -308,7 +317,6 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
                     elif std_n == 'northward_wind':
                         v10_da = v
 
-        # Ausführliche AROME-Böen-Suche (falls GRIB2 mit französischen Rafale-Namen)
         if lead_hour > 0 and scalar_gust_da is None and (u_gust_da is None or v_gust_da is None):
             for ds in datasets:
                 for var_name in ds.data_vars:
