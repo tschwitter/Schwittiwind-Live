@@ -17,6 +17,7 @@ from meteodatalab import ogd_api, grib_decoder, data_source
 import config
 
 # ================= DISK-QUOTA FIX =================
+# Verhindert [Errno 122] Disk quota exceeded in /tmp (tmpfs-RAM)
 WORKSPACE_TMP = os.path.abspath("tmp_scratch")
 os.makedirs(WORKSPACE_TMP, exist_ok=True)
 os.environ["TMPDIR"] = WORKSPACE_TMP
@@ -117,42 +118,26 @@ def get_hhl_and_weights(collection, hhl_asset, valid_cells=None, target_alts=Non
     print(f"✓ HHL geladen & Gewichte für {len(target_alts)} Höhen vorberechnet!", flush=True)
     return alt_prep
 
-def interpolate_fast_precomputed(da_hour, prep):
+def interpolate_fast_precomputed_from_3d(vals_3d, prep, is_ensemble=True):
+    """Interpoliert hochoptimiert direkt aus dem vorbereiteten 3D-Array."""
     idx_above = prep["idx_above"]
     idx_below = prep["idx_below"]
     weight = prep["weight"]
     mask = prep["mask_underground"]
     col_idx = prep["col_idx"]
 
-    sub = da_hour.squeeze()
-    z_dim_candidates = [d for d in sub.dims if d in ['generalVerticalLayer', 'z', 'level', 'heightAboveGround']]
-    if not z_dim_candidates:
-        return None
-    z_dim = z_dim_candidates[0]
-
-    if 'eps' in sub.dims and sub.sizes['eps'] > 1:
-        z_axis = sub.dims.index(z_dim)
-        eps_axis = sub.dims.index('eps')
-        cell_axis = sub.dims.index('cell')
-        
-        vals_3d = np.transpose(sub.values, (eps_axis, z_axis, cell_axis))
+    if is_ensemble:
         v_a = vals_3d[:, idx_above, col_idx]
         v_b = vals_3d[:, idx_below, col_idx]
-        
         out_interp = (1.0 - weight) * v_b + weight * v_a
         out_interp[:, mask] = np.nan
-
-        coords = {c: sub.coords[c] for c in ['eps', 'cell'] if c in sub.coords}
-        return xr.DataArray(out_interp, dims=['eps', 'cell'], coords=coords)
+        return out_interp
     else:
-        vals_2d = np.moveaxis(sub.values, sub.dims.index(z_dim), 0) if sub.dims[0] != z_dim else sub.values
-        v_a = vals_2d[idx_above, col_idx]
-        v_b = vals_2d[idx_below, col_idx]
+        v_a = vals_3d[idx_above, col_idx]
+        v_b = vals_3d[idx_below, col_idx]
         v_int = (1.0 - weight) * v_b + weight * v_a
         v_int[mask] = np.nan
-
-        coords = {'cell': da_hour.coords['cell']}
-        return xr.DataArray(v_int, dims=['cell'], coords=coords)
+        return v_int
 
 def fetch_single_2d(collection, var_name, perturbed, ref_time_str, lead_times, valid_cells):
     req = ogd_api.Request(
@@ -216,11 +201,39 @@ def _fetch_and_slice_single_hour(args):
     if valid_cells is not None:
         ds_hour = ds_hour.isel(cell=valid_cells)
 
+    sub = ds_hour.squeeze()
+    del ds_hour
+
+    z_dim_candidates = [d for d in sub.dims if d in ['generalVerticalLayer', 'z', 'level', 'heightAboveGround']]
+    if not z_dim_candidates:
+        return None
+    z_dim = z_dim_candidates[0]
+
+    is_ensemble = ('eps' in sub.dims and sub.sizes['eps'] > 1)
+
+    # Performance-Optimierung: Array wird pro Zeitschritt nur ein einziges Mal transponiert
+    if is_ensemble:
+        z_axis = sub.dims.index(z_dim)
+        eps_axis = sub.dims.index('eps')
+        cell_axis = sub.dims.index('cell')
+        vals_3d = np.transpose(sub.values, (eps_axis, z_axis, cell_axis))
+        coords = {c: sub.coords[c] for c in ['eps', 'cell'] if c in sub.coords}
+    else:
+        vals_3d = np.moveaxis(sub.values, sub.dims.index(z_dim), 0) if sub.dims[0] != z_dim else sub.values
+        coords = {'cell': sub.coords['cell']}
+
+    del sub
+    gc.collect()
+
     alt_slices = {}
     for alt in target_alts:
-        alt_slices[alt] = interpolate_fast_precomputed(ds_hour, alt_prep[alt])
+        interp_res = interpolate_fast_precomputed_from_3d(vals_3d, alt_prep[alt], is_ensemble=is_ensemble)
+        if is_ensemble:
+            alt_slices[alt] = xr.DataArray(interp_res, dims=['eps', 'cell'], coords=coords)
+        else:
+            alt_slices[alt] = xr.DataArray(interp_res, dims=['cell'], coords=coords)
 
-    del ds_hour
+    del vals_3d
     gc.collect()
     return alt_slices
 
@@ -317,6 +330,7 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
                     elif std_n == 'northward_wind':
                         v10_da = v
 
+        # Vollständige AROME-Böensuche (inkl. französischer Bezeichner)
         if lead_hour > 0 and scalar_gust_da is None and (u_gust_da is None or v_gust_da is None):
             for ds in datasets:
                 for var_name in ds.data_vars:
@@ -921,15 +935,20 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
         print(f"3. Lade vertikale Höhenwinde [{model_name}] für {all_target_alts}m...", flush=True)
         alt_prep = get_hhl_and_weights(collection, model_cfg["hhl_asset"], valid_cells, all_target_alts)
 
+        # 1. Hauptlauf U & V gleichzeitig parallel laden
         with ThreadPoolExecutor(max_workers=2) as pool:
             future_u_hl = pool.submit(fetch_3d_and_slice, collection, "U", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
             future_v_hl = pool.submit(fetch_3d_and_slice, collection, "V", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
             u_hl_by_alt = future_u_hl.result()
             v_hl_by_alt = future_v_hl.result()
 
+        # 2. Ensemble U & V zeitgleich parallel laden (halbiert die Wartezeit)
         if ens_altitudes:
-            u_ens_by_alt = fetch_3d_and_slice(collection, "U", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
-            v_ens_by_alt = fetch_3d_and_slice(collection, "V", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                future_u_ens = pool.submit(fetch_3d_and_slice, collection, "U", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
+                future_v_ens = pool.submit(fetch_3d_and_slice, collection, "V", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
+                u_ens_by_alt = future_u_ens.result()
+                v_ens_by_alt = future_v_ens.result()
         else:
             u_ens_by_alt, v_ens_by_alt = {}, {}
 
