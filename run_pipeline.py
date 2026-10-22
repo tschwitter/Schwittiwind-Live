@@ -1,12 +1,27 @@
 import os
-import gc
 import sys
+import gc
 import json
 import shutil
 import argparse
+import tempfile
 from datetime import timedelta, datetime
 from zoneinfo import ZoneInfo
 from multiprocessing import get_context
+
+# ================= DISK-QUOTA FIX =================
+# Verhindert [Errno 122] Disk quota exceeded in /tmp (tmpfs-RAM)
+WORKSPACE_TMP = os.path.abspath("tmp_scratch")
+os.makedirs(WORKSPACE_TMP, exist_ok=True)
+os.environ["TMPDIR"] = WORKSPACE_TMP
+tempfile.tempdir = WORKSPACE_TMP
+
+try:
+    import earthkit.data
+    earthkit.data.config.set("cache-policy", "temporary")
+except Exception:
+    pass
+
 import config
 
 SHARED_DATA = {}
@@ -40,12 +55,10 @@ def check_ecmwf_new_data():
     existing_runs = load_existing_runs("ecmwf")
     latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
 
-    # Schnelle und offizielle Quelle für 0.1°
-    client = Client(source="ecmwf", model="ifs", resol="0p1")
+    client = Client(source="google", model="ifs", resol="0p1")
 
-    # 1. Ermittle den neuesten verfügbaren Lauf direkt über ECMWF
     try:
-        latest_dt = client.latest(stream="oper", type="fc", levtype="sfc", step=24)
+        latest_dt = client.latest(type="fc", levtype="sfc", step=24)
         if latest_dt is not None:
             latest_dt = latest_dt.replace(tzinfo=ZoneInfo("UTC"))
             run_id = latest_dt.strftime("%Y%m%d_%H")
@@ -62,7 +75,6 @@ def check_ecmwf_new_data():
     except Exception as e:
         print(f"-> Hinweis: [ecmwf] Automatische client.latest() Abfrage fehlgeschlagen ({e}). Prüfe Kandidaten manuell...", flush=True)
 
-    # 2. Fallback: Manuelle Kandidaten-Prüfung (00z, 06z, 12z, 18z)
     candidate_hours = [0, 6, 12, 18]
     candidates = []
     for days_back in [0, 1]:
@@ -81,7 +93,6 @@ def check_ecmwf_new_data():
         iso_str = run_dt.strftime("%Y-%m-%dT%H:00:00Z")
         ref_str = run_dt.strftime("%d.%m.%Y %H:00 UTC")
 
-        # Prüfe, ob mindestens Schritt 0 oder 12 verfügbar ist
         test_url = f"https://data.ecmwf.int/forecasts/{date_ymd}/{cycle_hh:02d}z/ifs/0p1/enfo/{date_ymd}{cycle_hh:02d}0000-0h-enfo-ef-sfc.grib2"
         try:
             import requests
@@ -96,12 +107,12 @@ def check_ecmwf_new_data():
         except Exception:
             pass
 
-    # Wenn selbst die Prüfung fehlschlägt, aber --force aktiv ist, nimm den jüngsten Kandidaten als Fallback
     fallback_dt = candidates[0]
     return False, fallback_dt.strftime("%d.%m.%Y %H:00 UTC"), fallback_dt.strftime("%Y-%m-%dT%H:00:00Z"), fallback_dt.strftime("%Y%m%d_%H"), fallback_dt
 
 def check_arome_new_data():
     import requests
+
     now_utc = datetime.now(ZoneInfo("UTC"))
     existing_runs = load_existing_runs("arome")
     latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
@@ -139,6 +150,7 @@ def check_arome_new_data():
 
 def check_icond2_new_data():
     import requests
+
     now_utc = datetime.now(ZoneInfo("UTC"))
     existing_runs = load_existing_runs("icon-d2")
     latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
@@ -423,6 +435,13 @@ def run_chunk(model_name, run_id, start_step, end_step, ref_time_str):
     ctx = get_context("fork")
     with ctx.Pool(processes=num_procs) as pool:
         pool.map(process_single_local_step, tasks)
+
+    # Nach jedem Chunk den Scratch-Ordner leeren, damit die Platte sauber bleibt
+    try:
+        shutil.rmtree(WORKSPACE_TMP, ignore_errors=True)
+        os.makedirs(WORKSPACE_TMP, exist_ok=True)
+    except Exception:
+        pass
 
     print(f"=== [{model_name} / {run_id}] CHUNK {start_step} bis {end_step} BEENDET ===", flush=True)
 
