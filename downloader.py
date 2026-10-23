@@ -27,7 +27,7 @@ tempfile.tempdir = WORKSPACE_TMP
 _ICOND2_GRID_CACHE = {}
 
 def _trim_memory():
-    """Zwingt das Linux-System, ungenutzten Heap-RAM sofort physikalisch freizugeben."""
+    """Zwingt das Linux-System, ungenutzten Heap-RAM sofort physikalisch an das OS freizugeben."""
     try:
         gc.collect()
         ctypes.CDLL('libc.so.6').malloc_trim(0)
@@ -124,6 +124,8 @@ def get_hhl_and_weights(collection, hhl_asset, valid_cells=None, target_alts=Non
             "col_idx": col_idx
         }
 
+    del ds_vert
+    _trim_memory()
     print(f"✓ HHL geladen & Gewichte für {len(target_alts)} Höhen vorberechnet!", flush=True)
     return alt_prep
 
@@ -207,43 +209,44 @@ def _fetch_and_slice_single_hour(args):
     if ds_hour is None:
         return None
 
-    # RAM-Schutz 1: Sofort auf die Schweizer Zellen zuschneiden
+    # RAM-Schutz 1: Sofort auf Schweizer Zellen zuschneiden
     if valid_cells is not None:
         ds_hour = ds_hour.isel(cell=valid_cells)
 
     sub = ds_hour.squeeze()
-    del ds_hour  # Ungeschnittenes Objekt sofort zerstören
+    dims_list = list(sub.dims)
+    coords_dict = {c: sub.coords[c].values for c in ['eps', 'cell'] if c in sub.coords}
 
-    z_dim_candidates = [d for d in sub.dims if d in ['generalVerticalLayer', 'z', 'level', 'heightAboveGround']]
+    z_dim_candidates = [d for d in dims_list if d in ['generalVerticalLayer', 'z', 'level', 'heightAboveGround']]
     if not z_dim_candidates:
-        del sub
+        del sub, ds_hour
         return None
     z_dim = z_dim_candidates[0]
 
-    is_ensemble = ('eps' in sub.dims and sub.sizes['eps'] > 1)
+    is_ensemble = ('eps' in dims_list and sub.sizes['eps'] > 1)
 
-    # RAM-Schutz 2: float32 halbiert Speicherbedarf sofort
-    if is_ensemble:
-        z_axis = sub.dims.index(z_dim)
-        eps_axis = sub.dims.index('eps')
-        cell_axis = sub.dims.index('cell')
-        vals_3d = np.transpose(sub.values, (eps_axis, z_axis, cell_axis)).astype(np.float32)
-        coords = {c: sub.coords[c] for c in ['eps', 'cell'] if c in sub.coords}
-    else:
-        raw_vals = sub.values if sub.dims[0] == z_dim else np.moveaxis(sub.values, sub.dims.index(z_dim), 0)
-        vals_3d = raw_vals.astype(np.float32)
-        coords = {'cell': sub.coords['cell']}
-
-    del sub
+    # RAM-Schutz 2: Werte sofort in kompaktes float32 extrahieren und ALLE Europa-Dataset-Objekte sofort vernichten!
+    raw_array = np.ascontiguousarray(sub.values, dtype=np.float32)
+    del sub, ds_hour
     _trim_memory()
+
+    if is_ensemble:
+        z_axis = dims_list.index(z_dim)
+        eps_axis = dims_list.index('eps')
+        cell_axis = dims_list.index('cell')
+        vals_3d = np.transpose(raw_array, (eps_axis, z_axis, cell_axis))
+    else:
+        vals_3d = np.moveaxis(raw_array, dims_list.index(z_dim), 0) if dims_list[0] != z_dim else raw_array
+
+    del raw_array
 
     alt_slices = {}
     for alt in target_alts:
         interp_res = interpolate_fast_precomputed_from_3d(vals_3d, alt_prep[alt], is_ensemble=is_ensemble)
         if is_ensemble:
-            alt_slices[alt] = xr.DataArray(interp_res, dims=['eps', 'cell'], coords=coords)
+            alt_slices[alt] = xr.DataArray(interp_res, dims=['eps', 'cell'], coords=coords_dict)
         else:
-            alt_slices[alt] = xr.DataArray(interp_res, dims=['cell'], coords=coords)
+            alt_slices[alt] = xr.DataArray(interp_res, dims=['cell'], coords={'cell': coords_dict['cell']})
 
     del vals_3d
     _trim_memory()
@@ -251,7 +254,7 @@ def _fetch_and_slice_single_hour(args):
 
 def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times, valid_cells, alt_prep, target_alts):
     label = f"{var_name} Höhen {[int(a) for a in target_alts]}m ({'Ensemble' if perturbed else 'Hauptlauf'})"
-    # Volle Kraft: 3 Worker parallel für Hauptlauf UND Ensemble!
+    # Volle Kraft: 3 Worker parallel für Hauptlauf UND Ensemble (durch Memory-Trimming absolut stabil!)
     num_workers = 3
     print(f"-> Verarbeite {label} ({num_workers} Worker)...", flush=True)
 
@@ -275,6 +278,7 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
         elif len(slices) == 1:
             results_by_alt[alt] = slices[0].expand_dims("lead_time")
 
+    del hourly_results, valid_hourly
     _trim_memory()
     return results_by_alt
 
@@ -345,7 +349,6 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
                     elif std_n == 'northward_wind':
                         v10_da = v
 
-        # Vollständige AROME-Böensuche (inkl. französischer Bezeichner wie 'rafale')
         if lead_hour > 0 and scalar_gust_da is None and (u_gust_da is None or v_gust_da is None):
             for ds in datasets:
                 for var_name in ds.data_vars:
@@ -620,14 +623,15 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
         v_e_list.append(v_e if v_e is not None else np.full((20, num_pts), np.nan, dtype=np.float32))
         g_e_list.append(g_e if g_e is not None else np.full((20, num_pts), np.nan, dtype=np.float32))
 
+    # FIX: g_h_list statt g_list!
     return {
         "surface": {
             "u_h": xr.DataArray(np.stack(u_h_list, axis=0), dims=["lead_time", "cell"]),
             "v_h": xr.DataArray(np.stack(v_h_list, axis=0), dims=["lead_time", "cell"]),
-            "g_h": xr.DataArray(np.stack(g_list, axis=0), dims=["lead_time", "cell"]),
+            "g_h": xr.DataArray(np.stack(g_h_list, axis=0), dims=["lead_time", "cell"]),
             "u_e": xr.DataArray(np.stack(u_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
             "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
-            "g_e": xr.DataArray(np.stack(g_list, axis=0), dims=["lead_time", "eps", "cell"])
+            "g_e": xr.DataArray(np.stack(g_e_list, axis=0), dims=["lead_time", "eps", "cell"])
         },
         "altitude_hl": {},
         "altitude_ens": {},
@@ -928,7 +932,6 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
             if key in ens_vars:
                 tasks_2d.append((f"{key}_e", grib_name, True))
 
-    # 4 parallele Worker für maximale 2D-Netzwerkgeschwindigkeit
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [pool.submit(_fetch_2d_task, k, g, p) for k, g, p in tasks_2d]
         if "sun" in active_vars:
@@ -951,14 +954,14 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
         print(f"3. Lade vertikale Höhenwinde [{model_name}] für {all_target_alts}m...", flush=True)
         alt_prep = get_hhl_and_weights(collection, model_cfg["hhl_asset"], valid_cells, all_target_alts)
 
-        # 1. Hauptlauf U & V parallel (jeweils mit 3 Workern intern)
+        # 1. Hauptlauf U & V parallel (mit 3 Workern intern)
         with ThreadPoolExecutor(max_workers=2) as pool:
             future_u_hl = pool.submit(fetch_3d_and_slice, collection, "U", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
             future_v_hl = pool.submit(fetch_3d_and_slice, collection, "V", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
             u_hl_by_alt = future_u_hl.result()
             v_hl_by_alt = future_v_hl.result()
 
-        # 2. Ensemble U & V sequenziell (damit max. 3 Worker gleichzeitig im RAM laufen -> 100% OOM-sicher!)
+        # 2. Ensemble U & V sequenziell (mit 3 Workern intern, dank _trim_memory() absolut stabil!)
         if ens_altitudes:
             u_ens_by_alt = fetch_3d_and_slice(collection, "U", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
             _trim_memory()
