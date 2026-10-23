@@ -18,13 +18,13 @@ from meteodatalab import ogd_api, grib_decoder, data_source
 import config
 
 # ================= DISK-QUOTA FIX =================
-# Verhindert [Errno 122] Disk quota exceeded in /tmp (tmpfs-RAM)
 WORKSPACE_TMP = os.path.abspath("tmp_scratch")
 os.makedirs(WORKSPACE_TMP, exist_ok=True)
 os.environ["TMPDIR"] = WORKSPACE_TMP
 tempfile.tempdir = WORKSPACE_TMP
 
 _ICOND2_GRID_CACHE = {}
+_OGD_DOWNLOAD_SEMAPHORE = threading.Semaphore(2)  # Verhindert gleichzeitige RAM-Spitzen beim GRIB-Entpacken
 
 def _trim_memory():
     """Zwingt das Linux-System, ungenutzten Heap-RAM sofort physikalisch an das OS freizugeben."""
@@ -107,10 +107,14 @@ def get_hhl_and_weights(collection, hhl_asset, valid_cells=None, target_alts=Non
     hsurf = vals[-1, :]
 
     alt_prep = {}
+    all_needed_layers = set()
     for alt in target_alts:
         is_below = (h_full < alt)
         idx_below = np.argmax(is_below, axis=0)
         idx_above = np.maximum(0, idx_below - 1)
+
+        all_needed_layers.update(idx_above.tolist())
+        all_needed_layers.update(idx_below.tolist())
 
         h_a = h_full[idx_above, col_idx]
         h_b = h_full[idx_below, col_idx]
@@ -124,15 +128,24 @@ def get_hhl_and_weights(collection, hhl_asset, valid_cells=None, target_alts=Non
             "col_idx": col_idx
         }
 
+    # Vertikaler Schicht-Beschnitt zur massiven RAM-Entlastung
+    min_layer = max(0, min(all_needed_layers))
+    max_layer = min(vals.shape[0] - 1, max(all_needed_layers))
+    alt_prep["_layer_slice"] = (min_layer, max_layer + 1)
+
+    for alt in target_alts:
+        alt_prep[alt]["idx_above_rel"] = alt_prep[alt]["idx_above"] - min_layer
+        alt_prep[alt]["idx_below_rel"] = alt_prep[alt]["idx_below"] - min_layer
+
     del ds_vert
     _trim_memory()
-    print(f"✓ HHL geladen & Gewichte für {len(target_alts)} Höhen vorberechnet!", flush=True)
+    print(f"✓ HHL geladen & Gewichte für {len(target_alts)} Höhen vorberechnet (Schichten {min_layer}..{max_layer})!", flush=True)
     return alt_prep
 
 def interpolate_fast_precomputed_from_3d(vals_3d, prep, is_ensemble=True):
-    """Interpoliert hochoptimiert direkt aus dem vorbereiteten 3D-Array."""
-    idx_above = prep["idx_above"]
-    idx_below = prep["idx_below"]
+    """Interpoliert hochoptimiert direkt aus dem vorbereiteten vertikalen Ausschnitt."""
+    idx_above = prep.get("idx_above_rel", prep["idx_above"])
+    idx_below = prep.get("idx_below_rel", prep["idx_below"])
     weight = prep["weight"]
     mask = prep["mask_underground"]
     col_idx = prep["col_idx"]
@@ -194,41 +207,47 @@ def _fetch_and_slice_single_hour(args):
         perturbed=perturbed,
         lead_time=[lt]
     )
-    ds_hour = None
-    for attempt in range(1, 4):
-        try:
-            with SilenceStderr():
-                ds_hour = ogd_api.get_from_ogd(req)
-            break
-        except Exception as e:
-            if attempt == 3:
-                print(f"⚠️ FEHLER beim Laden von 3D {var_name} (perturbed={perturbed}, lt={lt}): {e}", flush=True)
-                return None
-            time.sleep(2 * attempt)
+    
+    # Semaphore drosselt gleichzeitiges Entpacken, verhindert den 16-GB-Peak!
+    with _OGD_DOWNLOAD_SEMAPHORE:
+        ds_hour = None
+        for attempt in range(1, 4):
+            try:
+                with SilenceStderr():
+                    ds_hour = ogd_api.get_from_ogd(req)
+                break
+            except Exception as e:
+                if attempt == 3:
+                    print(f"⚠️ FEHLER beim Laden von 3D {var_name} (perturbed={perturbed}, lt={lt}): {e}", flush=True)
+                    return None
+                time.sleep(2 * attempt)
 
-    if ds_hour is None:
-        return None
+        if ds_hour is None:
+            return None
 
-    # RAM-Schutz 1: Sofort auf Schweizer Zellen zuschneiden
-    if valid_cells is not None:
-        ds_hour = ds_hour.isel(cell=valid_cells)
+        # Sofort auf Schweizer Punkte reduzieren
+        if valid_cells is not None:
+            ds_hour = ds_hour.isel(cell=valid_cells)
 
-    sub = ds_hour.squeeze()
-    dims_list = list(sub.dims)
-    eps_coord = sub.coords['eps'].values if 'eps' in sub.coords else None
+        sub = ds_hour.squeeze()
+        dims_list = list(sub.dims)
+        eps_coord = sub.coords['eps'].values if 'eps' in sub.coords else None
 
-    z_dim_candidates = [d for d in dims_list if d in ['generalVerticalLayer', 'z', 'level', 'heightAboveGround']]
-    if not z_dim_candidates:
+        z_dim_candidates = [d for d in dims_list if d in ['generalVerticalLayer', 'z', 'level', 'heightAboveGround']]
+        if not z_dim_candidates:
+            del sub, ds_hour
+            return None
+        z_dim = z_dim_candidates[0]
+
+        is_ensemble = ('eps' in dims_list and sub.sizes['eps'] > 1)
+
+        # Vertikaler Schicht-Beschnitt: Lädt nur relevante Höhenlagen
+        if "_layer_slice" in alt_prep:
+            l_start, l_end = alt_prep["_layer_slice"]
+            sub = sub.isel({z_dim: slice(l_start, l_end)})
+
+        raw_array = np.ascontiguousarray(sub.values, dtype=np.float32)
         del sub, ds_hour
-        return None
-    z_dim = z_dim_candidates[0]
-
-    is_ensemble = ('eps' in dims_list and sub.sizes['eps'] > 1)
-
-    # RAM-Schutz 2: Werte sofort in kompaktes float32 extrahieren und Europa-Dataset sofort freigeben
-    raw_array = np.ascontiguousarray(sub.values, dtype=np.float32)
-    del sub, ds_hour
-    _trim_memory()
 
     if is_ensemble:
         z_axis = dims_list.index(z_dim)
@@ -931,7 +950,6 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
             if key in ens_vars:
                 tasks_2d.append((f"{key}_e", grib_name, True))
 
-    # 4 parallele Worker für maximale 2D-Netzwerkgeschwindigkeit
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [pool.submit(_fetch_2d_task, k, g, p) for k, g, p in tasks_2d]
         if "sun" in active_vars:
@@ -942,6 +960,8 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
         for f in futures:
             key, ds = f.result()
             surface_results[key] = ds
+
+    _trim_memory()
 
     hl_altitudes = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and k in active_vars]
     ens_altitudes = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and k in ens_vars]
@@ -954,14 +974,14 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
         print(f"3. Lade vertikale Höhenwinde [{model_name}] für {all_target_alts}m...", flush=True)
         alt_prep = get_hhl_and_weights(collection, model_cfg["hhl_asset"], valid_cells, all_target_alts)
 
-        # 1. Hauptlauf U & V parallel (jeweils mit 3 Workern intern)
+        # 1. Hauptlauf U & V parallel (3 Worker intern)
         with ThreadPoolExecutor(max_workers=2) as pool:
             future_u_hl = pool.submit(fetch_3d_and_slice, collection, "U", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
             future_v_hl = pool.submit(fetch_3d_and_slice, collection, "V", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
             u_hl_by_alt = future_u_hl.result()
             v_hl_by_alt = future_v_hl.result()
 
-        # 2. Ensemble U & V sequenziell (mit 3 Workern intern, dank _trim_memory() absolut stabil!)
+        # 2. Ensemble U & V sequenziell (3 Worker intern, dank vertikalem Schicht-Filter völlig OOM-sicher!)
         if ens_altitudes:
             u_ens_by_alt = fetch_3d_and_slice(collection, "U", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
             _trim_memory()
