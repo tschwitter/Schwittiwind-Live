@@ -215,7 +215,7 @@ def _fetch_and_slice_single_hour(args):
 
     sub = ds_hour.squeeze()
     dims_list = list(sub.dims)
-    coords_dict = {c: sub.coords[c].values for c in ['eps', 'cell'] if c in sub.coords}
+    eps_coord = sub.coords['eps'].values if 'eps' in sub.coords else None
 
     z_dim_candidates = [d for d in dims_list if d in ['generalVerticalLayer', 'z', 'level', 'heightAboveGround']]
     if not z_dim_candidates:
@@ -225,7 +225,7 @@ def _fetch_and_slice_single_hour(args):
 
     is_ensemble = ('eps' in dims_list and sub.sizes['eps'] > 1)
 
-    # RAM-Schutz 2: Werte sofort in kompaktes float32 extrahieren und ALLE Europa-Dataset-Objekte sofort vernichten!
+    # RAM-Schutz 2: Werte sofort in kompaktes float32 extrahieren und Europa-Dataset sofort freigeben
     raw_array = np.ascontiguousarray(sub.values, dtype=np.float32)
     del sub, ds_hour
     _trim_memory()
@@ -244,9 +244,10 @@ def _fetch_and_slice_single_hour(args):
     for alt in target_alts:
         interp_res = interpolate_fast_precomputed_from_3d(vals_3d, alt_prep[alt], is_ensemble=is_ensemble)
         if is_ensemble:
-            alt_slices[alt] = xr.DataArray(interp_res, dims=['eps', 'cell'], coords=coords_dict)
+            coords = {'eps': eps_coord} if eps_coord is not None else None
+            alt_slices[alt] = xr.DataArray(interp_res, dims=['eps', 'cell'], coords=coords)
         else:
-            alt_slices[alt] = xr.DataArray(interp_res, dims=['cell'], coords={'cell': coords_dict['cell']})
+            alt_slices[alt] = xr.DataArray(interp_res, dims=['cell'])
 
     del vals_3d
     _trim_memory()
@@ -254,7 +255,6 @@ def _fetch_and_slice_single_hour(args):
 
 def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times, valid_cells, alt_prep, target_alts):
     label = f"{var_name} Höhen {[int(a) for a in target_alts]}m ({'Ensemble' if perturbed else 'Hauptlauf'})"
-    # Volle Kraft: 3 Worker parallel für Hauptlauf UND Ensemble (durch Memory-Trimming absolut stabil!)
     num_workers = 3
     print(f"-> Verarbeite {label} ({num_workers} Worker)...", flush=True)
 
@@ -623,7 +623,6 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
         v_e_list.append(v_e if v_e is not None else np.full((20, num_pts), np.nan, dtype=np.float32))
         g_e_list.append(g_e if g_e is not None else np.full((20, num_pts), np.nan, dtype=np.float32))
 
-    # FIX: g_h_list statt g_list!
     return {
         "surface": {
             "u_h": xr.DataArray(np.stack(u_h_list, axis=0), dims=["lead_time", "cell"]),
@@ -932,6 +931,7 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
             if key in ens_vars:
                 tasks_2d.append((f"{key}_e", grib_name, True))
 
+    # 4 parallele Worker für maximale 2D-Netzwerkgeschwindigkeit
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [pool.submit(_fetch_2d_task, k, g, p) for k, g, p in tasks_2d]
         if "sun" in active_vars:
@@ -954,7 +954,7 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
         print(f"3. Lade vertikale Höhenwinde [{model_name}] für {all_target_alts}m...", flush=True)
         alt_prep = get_hhl_and_weights(collection, model_cfg["hhl_asset"], valid_cells, all_target_alts)
 
-        # 1. Hauptlauf U & V parallel (mit 3 Workern intern)
+        # 1. Hauptlauf U & V parallel (jeweils mit 3 Workern intern)
         with ThreadPoolExecutor(max_workers=2) as pool:
             future_u_hl = pool.submit(fetch_3d_and_slice, collection, "U", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
             future_v_hl = pool.submit(fetch_3d_and_slice, collection, "V", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
