@@ -308,12 +308,10 @@ function parseLocalStr(str) {
     );
 }
 
-function getDayNameForStep(stepIdx) {
+function getDateKeyForStep(stepIdx) {
     var t = modelsState.left.times;
     if (!t || !t[stepIdx]) return "";
-    var parts = t[stepIdx].local_str.split(" ")[0].split(".");
-    var dateObj = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-    return weekdays[dateObj.getDay()];
+    return t[stepIdx].local_str.split(" ")[0];
 }
 
 function setPopupsDimmed(dimmed) {
@@ -793,18 +791,18 @@ function switchLayer1(newVar) {
 }
 
 function navLeft() {
-    var curDay = getDayNameForStep(currentStepIdx);
-    var steps = dayTimesteps[curDay] || [];
+    var curDateKey = getDateKeyForStep(currentStepIdx);
+    var steps = dayTimesteps[curDateKey] || [];
     var pos = steps.indexOf(currentStepIdx);
 
     if (pos > 0) {
         currentStepIdx = steps[pos - 1];
         updateForecast();
     } else {
-        var dIdx = uniqueDays.indexOf(curDay);
+        var dIdx = uniqueDays.findIndex(d => d.dateKey === curDateKey);
         if (dIdx > 0) {
-            var prevDay = uniqueDays[dIdx - 1];
-            var prevSteps = dayTimesteps[prevDay];
+            var prevDateKey = uniqueDays[dIdx - 1].dateKey;
+            var prevSteps = dayTimesteps[prevDateKey];
             if (prevSteps && prevSteps.length > 0) {
                 currentStepIdx = prevSteps[prevSteps.length - 1];
                 updateForecast();
@@ -814,18 +812,18 @@ function navLeft() {
 }
 
 function navRight() {
-    var curDay = getDayNameForStep(currentStepIdx);
-    var steps = dayTimesteps[curDay] || [];
+    var curDateKey = getDateKeyForStep(currentStepIdx);
+    var steps = dayTimesteps[curDateKey] || [];
     var pos = steps.indexOf(currentStepIdx);
 
     if (pos < steps.length - 1) {
         currentStepIdx = steps[pos + 1];
         updateForecast();
     } else {
-        var dIdx = uniqueDays.indexOf(curDay);
+        var dIdx = uniqueDays.findIndex(d => d.dateKey === curDateKey);
         if (dIdx < uniqueDays.length - 1) {
-            var nextDay = uniqueDays[dIdx + 1];
-            var nextSteps = dayTimesteps[nextDay];
+            var nextDateKey = uniqueDays[dIdx + 1].dateKey;
+            var nextSteps = dayTimesteps[nextDateKey];
             if (nextSteps && nextSteps.length > 0) {
                 currentStepIdx = nextSteps[0];
                 updateForecast();
@@ -891,31 +889,36 @@ function initDayButtons() {
     if (!times) return;
 
     times.forEach((t, idx) => {
-        var parts = t.local_str.split(" ")[0].split(".");
+        var datePart = t.local_str.split(" ")[0];
+        var parts = datePart.split(".");
         var dateObj = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
         var dayName = weekdays[dateObj.getDay()];
-        if (!uniqueDays.includes(dayName)) {
-            uniqueDays.push(dayName);
-            dayTimesteps[dayName] = [];
+
+        if (!dayTimesteps[datePart]) {
+            dayTimesteps[datePart] = [];
+            uniqueDays.push({
+                dateKey: datePart,
+                dayName: dayName
+            });
         }
-        dayTimesteps[dayName].push(idx);
+        dayTimesteps[datePart].push(idx);
     });
     
-    uniqueDays.forEach(dayName => {
+    uniqueDays.forEach((dayObj, index) => {
         var btn = document.createElement("button");
         btn.className = "day-btn";
-        btn.id = "day-btn-" + dayName;
-        btn.innerText = dayName;
-        btn.onclick = function() { jumpToDaySameHour(dayName); };
+        btn.id = "day-btn-" + index;
+        btn.innerText = dayObj.dayName;
+        btn.onclick = function() { jumpToDaySameHour(dayObj.dateKey); };
         container.appendChild(btn);
     });
 }
 
-function jumpToDaySameHour(targetDayName) {
+function jumpToDaySameHour(targetDateKey) {
     var times = modelsState.left.times;
     if (!times || !times[currentStepIdx]) return;
     var currentHour = parseInt(times[currentStepIdx].local_str.split(" ")[1].split(":")[0]);
-    var targetIndices = dayTimesteps[targetDayName];
+    var targetIndices = dayTimesteps[targetDateKey];
     if (!targetIndices || targetIndices.length === 0) return;
 
     var bestIdx = targetIndices[0];
@@ -1317,8 +1320,8 @@ async function init() {
         var slider = document.getElementById("timeSlider");
         slider.addEventListener("input", function() {
             var targetHour = parseInt(this.value);
-            var curDay = getDayNameForStep(currentStepIdx);
-            var steps = dayTimesteps[curDay] || [];
+            var curDateKey = getDateKeyForStep(currentStepIdx);
+            var steps = dayTimesteps[curDateKey] || [];
             if (steps.length === 0) return;
 
             var times = modelsState.left.times;
@@ -1381,7 +1384,7 @@ async function updateForecast() {
     var times = modelsState[effectiveSide].times;
     if (!times || !times[currentStepIdx]) return;
 
-    var currentDayName = getDayNameForStep(currentStepIdx);
+    var curDateKey = getDateKeyForStep(currentStepIdx);
     var currentHour = parseInt(times[currentStepIdx].local_str.split(" ")[1].split(":")[0]);
     var slider = document.getElementById("timeSlider");
     slider.min = 0; slider.max = 23; slider.value = currentHour;
@@ -1433,9 +1436,9 @@ async function updateForecast() {
         document.getElementById("modelRunLabel").innerText = `🕒${refDateParts[0]}.${refDateParts[1]} ${refTimeHour}Z ${modShort}`;
     }
 
-    uniqueDays.forEach(d => {
-        var btn = document.getElementById("day-btn-" + d);
-        if (btn) btn.classList.toggle("active", d === currentDayName);
+    uniqueDays.forEach((dayObj, index) => {
+        var btn = document.getElementById("day-btn-" + index);
+        if (btn) btn.classList.toggle("active", dayObj.dateKey === curDateKey);
     });
 
     ['left', 'right'].forEach(side => {
@@ -1639,8 +1642,6 @@ function drawVisibleArrows(side) {
             ctx.rotate(dir * Math.PI / 180.0);
             ctx.scale(scale, scale);
 
-            // Pfeil zeigt per Default nach oben (0° = Nord).
-            // Bei 90° Drehung (Westwind, u > 0) zeigt er nach rechts (Osten = Strömungsrichtung).
             ctx.beginPath();
             ctx.moveTo(0, -10.5);
             ctx.lineTo(4.2, -3.0);
