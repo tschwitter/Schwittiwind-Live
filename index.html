@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Wetter & Wind (ICON CH1, CH2, D2, AROME & ECMWF 0.1°)</title>
+    <title>Wetter & Wind (KENDA, ICON CH1, CH2, D2, AROME & ECMWF 0.1°)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=43" />
+    <link rel="stylesheet" href="style.css?v=44" />
 </head>
 <body>
 
@@ -49,16 +49,16 @@
         <div class="model-content-wrap">
             <div class="model-toggle-column">
                 <div class="model-toggle-row">
+                    <button class="model-btn" id="btnModel-left-kenda-ch1" onclick="handleModelButtonClick('kenda-ch1', 'left')">
+                        <span class="model-title">KND ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
                     <button class="model-btn" id="btnModel-left-arome" onclick="handleModelButtonClick('arome', 'left')">
                         <span class="model-title">AROME ▾</span>
                         <span class="model-time">--</span>
                     </button>
                     <button class="model-btn" id="btnModel-left-icon-d2" onclick="handleModelButtonClick('icon-d2', 'left')">
                         <span class="model-title">D2 ▾</span>
-                        <span class="model-time">--</span>
-                    </button>
-                    <button class="model-btn" id="btnModel-left-ecmwf" onclick="handleModelButtonClick('ecmwf', 'left')">
-                        <span class="model-title">EC ▾</span>
                         <span class="model-time">--</span>
                     </button>
                 </div>
@@ -69,6 +69,10 @@
                     </button>
                     <button class="model-btn" id="btnModel-left-icon-ch2" onclick="handleModelButtonClick('icon-ch2', 'left')">
                         <span class="model-title">CH2 ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
+                    <button class="model-btn" id="btnModel-left-ecmwf" onclick="handleModelButtonClick('ecmwf', 'left')">
+                        <span class="model-title">EC ▾</span>
                         <span class="model-time">--</span>
                     </button>
                 </div>
@@ -100,32 +104,34 @@
     <!-- MODELL-AUSWAHL RECHTS -->
     <div class="model-select-header model-select-right mobile-collapsed" id="modelSelectRight">
         <button class="model-tab-btn" onclick="toggleMobileModelPanel(true)">
-            <span id="tabModelLabelRight">D2</span>
+            <span id="tabModelLabelRight">EC</span>
         </button>
 
         <div class="model-content-wrap">
             <div class="model-toggle-column">
+                <button class="model-btn" id="btnModel-right-kenda-ch1" onclick="handleModelButtonClick('kenda-ch1', 'right')">
+                    <span class="model-title">KND ▾</span>
+                    <span class="model-time">--</span>
+                </button>
+                <button class="model-btn" id="btnModel-right-arome" onclick="handleModelButtonClick('arome', 'right')">
+                    <span class="model-title">AROME ▾</span>
+                    <span class="model-time">--</span>
+                </button>
+                <button class="model-btn" id="btnModel-right-icon-d2" onclick="handleModelButtonClick('icon-d2', 'right')">
+                    <span class="model-title">D2 ▾</span>
+                    <span class="model-time">--</span>
+                </button>
                 <div class="model-toggle-row">
-                    <button class="model-btn" id="btnModel-right-arome" onclick="handleModelButtonClick('arome', 'right')">
-                        <span class="model-title">AROME ▾</span>
-                        <span class="model-time">--</span>
-                    </button>
-                    <button class="model-btn" id="btnModel-right-icon-d2" onclick="handleModelButtonClick('icon-d2', 'right')">
-                        <span class="model-title">D2 ▾</span>
-                        <span class="model-time">--</span>
-                    </button>
-                    <button class="model-btn" id="btnModel-right-ecmwf" onclick="handleModelButtonClick('ecmwf', 'right')">
-                        <span class="model-title">EC ▾</span>
-                        <span class="model-time">--</span>
-                    </button>
-                </div>
-                <div class="model-toggle-row">
-                    <button class="model-btn active" id="btnModel-right-icon-ch1" onclick="handleModelButtonClick('icon-ch1', 'right')">
+                    <button class="model-btn" id="btnModel-right-icon-ch1" onclick="handleModelButtonClick('icon-ch1', 'right')">
                         <span class="model-title">CH1 ▾</span>
                         <span class="model-time">--</span>
                     </button>
                     <button class="model-btn" id="btnModel-right-icon-ch2" onclick="handleModelButtonClick('icon-ch2', 'right')">
                         <span class="model-title">CH2 ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
+                    <button class="model-btn active" id="btnModel-right-ecmwf" onclick="handleModelButtonClick('ecmwf', 'right')">
+                        <span class="model-title">EC ▾</span>
                         <span class="model-time">--</span>
                     </button>
                 </div>
@@ -155,12 +161,14 @@
     </div>
 
     <!-- SCHWEBENDE RUN-DROPDOWNS -->
+    <div class="floating-popup runs-dropdown-popup" id="runDropdown-left-kenda-ch1"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-left-icon-ch1"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-left-icon-ch2"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-left-arome"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-left-icon-d2"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-left-ecmwf"></div>
 
+    <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-kenda-ch1"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-icon-ch1"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-icon-ch2"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-arome"></div>
@@ -251,6 +259,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=43"></script>
+    <script src="app.js?v=44"></script>
 </body>
 </html>
