@@ -299,8 +299,8 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
 # ================= KENDA-CH1 (METEOSCHWEIZ ANALYSE) FETCHER =================
 def fetch_kenda_data(start_step, end_step, ref_time_str):
     """
-    Lädt stündliche KENDA-CH1 Ist-Zustände der letzten 24 Stunden.
-    Schritt 0 entspricht T - 23h, Schritt 23 entspricht T (aktuellster Zustand).
+    Lädt stündliche KENDA-CH1 Ist-Zustände der letzten 5 Stunden.
+    Schritt 0 entspricht T - 4h, Schritt 4 entspricht T (aktuellster Zustand).
     """
     print(f"-> Lade KENDA-CH1 Analysen für Schritte {start_step} bis {end_step} (Basis: {ref_time_str})...", flush=True)
     collection = "ogd-analysis-kenda-ch1"
@@ -312,8 +312,7 @@ def fetch_kenda_data(start_step, end_step, ref_time_str):
     except Exception:
         latest_dt = datetime.now(ZoneInfo("UTC"))
 
-    # Pilot zur Ermittlung des Gitters
-    iso_pilot = (latest_dt - timedelta(hours=23 - end_step)).strftime("%Y-%m-%dT%H:00:00Z")
+    iso_pilot = (latest_dt - timedelta(hours=4 - end_step)).strftime("%Y-%m-%dT%H:00:00Z")
     req_pilot = ogd_api.Request(
         collection=collection,
         variable="U_10M",
@@ -340,7 +339,7 @@ def fetch_kenda_data(start_step, end_step, ref_time_str):
     gc.collect()
 
     steps = list(range(start_step, end_step + 1))
-    analysis_times = [latest_dt - timedelta(hours=23 - s) for s in steps]
+    analysis_times = [latest_dt - timedelta(hours=4 - s) for s in steps]
     analysis_isos = [t.strftime("%Y-%m-%dT%H:00:00Z") for t in analysis_times]
 
     def _fetch_kenda_var_for_hour(var_name, lt_hour, iso_t):
@@ -362,18 +361,14 @@ def fetch_kenda_data(start_step, end_step, ref_time_str):
                 time.sleep(2 * att)
         return None
 
-    # Stündliche 2D-Felder laden
     u_list, v_list, g_list = [], [], []
     clouds = {c: [] for c in ["clct", "clch", "clcm", "clcl"]}
     CLOUD_MAP = {"clct": "CLCT", "clch": "CLCH", "clcm": "CLCM", "clcl": "CLCL"}
 
     for iso_t in analysis_isos:
-        # 1. 10m Wind (Step 0)
         u_list.append(_fetch_kenda_var_for_hour("U_10M", 0, iso_t))
         v_list.append(_fetch_kenda_var_for_hour("V_10M", 0, iso_t))
-        # 2. Böen (First Guess, Step 1)
         g_list.append(_fetch_kenda_var_for_hour("VMAX_10M", 1, iso_t))
-        # 3. Wolken (Step 0)
         for c_key, grib_name in CLOUD_MAP.items():
             if c_key in active_vars:
                 clouds[c_key].append(_fetch_kenda_var_for_hour(grib_name, 0, iso_t))
@@ -390,7 +385,6 @@ def fetch_kenda_data(start_step, end_step, ref_time_str):
         if c_key in active_vars and clouds[c_key] and all(x is not None for x in clouds[c_key]):
             surface_results[f"{c_key}_h"] = xr.concat(clouds[c_key], dim="lead_time")
 
-    # Höhenwinde
     altitude_hl_res = {}
     hl_altitudes = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and k in active_vars]
     if hl_altitudes:
@@ -732,7 +726,7 @@ def fetch_icond2_single_hour(ref_iso, lead_hour, grid_info):
     url_g_hl = f"{base_det}/vmax_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_vmax_10m.grib2.bz2"
 
     url_u_ens = f"{base_eps}/u_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_u_10m.grib2.bz2"
-    url_v_ens = f"{base_eps}/v_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_v_10m.grib2.bz2"
+    url_v_ens = f"{base_eps}/v_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_vmax_10m.grib2.bz2"
     url_g_ens = f"{base_eps}/vmax_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_vmax_10m.grib2.bz2"
 
     valid_indices = grid_info["valid_indices"]
