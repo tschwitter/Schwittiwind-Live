@@ -10,7 +10,6 @@ from zoneinfo import ZoneInfo
 from multiprocessing import get_context
 
 # ================= DISK-QUOTA FIX =================
-# Verhindert [Errno 122] Disk quota exceeded in /tmp (tmpfs-RAM)
 WORKSPACE_TMP = os.path.abspath("tmp_scratch")
 os.makedirs(WORKSPACE_TMP, exist_ok=True)
 os.environ["TMPDIR"] = WORKSPACE_TMP
@@ -46,6 +45,44 @@ def load_existing_runs(model_name):
             valid_runs.append(r)
 
     return valid_runs
+
+def check_kenda_new_data():
+    """Prüft die Verfügbarkeit der neuesten stündlichen KENDA-CH1 Analyse."""
+    from meteodatalab import ogd_api
+    model_cfg = config.MODELS_CONFIG["kenda-ch1"]
+    existing_runs = load_existing_runs("kenda-ch1")
+    latest_known_id = existing_runs[0]["id"] if (existing_runs and len(existing_runs) > 0) else None
+
+    try:
+        check_pilot = ogd_api.Request(
+            collection=model_cfg["collection"],
+            variable="U_10M",
+            ref_time="latest",
+            perturbed=False,
+            lead_time=[timedelta(hours=0)]
+        )
+        ds_pilot = ogd_api.get_from_ogd(check_pilot)
+        latest_ref_raw = ds_pilot.coords['ref_time'].values
+        if getattr(latest_ref_raw, 'ndim', 0) > 0:
+            latest_ref_raw = latest_ref_raw[0]
+        else:
+            latest_ref_raw = latest_ref_raw.item() if hasattr(latest_ref_raw, 'item') else latest_ref_raw
+
+        latest_dt = datetime.fromisoformat(str(latest_ref_raw).split('.')[0]).replace(tzinfo=ZoneInfo("UTC"))
+        latest_ref_str = latest_dt.strftime("%d.%m.%Y %H:00 UTC")
+        iso_str = str(latest_ref_raw).split('.')[0] + "Z"
+        run_id = latest_dt.strftime("%Y%m%d_%H")
+    except Exception as e:
+        print(f"-> Hinweis: [kenda-ch1] Konnte neuesten Lauf nicht anfragen ({e}).", flush=True)
+        return False, None, "latest", None, None
+
+    is_new = (latest_known_id != run_id)
+    if not is_new:
+        print(f"-> [kenda-ch1] Analyse {run_id} ist bereits aktuell.", flush=True)
+        return False, latest_ref_str, iso_str, run_id, latest_dt
+
+    print(f"✓ [kenda-ch1] Neue Analyse {run_id} bereitgestellt!", flush=True)
+    return True, latest_ref_str, iso_str, run_id, latest_dt
 
 def check_ecmwf_new_data():
     """Prüft die Verfügbarkeit des neuesten 0.1° ECMWF-Laufs über Open Data."""
@@ -189,6 +226,8 @@ def check_icond2_new_data():
     return False, None, "latest", None, None
 
 def check_model_new_data(model_name):
+    if model_name == "kenda-ch1":
+        return check_kenda_new_data()
     if model_name == "ecmwf":
         return check_ecmwf_new_data()
     if model_name == "arome":
@@ -216,7 +255,7 @@ def check_model_new_data(model_name):
         else:
             latest_ref_raw = latest_ref_raw.item() if hasattr(latest_ref_raw, 'item') else latest_ref_raw
 
-        latest_dt = datetime.fromisoformat(str(latest_ref_raw).split('.')[0])
+        latest_dt = datetime.fromisoformat(str(latest_ref_raw).split('.')[0]).replace(tzinfo=ZoneInfo("UTC"))
         latest_ref_str = latest_dt.strftime("%d.%m.%Y %H:00 UTC")
         iso_str = str(latest_ref_raw).split('.')[0] + "Z"
         run_id = latest_dt.strftime("%Y%m%d_%H")
@@ -274,14 +313,24 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
         else:
             ref_dt = datetime.now(ZoneInfo("UTC"))
 
-        step_hours = config.get_model_step_hours(model_name, ref_dt)
         times_by_step = []
-        for h in step_hours:
-            valid_local = (ref_dt + timedelta(hours=h)).astimezone(local_tz)
-            times_by_step.append({
-                "step_hours": h,
-                "local_str": valid_local.strftime("%d.%m.%Y %H:%M Local")
-            })
+        if model_name == "kenda-ch1":
+            # 24 rollende Analyse-Stunden: Schritt 0 ist T-23h, Schritt 23 ist T (aktuell)
+            for h in range(24):
+                step_dt = ref_dt - timedelta(hours=(23 - h))
+                valid_local = step_dt.astimezone(local_tz)
+                times_by_step.append({
+                    "step_hours": h,
+                    "local_str": valid_local.strftime("%d.%m.%Y %H:%M Local")
+                })
+        else:
+            step_hours = config.get_model_step_hours(model_name, ref_dt)
+            for h in step_hours:
+                valid_local = (ref_dt + timedelta(hours=h)).astimezone(local_tz)
+                times_by_step.append({
+                    "step_hours": h,
+                    "local_str": valid_local.strftime("%d.%m.%Y %H:%M Local")
+                })
 
         with open(f"{run_dir}/times.json", "w") as f:
             json.dump(times_by_step, f)
@@ -436,7 +485,6 @@ def run_chunk(model_name, run_id, start_step, end_step, ref_time_str):
     with ctx.Pool(processes=num_procs) as pool:
         pool.map(process_single_local_step, tasks)
 
-    # Nach jedem Chunk den Scratch-Ordner leeren, damit die Platte sauber bleibt
     try:
         shutil.rmtree(WORKSPACE_TMP, ignore_errors=True)
         os.makedirs(WORKSPACE_TMP, exist_ok=True)
