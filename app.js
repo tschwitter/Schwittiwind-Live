@@ -212,7 +212,7 @@ function toggleSplitScreen(e) {
         wrapper.classList.remove("single-view");
         wrapper.classList.add("split-view");
     } else {
-        wrapper.classList.remove("split-view");
+        wrapper.classList.remove("single-view");
         wrapper.classList.add("single-view");
     }
 
@@ -283,8 +283,7 @@ function updateCityLabels() {
 
         CITIES.forEach(city => {
             if (curZoom >= city.minZoom) {
-                var latlng = L.latLng(city.lat, lon => city.lon);
-                latlng = L.latLng(city.lat, city.lon);
+                var latlng = L.latLng(city.lat, city.lon);
                 if (bounds.contains(latlng)) {
                     var html = `<div class="city-label-container"><div class="city-dot"></div><span class="city-name">${city.name}</span></div>`;
                     var icon = L.divIcon({ html: html, className: 'city-div-icon', iconSize: [0, 0], iconAnchor: [0, 0] });
@@ -1201,6 +1200,7 @@ function initMapInstance(domId) {
     arrowCanvas.style.left = '0';
     arrowCanvas.style.top = '0';
     arrowCanvas.style.pointerEvents = 'none';
+    arrowCanvas.style.opacity = '1';
     arrowCanvas.style.transition = 'opacity 0.12s ease';
     arrowPane.appendChild(arrowCanvas);
     var arrowCtx = arrowCanvas.getContext('2d');
