@@ -315,9 +315,8 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
 
         times_by_step = []
         if model_name == "kenda-ch1":
-            # 24 rollende Analyse-Stunden: Schritt 0 ist T-23h, Schritt 23 ist T (aktuell)
-            for h in range(24):
-                step_dt = ref_dt - timedelta(hours=(23 - h))
+            for h in range(5):
+                step_dt = ref_dt - timedelta(hours=(4 - h))
                 valid_local = step_dt.astimezone(local_tz)
                 times_by_step.append({
                     "step_hours": h,
