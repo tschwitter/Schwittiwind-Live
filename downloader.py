@@ -24,7 +24,7 @@ os.environ["TMPDIR"] = WORKSPACE_TMP
 tempfile.tempdir = WORKSPACE_TMP
 
 _ICOND2_GRID_CACHE = {}
-_OGD_DOWNLOAD_SEMAPHORE = threading.Semaphore(2)  # Verhindert gleichzeitige RAM-Spitzen beim GRIB-Entpacken
+_OGD_DOWNLOAD_SEMAPHORE = threading.Semaphore(2)
 
 def _trim_memory():
     """Zwingt das Linux-System, ungenutzten Heap-RAM sofort physikalisch an das OS freizugeben."""
@@ -128,7 +128,6 @@ def get_hhl_and_weights(collection, hhl_asset, valid_cells=None, target_alts=Non
             "col_idx": col_idx
         }
 
-    # Vertikaler Schicht-Beschnitt zur massiven RAM-Entlastung
     min_layer = max(0, min(all_needed_layers))
     max_layer = min(vals.shape[0] - 1, max(all_needed_layers))
     alt_prep["_layer_slice"] = (min_layer, max_layer + 1)
@@ -143,7 +142,6 @@ def get_hhl_and_weights(collection, hhl_asset, valid_cells=None, target_alts=Non
     return alt_prep
 
 def interpolate_fast_precomputed_from_3d(vals_3d, prep, is_ensemble=True):
-    """Interpoliert hochoptimiert direkt aus dem vorbereiteten vertikalen Ausschnitt."""
     idx_above = prep.get("idx_above_rel", prep["idx_above"])
     idx_below = prep.get("idx_below_rel", prep["idx_below"])
     weight = prep["weight"]
@@ -208,7 +206,6 @@ def _fetch_and_slice_single_hour(args):
         lead_time=[lt]
     )
     
-    # Semaphore drosselt gleichzeitiges Entpacken, verhindert den 16-GB-Peak!
     with _OGD_DOWNLOAD_SEMAPHORE:
         ds_hour = None
         for attempt in range(1, 4):
@@ -225,7 +222,6 @@ def _fetch_and_slice_single_hour(args):
         if ds_hour is None:
             return None
 
-        # Sofort auf Schweizer Punkte reduzieren
         if valid_cells is not None:
             ds_hour = ds_hour.isel(cell=valid_cells)
 
@@ -241,7 +237,6 @@ def _fetch_and_slice_single_hour(args):
 
         is_ensemble = ('eps' in dims_list and sub.sizes['eps'] > 1)
 
-        # Vertikaler Schicht-Beschnitt: Lädt nur relevante Höhenlagen
         if "_layer_slice" in alt_prep:
             l_start, l_end = alt_prep["_layer_slice"]
             sub = sub.isel({z_dim: slice(l_start, l_end)})
@@ -300,6 +295,136 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
     del hourly_results, valid_hourly
     _trim_memory()
     return results_by_alt
+
+# ================= KENDA-CH1 (METEOSCHWEIZ ANALYSE) FETCHER =================
+def fetch_kenda_data(start_step, end_step, ref_time_str):
+    """
+    Lädt stündliche KENDA-CH1 Ist-Zustände der letzten 24 Stunden.
+    Schritt 0 entspricht T - 23h, Schritt 23 entspricht T (aktuellster Zustand).
+    """
+    print(f"-> Lade KENDA-CH1 Analysen für Schritte {start_step} bis {end_step} (Basis: {ref_time_str})...", flush=True)
+    collection = "ogd-analysis-kenda-ch1"
+    hhl_asset = config.MODELS_CONFIG["kenda-ch1"]["hhl_asset"]
+    active_vars = config.MODELS_CONFIG["kenda-ch1"]["active_variables"]
+
+    try:
+        latest_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
+    except Exception:
+        latest_dt = datetime.now(ZoneInfo("UTC"))
+
+    # Pilot zur Ermittlung des Gitters
+    iso_pilot = (latest_dt - timedelta(hours=23 - end_step)).strftime("%Y-%m-%dT%H:00:00Z")
+    req_pilot = ogd_api.Request(
+        collection=collection,
+        variable="U_10M",
+        ref_time=iso_pilot,
+        perturbed=False,
+        lead_time=[timedelta(hours=0)]
+    )
+    for attempt in range(1, 4):
+        try:
+            with SilenceStderr():
+                ds_pilot = ogd_api.get_from_ogd(req_pilot)
+            break
+        except Exception as e:
+            if attempt == 3:
+                raise e
+            time.sleep(3)
+
+    lats = ds_pilot.coords['lat'].values
+    lons = ds_pilot.coords['lon'].values
+    valid_cells = np.where((lats >= config.LAT_MIN) & (lats <= config.LAT_MAX) & (lons >= config.LON_MIN) & (lons <= config.LON_MAX))[0]
+    ref_lon = lons[valid_cells]
+    ref_lat = lats[valid_cells]
+    del ds_pilot
+    gc.collect()
+
+    steps = list(range(start_step, end_step + 1))
+    analysis_times = [latest_dt - timedelta(hours=23 - s) for s in steps]
+    analysis_isos = [t.strftime("%Y-%m-%dT%H:00:00Z") for t in analysis_times]
+
+    def _fetch_kenda_var_for_hour(var_name, lt_hour, iso_t):
+        req = ogd_api.Request(
+            collection=collection,
+            variable=var_name,
+            ref_time=iso_t,
+            perturbed=False,
+            lead_time=[timedelta(hours=lt_hour)]
+        )
+        for att in range(1, 4):
+            try:
+                with SilenceStderr():
+                    ds = ogd_api.get_from_ogd(req)
+                if valid_cells is not None:
+                    ds = ds.isel(cell=valid_cells)
+                return safe_squeeze(ds)
+            except Exception:
+                time.sleep(2 * att)
+        return None
+
+    # Stündliche 2D-Felder laden
+    u_list, v_list, g_list = [], [], []
+    clouds = {c: [] for c in ["clct", "clch", "clcm", "clcl"]}
+    CLOUD_MAP = {"clct": "CLCT", "clch": "CLCH", "clcm": "CLCM", "clcl": "CLCL"}
+
+    for iso_t in analysis_isos:
+        # 1. 10m Wind (Step 0)
+        u_list.append(_fetch_kenda_var_for_hour("U_10M", 0, iso_t))
+        v_list.append(_fetch_kenda_var_for_hour("V_10M", 0, iso_t))
+        # 2. Böen (First Guess, Step 1)
+        g_list.append(_fetch_kenda_var_for_hour("VMAX_10M", 1, iso_t))
+        # 3. Wolken (Step 0)
+        for c_key, grib_name in CLOUD_MAP.items():
+            if c_key in active_vars:
+                clouds[c_key].append(_fetch_kenda_var_for_hour(grib_name, 0, iso_t))
+
+    surface_results = {}
+    if u_list and all(x is not None for x in u_list):
+        surface_results["u_h"] = xr.concat(u_list, dim="lead_time")
+    if v_list and all(x is not None for x in v_list):
+        surface_results["v_h"] = xr.concat(v_list, dim="lead_time")
+    if g_list and all(x is not None for x in g_list):
+        surface_results["g_h"] = xr.concat(g_list, dim="lead_time")
+
+    for c_key in CLOUD_MAP:
+        if c_key in active_vars and clouds[c_key] and all(x is not None for x in clouds[c_key]):
+            surface_results[f"{c_key}_h"] = xr.concat(clouds[c_key], dim="lead_time")
+
+    # Höhenwinde
+    altitude_hl_res = {}
+    hl_altitudes = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and k in active_vars]
+    if hl_altitudes:
+        alt_prep = get_hhl_and_weights("ogd-forecasting-icon-ch1", hhl_asset, valid_cells, hl_altitudes)
+        u_alt_all = {alt: [] for alt in hl_altitudes}
+        v_alt_all = {alt: [] for alt in hl_altitudes}
+
+        for iso_t in analysis_isos:
+            args_u = (collection, "U", False, iso_t, timedelta(hours=0), valid_cells, alt_prep, hl_altitudes)
+            args_v = (collection, "V", False, iso_t, timedelta(hours=0), valid_cells, alt_prep, hl_altitudes)
+            res_u = _fetch_and_slice_single_hour(args_u)
+            res_v = _fetch_and_slice_single_hour(args_v)
+            for alt in hl_altitudes:
+                if res_u and alt in res_u:
+                    u_alt_all[alt].append(res_u[alt])
+                if res_v and alt in res_v:
+                    v_alt_all[alt].append(res_v[alt])
+
+        for alt in hl_altitudes:
+            if u_alt_all[alt] and v_alt_all[alt] and len(u_alt_all[alt]) == len(steps):
+                altitude_hl_res[alt] = (
+                    xr.concat(u_alt_all[alt], dim="lead_time"),
+                    xr.concat(v_alt_all[alt], dim="lead_time")
+                )
+
+    _trim_memory()
+    print(f"✓ KENDA-CH1 Daten für Schritte {start_step}..{end_step} bereitgestellt!", flush=True)
+    return {
+        "surface": surface_results,
+        "altitude_hl": altitude_hl_res,
+        "altitude_ens": {},
+        "ref_lon": ref_lon,
+        "ref_lat": ref_lat
+    }
 
 # ================= AROME HD (MÉTÉO-FRANCE) FETCHER =================
 def fetch_arome_single_hour(ref_iso, lead_hour):
@@ -659,10 +784,6 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
 
 # ================= ECMWF 0.1° ULTRA-FAST ECCODES DECODER =================
 def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
-    """
-    Parst GRIB2 in C mit ecCodes unter Auswertung der echten Gitter-Header.
-    Verhindert Nord-Süd- oder Ost-West-Spiegelungen garantiert.
-    """
     if not os.path.exists(grib_path) or os.path.getsize(grib_path) < 1000:
         return None, None, None, None
 
@@ -759,7 +880,6 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
         return None, None, None, None
 
 def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
-    """Lädt die Dateien per kontinuierlichem High-Speed-Stream und parst sie via ecCodes."""
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ctrl, \
          tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ens:
         path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
@@ -768,7 +888,6 @@ def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
     u_e, v_e = None, None
     lons, lats = None, None
 
-    # 1. Hauptlauf (fc) als ganzer Surface-Stream (1 HTTP GET)
     try:
         client.download(
             date=date_ymd, time=time_hh, step=step_hour,
@@ -778,7 +897,6 @@ def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
     except Exception as e:
         print(f"   ⚠️ ECMWF Hauptlauf (+{step_hour}h): {e}", flush=True)
 
-    # 2. 50 Ensemble-Member (ef) als ganzer Surface-Stream (1 HTTP GET)
     try:
         client.download(
             date=date_ymd, time=time_hh, step=step_hour,
@@ -808,7 +926,7 @@ def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
 
 def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     from ecmwf.opendata import Client
-    print(f"-> Lade ECMWF 0.1° (10m Wind inkl. 50 Member via Google Cloud Turbo) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
+    print(f"-> Lade ECMWF 0.1° (10m Wind inkl. 50 Member) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
 
     try:
         ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
@@ -875,6 +993,8 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
 
 # ================= ALLGEMEINER DISPATCHER =================
 def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
+    if model_name == "kenda-ch1":
+        return fetch_kenda_data(start_step, end_step, ref_time_str)
     if model_name == "arome":
         return fetch_arome_hd_data(start_step, end_step, ref_time_str)
     if model_name == "icon-d2":
@@ -974,14 +1094,12 @@ def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
         print(f"3. Lade vertikale Höhenwinde [{model_name}] für {all_target_alts}m...", flush=True)
         alt_prep = get_hhl_and_weights(collection, model_cfg["hhl_asset"], valid_cells, all_target_alts)
 
-        # 1. Hauptlauf U & V parallel (3 Worker intern)
         with ThreadPoolExecutor(max_workers=2) as pool:
             future_u_hl = pool.submit(fetch_3d_and_slice, collection, "U", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
             future_v_hl = pool.submit(fetch_3d_and_slice, collection, "V", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
             u_hl_by_alt = future_u_hl.result()
             v_hl_by_alt = future_v_hl.result()
 
-        # 2. Ensemble U & V sequenziell (3 Worker intern, dank vertikalem Schicht-Filter völlig OOM-sicher!)
         if ens_altitudes:
             u_ens_by_alt = fetch_3d_and_slice(collection, "U", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
             _trim_memory()
