@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Wetter & Wind (KENDA, ICON CH1, CH2, D2, AROME & ECMWF 0.1°)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=44" />
+    <link rel="stylesheet" href="style.css?v=45" />
 </head>
 <body>
 
@@ -109,18 +109,20 @@
 
         <div class="model-content-wrap">
             <div class="model-toggle-column">
-                <button class="model-btn" id="btnModel-right-kenda-ch1" onclick="handleModelButtonClick('kenda-ch1', 'right')">
-                    <span class="model-title">KND ▾</span>
-                    <span class="model-time">--</span>
-                </button>
-                <button class="model-btn" id="btnModel-right-arome" onclick="handleModelButtonClick('arome', 'right')">
-                    <span class="model-title">AROME ▾</span>
-                    <span class="model-time">--</span>
-                </button>
-                <button class="model-btn" id="btnModel-right-icon-d2" onclick="handleModelButtonClick('icon-d2', 'right')">
-                    <span class="model-title">D2 ▾</span>
-                    <span class="model-time">--</span>
-                </button>
+                <div class="model-toggle-row">
+                    <button class="model-btn" id="btnModel-right-kenda-ch1" onclick="handleModelButtonClick('kenda-ch1', 'right')">
+                        <span class="model-title">KND ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
+                    <button class="model-btn" id="btnModel-right-arome" onclick="handleModelButtonClick('arome', 'right')">
+                        <span class="model-title">AROME ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
+                    <button class="model-btn" id="btnModel-right-icon-d2" onclick="handleModelButtonClick('icon-d2', 'right')">
+                        <span class="model-title">D2 ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
+                </div>
                 <div class="model-toggle-row">
                     <button class="model-btn" id="btnModel-right-icon-ch1" onclick="handleModelButtonClick('icon-ch1', 'right')">
                         <span class="model-title">CH1 ▾</span>
@@ -259,6 +261,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=44"></script>
+    <script src="app.js?v=45"></script>
 </body>
 </html>
