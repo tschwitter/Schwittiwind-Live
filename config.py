@@ -28,6 +28,19 @@ VARIABLES = list(VARIABLES_CONFIG.keys())
 
 # ================= MODELL-STEUERUNG =================
 MODELS_CONFIG = {
+    "kenda-ch1": {
+        "name": "KENDA-CH1 (1km Analyse)",
+        "collection": "ogd-analysis-kenda-ch1",
+        "hhl_asset": "vertical_constants_icon-ch1-eps.grib2",
+        "nx": 400,
+        "ny": 240,
+        "hours": 24,
+        "max_members": 1,
+        "max_runs": 4,
+        "active_variables": ["wind", "gust", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"],
+        "ensemble_variables": [],
+        "max_chunks": 2
+    },
     "icon-ch1": {
         "name": "ICON-CH1 (1km)",
         "collection": "ogd-forecasting-icon-ch1",
@@ -38,9 +51,7 @@ MODELS_CONFIG = {
         "max_members": 11,
         "max_runs": 8,
         "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"],
-        #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
         "ensemble_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"],
-        #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"
         "max_chunks": 4
     },
     "icon-ch2": {
@@ -53,9 +64,7 @@ MODELS_CONFIG = {
         "max_members": 21,
         "max_runs": 4,
         "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"],
-        #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"
         "ensemble_variables": ["wind", "gust", "sun", "dbz"],
-        #"wind", "gust", "sun", "dbz"
         "max_chunks": 3
     },
     "arome": {
@@ -67,7 +76,6 @@ MODELS_CONFIG = {
         "max_members": 1,
         "max_runs": 8,
         "active_variables": ["wind", "gust"],
-        #"wind", "gust"
         "ensemble_variables": [],
         "max_chunks": 1
     },
@@ -80,9 +88,7 @@ MODELS_CONFIG = {
         "max_members": 21,  
         "max_runs": 8,
         "active_variables": ["wind", "gust"],
-        #"wind", "gust"
         "ensemble_variables": ["wind", "gust"],
-        #"wind", "gust"
         "max_chunks": 2
     },
     "ecmwf": {
@@ -90,8 +96,8 @@ MODELS_CONFIG = {
         "collection": "ifs-0p1",
         "nx": 200,
         "ny": 120,
-        "max_members": 51,  # 1 Hauptlauf + 50 Ensemble-Member
-        "max_runs": 4,      # Letzte 4 Läufe
+        "max_members": 51,
+        "max_runs": 4,
         "active_variables": ["wind"],
         "ensemble_variables": ["wind"],
         "max_chunks": 4
@@ -100,6 +106,8 @@ MODELS_CONFIG = {
 
 def get_model_step_hours(model_name, ref_dt):
     """Gibt die Liste der echten Modellstunden zurück."""
+    if model_name == "kenda-ch1":
+        return list(range(24))
     if model_name == "ecmwf":
         if ref_dt.hour in [0, 12]:
             return list(range(0, 145, 3)) + list(range(150, 241, 6))
