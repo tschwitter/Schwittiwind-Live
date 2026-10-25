@@ -34,12 +34,12 @@ MODELS_CONFIG = {
         "hhl_asset": "vertical_constants_icon-ch1-eps.grib2",
         "nx": 400,
         "ny": 240,
-        "hours": 24,
+        "hours": 5,
         "max_members": 1,
         "max_runs": 4,
         "active_variables": ["wind", "gust", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"],
         "ensemble_variables": [],
-        "max_chunks": 2
+        "max_chunks": 1
     },
     "icon-ch1": {
         "name": "ICON-CH1 (1km)",
@@ -107,7 +107,7 @@ MODELS_CONFIG = {
 def get_model_step_hours(model_name, ref_dt):
     """Gibt die Liste der echten Modellstunden zurück."""
     if model_name == "kenda-ch1":
-        return list(range(24))
+        return list(range(5))
     if model_name == "ecmwf":
         if ref_dt.hour in [0, 12]:
             return list(range(0, 145, 3)) + list(range(150, 241, 6))
