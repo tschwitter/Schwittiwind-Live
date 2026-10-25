@@ -4,7 +4,7 @@ var isSyncingMaps = false;
 var isLegendOpen = false;
 var syncRafId = null;
 
-var ALL_MODELS = ["icon-ch1", "icon-ch2", "arome", "icon-d2", "ecmwf"];
+var ALL_MODELS = ["kenda-ch1", "icon-ch1", "icon-ch2", "arome", "icon-d2", "ecmwf"];
 var isMobileModelExpanded = false;
 
 var modelsState = {
@@ -36,10 +36,10 @@ var modelsState = {
     }
 };
 
-var availableRuns = { "icon-ch1": [], "icon-ch2": [], "arome": [], "icon-d2": [], "ecmwf": [] };
+var availableRuns = { "kenda-ch1": [], "icon-ch1": [], "icon-ch2": [], "arome": [], "icon-d2": [], "ecmwf": [] };
 var selectedRuns = {
-    left: { "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null, "ecmwf": null },
-    right: { "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null, "ecmwf": null }
+    left: { "kenda-ch1": null, "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null, "ecmwf": null },
+    right: { "kenda-ch1": null, "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null, "ecmwf": null }
 };
 
 var verticalNavMode = 'member';
@@ -283,7 +283,8 @@ function updateCityLabels() {
 
         CITIES.forEach(city => {
             if (curZoom >= city.minZoom) {
-                var latlng = L.latLng(city.lat, city.lon);
+                var latlng = L.latLng(city.lat, lon => city.lon);
+                latlng = L.latLng(city.lat, city.lon);
                 if (bounds.contains(latlng)) {
                     var html = `<div class="city-label-container"><div class="city-dot"></div><span class="city-name">${city.name}</span></div>`;
                     var icon = L.divIcon({ html: html, className: 'city-div-icon', iconSize: [0, 0], iconAnchor: [0, 0] });
@@ -440,6 +441,7 @@ async function fetchAvailableRuns(modelName) {
 }
 
 function getModelShortLabel(m) {
+    if (m === "kenda-ch1") return "KND";
     if (m === "icon-ch1") return "CH1";
     if (m === "icon-ch2") return "CH2";
     if (m === "icon-d2") return "D2";
@@ -1397,7 +1399,6 @@ async function updateForecast() {
             var st = modelsState[side];
             if (!st.config) continue;
 
-            // Synchronisiere Schritt basierend auf Prognosestunde
             var stepForSide = getStepIdxForSide(side);
 
             if (!modelHasEnsembleForCurrentVar(side)) {
