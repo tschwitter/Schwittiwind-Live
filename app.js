@@ -1022,6 +1022,21 @@ function renderMemberButtonsForTarget(domSide) {
 
     if (!hCont || !eCont || !sCont) return;
 
+    // Dynamischer Hinweis-Container direkt unter ENSEMBLE und vor STATISTIKEN
+    var oldNoticeId = domSide === 'left' ? "oldRunNoticeLeft" : "oldRunNoticeRight";
+    var oldNotice = document.getElementById(oldNoticeId);
+    if (!oldNotice && ensGroup) {
+        oldNotice = document.createElement("div");
+        oldNotice.id = oldNoticeId;
+        oldNotice.className = "only-hl-info";
+        oldNotice.style.padding = "6px 4px";
+        if (btnToggleEns) {
+            ensGroup.insertBefore(oldNotice, btnToggleEns);
+        } else {
+            ensGroup.appendChild(oldNotice);
+        }
+    }
+
     hCont.innerHTML = "";
     eCont.innerHTML = "";
     sCont.innerHTML = "";
@@ -1067,21 +1082,24 @@ function renderMemberButtonsForTarget(domSide) {
     if (hasEns) {
         if (ensGroup) ensGroup.style.display = "block";
         if (isOldRun) {
-            // Bei altem Lauf: Ausklappbutton weg, Notiz direkt unter ENSEMBLE anzeigen
+            // Bei altem Lauf: Ausklappbutton weg, Notiz direkt NACH ENSEMBLE anzeigen
             if (btnToggleEns) btnToggleEns.style.display = "none";
             if (eCont) eCont.style.display = "none";
-            if (notice) {
-                notice.style.display = "block";
-                notice.innerText = "Alter Lauf: Nur Hauptlauf & Statistiken verfügbar";
+            if (oldNotice) {
+                oldNotice.style.display = "block";
+                oldNotice.innerText = "Alter Lauf: Nur Hauptlauf & Statistiken verfügbar";
             }
+            if (notice) notice.style.display = "none";
         } else {
             // Normaler aktueller Lauf
             if (btnToggleEns) btnToggleEns.style.display = "flex";
+            if (oldNotice) oldNotice.style.display = "none";
             if (notice) notice.style.display = "none";
         }
     } else {
-        // Modell hat gar kein Ensemble
+        // Modell hat gar kein Ensemble (z. B. AROME, KENDA)
         if (ensGroup) ensGroup.style.display = "none";
+        if (oldNotice) oldNotice.style.display = "none";
         if (notice) {
             notice.style.display = "block";
             notice.innerText = "Nur Hauptlauf verfügbar";
