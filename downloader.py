@@ -17,17 +17,16 @@ import eccodes
 from meteodatalab import ogd_api, grib_decoder, data_source
 import config
 
-# ================= DISK-QUOTA FIX =================
 WORKSPACE_TMP = os.path.abspath("tmp_scratch")
 os.makedirs(WORKSPACE_TMP, exist_ok=True)
 os.environ["TMPDIR"] = WORKSPACE_TMP
 tempfile.tempdir = WORKSPACE_TMP
 
 _ICOND2_GRID_CACHE = {}
-_OGD_DOWNLOAD_SEMAPHORE = threading.Semaphore(2)
+_OGD_SEMAPHORE = threading.Semaphore(2)
 
-def _trim_memory():
-    """Zwingt das Linux-System, ungenutzten Heap-RAM sofort physikalisch an das OS freizugeben."""
+def trim_memory():
+    """Gibt ungenutzten Heap-RAM sofort an das Betriebssystem zurück."""
     try:
         gc.collect()
         ctypes.CDLL('libc.so.6').malloc_trim(0)
@@ -64,43 +63,46 @@ class SilenceStderr:
                 SilenceStderr._save_fd = None
                 SilenceStderr._null_fd = None
 
+def retry_call(fn, max_attempts=3, delay_factor=2, err_msg="Operation fehlgeschlagen"):
+    """Führt Aufrufe mit Exponential-Backoff durch."""
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return fn()
+        except Exception as e:
+            if attempt == max_attempts:
+                raise RuntimeError(f"{err_msg}: {e}")
+            time.sleep(attempt * delay_factor)
+    return None
+
 def safe_squeeze(ds):
-    drop_dims = [d for d in ['ref_time', 'z', 'generalVerticalLayer', 'heightAboveGround'] if d in ds.dims and ds.sizes[d] == 1]
-    if 'eps' in ds.dims and ds.sizes['eps'] == 1:
-        drop_dims.append('eps')
+    drop_dims = [d for d in ['ref_time', 'z', 'generalVerticalLayer', 'heightAboveGround', 'eps']
+                 if d in ds.dims and ds.sizes[d] == 1]
     return ds.squeeze(drop_dims) if drop_dims else ds
 
+# ================= VERTICAL HHL INTERPOLATION =================
 def get_hhl_and_weights(collection, hhl_asset, valid_cells=None, target_alts=None):
     if not target_alts:
         return {}
     print(f"-> Lade vertikale Gittergeometrie ({hhl_asset})...", flush=True)
-    url_vert = ogd_api.get_collection_asset_url(
-        collection_id=f"ch.meteoschweiz.{collection}",
-        asset_id=hhl_asset
-    )
-    for attempt in range(1, 4):
-        try:
-            with SilenceStderr():
-                ds_vert = grib_decoder.load(
-                    source=data_source.URLDataSource(urls=[url_vert]),
-                    request={"param": "HHL"},
-                    geo_coords=lambda uuid: {}
-                )
-            break
-        except Exception as e:
-            if attempt == 3:
-                raise e
-            print(f"⚠️ Netzwerkunterbrechung bei HHL (Versuch {attempt}/3)...", flush=True)
-            time.sleep(3)
+    url_vert = ogd_api.get_collection_asset_url(f"ch.meteoschweiz.{collection}", hhl_asset)
 
+    def _load():
+        with SilenceStderr():
+            return grib_decoder.load(
+                source=data_source.URLDataSource(urls=[url_vert]),
+                request={"param": "HHL"},
+                geo_coords=lambda uuid: {}
+            )
+
+    ds_vert = retry_call(_load, err_msg="Fehler beim Laden von HHL")
     hhl_da = ds_vert["HHL"].squeeze()
     if valid_cells is not None:
         hhl_da = hhl_da.isel(cell=valid_cells)
-    
+
     vals = hhl_da.values
     if vals.shape[0] != 81 and vals.shape[-1] == 81:
         vals = np.moveaxis(vals, -1, 0)
-    
+
     num_cells = vals.shape[1]
     col_idx = np.arange(num_cells)
     h_full = 0.5 * (vals[:-1, :] + vals[1:, :])
@@ -112,7 +114,6 @@ def get_hhl_and_weights(collection, hhl_asset, valid_cells=None, target_alts=Non
         is_below = (h_full < alt)
         idx_below = np.argmax(is_below, axis=0)
         idx_above = np.maximum(0, idx_below - 1)
-
         all_needed_layers.update(idx_above.tolist())
         all_needed_layers.update(idx_below.tolist())
 
@@ -124,181 +125,117 @@ def get_hhl_and_weights(collection, hhl_asset, valid_cells=None, target_alts=Non
 
         alt_prep[alt] = {
             "idx_above": idx_above, "idx_below": idx_below,
-            "weight": weight, "mask_underground": mask_underground,
-            "col_idx": col_idx
+            "weight": weight, "mask_underground": mask_underground, "col_idx": col_idx
         }
 
-    min_layer = max(0, min(all_needed_layers))
-    max_layer = min(vals.shape[0] - 1, max(all_needed_layers))
-    alt_prep["_layer_slice"] = (min_layer, max_layer + 1)
-
+    min_l, max_l = max(0, min(all_needed_layers)), min(vals.shape[0] - 1, max(all_needed_layers))
+    alt_prep["_layer_slice"] = (min_l, max_l + 1)
     for alt in target_alts:
-        alt_prep[alt]["idx_above_rel"] = alt_prep[alt]["idx_above"] - min_layer
-        alt_prep[alt]["idx_below_rel"] = alt_prep[alt]["idx_below"] - min_layer
+        alt_prep[alt]["idx_above_rel"] = alt_prep[alt]["idx_above"] - min_l
+        alt_prep[alt]["idx_below_rel"] = alt_prep[alt]["idx_below"] - min_l
 
     del ds_vert
-    _trim_memory()
-    print(f"✓ HHL geladen & Gewichte für {len(target_alts)} Höhen vorberechnet (Schichten {min_layer}..{max_layer})!", flush=True)
+    trim_memory()
+    print(f"✓ HHL geladen & Gewichte für {len(target_alts)} Höhen vorberechnet (Schichten {min_l}..{max_l})!", flush=True)
     return alt_prep
 
-def interpolate_fast_precomputed_from_3d(vals_3d, prep, is_ensemble=True):
-    idx_above = prep.get("idx_above_rel", prep["idx_above"])
-    idx_below = prep.get("idx_below_rel", prep["idx_below"])
-    weight = prep["weight"]
+def _interpolate_3d(vals_3d, prep, is_ensemble=True):
+    idx_a = prep.get("idx_above_rel", prep["idx_above"])
+    idx_b = prep.get("idx_below_rel", prep["idx_below"])
+    w = prep["weight"]
     mask = prep["mask_underground"]
     col_idx = prep["col_idx"]
 
     if is_ensemble:
-        v_a = vals_3d[:, idx_above, col_idx]
-        v_b = vals_3d[:, idx_below, col_idx]
-        out_interp = (1.0 - weight) * v_b + weight * v_a
-        out_interp[:, mask] = np.nan
-        return out_interp
-    else:
-        v_a = vals_3d[idx_above, col_idx]
-        v_b = vals_3d[idx_below, col_idx]
-        v_int = (1.0 - weight) * v_b + weight * v_a
-        v_int[mask] = np.nan
-        return v_int
+        out = (1.0 - w) * vals_3d[:, idx_b, col_idx] + w * vals_3d[:, idx_a, col_idx]
+        out[:, mask] = np.nan
+        return out
+    out = (1.0 - w) * vals_3d[idx_b, col_idx] + w * vals_3d[idx_a, col_idx]
+    out[mask] = np.nan
+    return out
 
 def fetch_single_2d(collection, var_name, perturbed, ref_time_str, lead_times, valid_cells):
-    req = ogd_api.Request(
-        collection=collection,
-        variable=var_name,
-        ref_time=ref_time_str,
-        perturbed=perturbed,
-        lead_time=lead_times
-    )
-    for attempt in range(1, 4):
-        try:
-            with SilenceStderr():
-                ds = ogd_api.get_from_ogd(req)
-            if valid_cells is not None:
-                ds = ds.isel(cell=valid_cells)
-            return safe_squeeze(ds)
-        except Exception as e:
-            if attempt == 3:
-                raise RuntimeError(f"Konnte {var_name} ({'Ens' if perturbed else 'HL'}) von {collection} nicht laden: {e}")
-            time.sleep(3 * attempt)
-    return None
+    req = ogd_api.Request(collection=collection, variable=var_name, ref_time=ref_time_str, perturbed=perturbed, lead_time=lead_times)
+    def _fetch():
+        with SilenceStderr():
+            ds = ogd_api.get_from_ogd(req)
+        return safe_squeeze(ds.isel(cell=valid_cells) if valid_cells is not None else ds)
+    return retry_call(_fetch, err_msg=f"Konnte {var_name} nicht laden")
 
 def fetch_dursun_hourly(collection, perturbed, ref_time_str, start_step, end_step, valid_cells):
     actual_start = max(0, start_step - 1)
     fetch_lts = [timedelta(hours=h) for h in range(actual_start, end_step + 1)]
     ds = fetch_single_2d(collection, "DURSUN", perturbed, ref_time_str, fetch_lts, valid_cells)
-    
     if ds is not None and "lead_time" in ds.dims and ds.sizes["lead_time"] > 1:
-        diff = ds.diff(dim="lead_time")
-        diff = xr.where(diff < 0, 0, diff)
-        if start_step == 0:
-            step0 = ds.isel(lead_time=0) * 0.0
-            return xr.concat([step0, diff], dim="lead_time")
-        return diff
+        diff = xr.where(ds.diff(dim="lead_time") < 0, 0, ds.diff(dim="lead_time"))
+        return xr.concat([ds.isel(lead_time=0) * 0.0, diff], dim="lead_time") if start_step == 0 else diff
     return ds
 
 def _fetch_and_slice_single_hour(args):
     collection, var_name, perturbed, ref_time_str, lt, valid_cells, alt_prep, target_alts = args
-    req = ogd_api.Request(
-        collection=collection,
-        variable=var_name,
-        ref_time=ref_time_str,
-        perturbed=perturbed,
-        lead_time=[lt]
-    )
-    
-    with _OGD_DOWNLOAD_SEMAPHORE:
-        ds_hour = None
-        for attempt in range(1, 4):
-            try:
-                with SilenceStderr():
-                    ds_hour = ogd_api.get_from_ogd(req)
-                break
-            except Exception as e:
-                if attempt == 3:
-                    print(f"⚠️ FEHLER beim Laden von 3D {var_name} (perturbed={perturbed}, lt={lt}): {e}", flush=True)
-                    return None
-                time.sleep(2 * attempt)
-
-        if ds_hour is None:
+    req = ogd_api.Request(collection=collection, variable=var_name, ref_time=ref_time_str, perturbed=perturbed, lead_time=[lt])
+    with _OGD_SEMAPHORE:
+        try:
+            with SilenceStderr():
+                ds_hour = ogd_api.get_from_ogd(req)
+        except Exception as e:
+            print(f"⚠️ FEHLER beim Laden von 3D {var_name} (lt={lt}): {e}", flush=True)
             return None
 
         if valid_cells is not None:
             ds_hour = ds_hour.isel(cell=valid_cells)
-
         sub = ds_hour.squeeze()
         dims_list = list(sub.dims)
         eps_coord = sub.coords['eps'].values if 'eps' in sub.coords else None
 
-        z_dim_candidates = [d for d in dims_list if d in ['generalVerticalLayer', 'z', 'level', 'heightAboveGround']]
-        if not z_dim_candidates:
-            del sub, ds_hour
+        z_dim = next((d for d in dims_list if d in ['generalVerticalLayer', 'z', 'level', 'heightAboveGround']), None)
+        if not z_dim:
             return None
-        z_dim = z_dim_candidates[0]
 
         is_ensemble = ('eps' in dims_list and sub.sizes['eps'] > 1)
-
         if "_layer_slice" in alt_prep:
             l_start, l_end = alt_prep["_layer_slice"]
             sub = sub.isel({z_dim: slice(l_start, l_end)})
 
         raw_array = np.ascontiguousarray(sub.values, dtype=np.float32)
-        del sub, ds_hour
 
     if is_ensemble:
-        z_axis = dims_list.index(z_dim)
-        eps_axis = dims_list.index('eps')
-        cell_axis = dims_list.index('cell')
-        vals_3d = np.transpose(raw_array, (eps_axis, z_axis, cell_axis))
+        vals_3d = np.transpose(raw_array, (dims_list.index('eps'), dims_list.index(z_dim), dims_list.index('cell')))
     else:
         vals_3d = np.moveaxis(raw_array, dims_list.index(z_dim), 0) if dims_list[0] != z_dim else raw_array
 
-    del raw_array
-
     alt_slices = {}
     for alt in target_alts:
-        interp_res = interpolate_fast_precomputed_from_3d(vals_3d, alt_prep[alt], is_ensemble=is_ensemble)
+        res = _interpolate_3d(vals_3d, alt_prep[alt], is_ensemble=is_ensemble)
         if is_ensemble:
-            coords = {'eps': eps_coord} if eps_coord is not None else None
-            alt_slices[alt] = xr.DataArray(interp_res, dims=['eps', 'cell'], coords=coords)
+            alt_slices[alt] = xr.DataArray(res, dims=['eps', 'cell'], coords=({'eps': eps_coord} if eps_coord is not None else None))
         else:
-            alt_slices[alt] = xr.DataArray(interp_res, dims=['cell'])
+            alt_slices[alt] = xr.DataArray(res, dims=['cell'])
 
-    del vals_3d
-    _trim_memory()
+    trim_memory()
     return alt_slices
 
 def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times, valid_cells, alt_prep, target_alts):
-    label = f"{var_name} Höhen {[int(a) for a in target_alts]}m ({'Ensemble' if perturbed else 'Hauptlauf'})"
-    num_workers = 3
-    print(f"-> Verarbeite {label} ({num_workers} Worker)...", flush=True)
+    tasks = [(collection, var_name, perturbed, ref_time_str, lt, valid_cells, alt_prep, target_alts) for lt in lead_times]
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        hourly_results = [hr for hr in pool.map(_fetch_and_slice_single_hour, tasks) if hr is not None]
 
-    tasks = [
-        (collection, var_name, perturbed, ref_time_str, lt, valid_cells, alt_prep, target_alts)
-        for lt in lead_times
-    ]
-
-    with ThreadPoolExecutor(max_workers=num_workers) as pool:
-        hourly_results = list(pool.map(_fetch_and_slice_single_hour, tasks))
-
-    valid_hourly = [hr for hr in hourly_results if hr is not None]
-    if not valid_hourly:
+    if not hourly_results:
         return {}
 
     results_by_alt = {}
     for alt in target_alts:
-        slices = [hr[alt] for hr in valid_hourly if alt in hr]
+        slices = [hr[alt] for hr in hourly_results if alt in hr]
         if len(slices) > 1:
             results_by_alt[alt] = xr.concat(slices, dim="lead_time")
         elif len(slices) == 1:
             results_by_alt[alt] = slices[0].expand_dims("lead_time")
-
-    del hourly_results, valid_hourly
-    _trim_memory()
+    trim_memory()
     return results_by_alt
 
-# ================= KENDA-CH1 (METEOSCHWEIZ ANALYSE) FETCHER =================
+# ================= KENDA-CH1 =================
 def fetch_kenda_data(start_step, end_step, ref_time_str):
-    print(f"-> Lade KENDA-CH1 Analysen für Schritte {start_step} bis {end_step} (Basis: {ref_time_str})...", flush=True)
+    print(f"-> Lade KENDA-CH1 Analysen für Schritte {start_step}..{end_step} ({ref_time_str})...", flush=True)
     collection = "ogd-analysis-kenda-ch1"
     hhl_asset = config.MODELS_CONFIG["kenda-ch1"]["hhl_asset"]
     active_vars = config.MODELS_CONFIG["kenda-ch1"]["active_variables"]
@@ -309,76 +246,39 @@ def fetch_kenda_data(start_step, end_step, ref_time_str):
         latest_dt = datetime.now(ZoneInfo("UTC"))
 
     iso_pilot = (latest_dt - timedelta(hours=4 - end_step)).strftime("%Y-%m-%dT%H:00:00Z")
-    req_pilot = ogd_api.Request(
-        collection=collection,
-        variable="U_10M",
-        ref_time=iso_pilot,
-        perturbed=False,
-        lead_time=[timedelta(hours=0)]
-    )
-    for attempt in range(1, 4):
-        try:
-            with SilenceStderr():
-                ds_pilot = ogd_api.get_from_ogd(req_pilot)
-            break
-        except Exception as e:
-            if attempt == 3:
-                raise e
-            time.sleep(3)
+    req_pilot = ogd_api.Request(collection=collection, variable="U_10M", ref_time=iso_pilot, perturbed=False, lead_time=[timedelta(hours=0)])
+    ds_pilot = retry_call(lambda: ogd_api.get_from_ogd(req_pilot), err_msg="Fehler beim Pilot-Download (KENDA)")
 
-    lats = ds_pilot.coords['lat'].values
-    lons = ds_pilot.coords['lon'].values
+    lats, lons = ds_pilot.coords['lat'].values, ds_pilot.coords['lon'].values
     valid_cells = np.where((lats >= config.LAT_MIN) & (lats <= config.LAT_MAX) & (lons >= config.LON_MIN) & (lons <= config.LON_MAX))[0]
-    ref_lon = lons[valid_cells]
-    ref_lat = lats[valid_cells]
+    ref_lon, ref_lat = lons[valid_cells], lats[valid_cells]
     del ds_pilot
-    gc.collect()
 
     steps = list(range(start_step, end_step + 1))
-    analysis_times = [latest_dt - timedelta(hours=4 - s) for s in steps]
-    analysis_isos = [t.strftime("%Y-%m-%dT%H:00:00Z") for t in analysis_times]
+    analysis_isos = [(latest_dt - timedelta(hours=4 - s)).strftime("%Y-%m-%dT%H:00:00Z") for s in steps]
 
-    def _fetch_kenda_var_for_hour(var_name, lt_hour, iso_t):
-        req = ogd_api.Request(
-            collection=collection,
-            variable=var_name,
-            ref_time=iso_t,
-            perturbed=False,
-            lead_time=[timedelta(hours=lt_hour)]
-        )
-        for att in range(1, 4):
-            try:
-                with SilenceStderr():
-                    ds = ogd_api.get_from_ogd(req)
-                if valid_cells is not None:
-                    ds = ds.isel(cell=valid_cells)
-                return safe_squeeze(ds)
-            except Exception:
-                time.sleep(2 * att)
-        return None
+    def _fetch_kenda_hour(var_name, lt_hour, iso_t):
+        req = ogd_api.Request(collection=collection, variable=var_name, ref_time=iso_t, perturbed=False, lead_time=[timedelta(hours=lt_hour)])
+        return retry_call(lambda: safe_squeeze(ogd_api.get_from_ogd(req).isel(cell=valid_cells)), max_attempts=2)
 
     u_list, v_list, g_list = [], [], []
     clouds = {c: [] for c in ["clct", "clch", "clcm", "clcl"]}
     CLOUD_MAP = {"clct": "CLCT", "clch": "CLCH", "clcm": "CLCM", "clcl": "CLCL"}
 
     for iso_t in analysis_isos:
-        u_list.append(_fetch_kenda_var_for_hour("U_10M", 0, iso_t))
-        v_list.append(_fetch_kenda_var_for_hour("V_10M", 0, iso_t))
-        g_list.append(_fetch_kenda_var_for_hour("VMAX_10M", 1, iso_t))
+        u_list.append(_fetch_kenda_hour("U_10M", 0, iso_t))
+        v_list.append(_fetch_kenda_hour("V_10M", 0, iso_t))
+        g_list.append(_fetch_kenda_hour("VMAX_10M", 1, iso_t))
         for c_key, grib_name in CLOUD_MAP.items():
             if c_key in active_vars:
-                clouds[c_key].append(_fetch_kenda_var_for_hour(grib_name, 0, iso_t))
+                clouds[c_key].append(_fetch_kenda_hour(grib_name, 0, iso_t))
 
     surface_results = {}
-    if u_list and all(x is not None for x in u_list):
-        surface_results["u_h"] = xr.concat(u_list, dim="lead_time")
-    if v_list and all(x is not None for x in v_list):
-        surface_results["v_h"] = xr.concat(v_list, dim="lead_time")
-    if g_list and all(x is not None for x in g_list):
-        surface_results["g_h"] = xr.concat(g_list, dim="lead_time")
-
+    if all(x is not None for x in u_list): surface_results["u_h"] = xr.concat(u_list, dim="lead_time")
+    if all(x is not None for x in v_list): surface_results["v_h"] = xr.concat(v_list, dim="lead_time")
+    if all(x is not None for x in g_list): surface_results["g_h"] = xr.concat(g_list, dim="lead_time")
     for c_key in CLOUD_MAP:
-        if c_key in active_vars and clouds[c_key] and all(x is not None for x in clouds[c_key]):
+        if c_key in active_vars and all(x is not None for x in clouds[c_key]):
             surface_results[f"{c_key}_h"] = xr.concat(clouds[c_key], dim="lead_time")
 
     altitude_hl_res = {}
@@ -387,42 +287,25 @@ def fetch_kenda_data(start_step, end_step, ref_time_str):
         alt_prep = get_hhl_and_weights("ogd-forecasting-icon-ch1", hhl_asset, valid_cells, hl_altitudes)
         u_alt_all = {alt: [] for alt in hl_altitudes}
         v_alt_all = {alt: [] for alt in hl_altitudes}
-
         for iso_t in analysis_isos:
-            args_u = (collection, "U", False, iso_t, timedelta(hours=0), valid_cells, alt_prep, hl_altitudes)
-            args_v = (collection, "V", False, iso_t, timedelta(hours=0), valid_cells, alt_prep, hl_altitudes)
-            res_u = _fetch_and_slice_single_hour(args_u)
-            res_v = _fetch_and_slice_single_hour(args_v)
+            res_u = _fetch_and_slice_single_hour((collection, "U", False, iso_t, timedelta(hours=0), valid_cells, alt_prep, hl_altitudes))
+            res_v = _fetch_and_slice_single_hour((collection, "V", False, iso_t, timedelta(hours=0), valid_cells, alt_prep, hl_altitudes))
             for alt in hl_altitudes:
-                if res_u and alt in res_u:
-                    u_alt_all[alt].append(res_u[alt])
-                if res_v and alt in res_v:
-                    v_alt_all[alt].append(res_v[alt])
-
+                if res_u and alt in res_u: u_alt_all[alt].append(res_u[alt])
+                if res_v and alt in res_v: v_alt_all[alt].append(res_v[alt])
         for alt in hl_altitudes:
-            if u_alt_all[alt] and v_alt_all[alt] and len(u_alt_all[alt]) == len(steps):
-                altitude_hl_res[alt] = (
-                    xr.concat(u_alt_all[alt], dim="lead_time"),
-                    xr.concat(v_alt_all[alt], dim="lead_time")
-                )
+            if len(u_alt_all[alt]) == len(steps) and len(v_alt_all[alt]) == len(steps):
+                altitude_hl_res[alt] = (xr.concat(u_alt_all[alt], dim="lead_time"), xr.concat(v_alt_all[alt], dim="lead_time"))
 
-    _trim_memory()
-    print(f"✓ KENDA-CH1 Daten für Schritte {start_step}..{end_step} bereitgestellt!", flush=True)
-    return {
-        "surface": surface_results,
-        "altitude_hl": altitude_hl_res,
-        "altitude_ens": {},
-        "ref_lon": ref_lon,
-        "ref_lat": ref_lat
-    }
+    trim_memory()
+    return {"surface": surface_results, "altitude_hl": altitude_hl_res, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat}
 
-# ================= AROME HD (MÉTÉO-FRANCE) FETCHER =================
+# ================= AROME HD =================
 def fetch_arome_single_hour(ref_iso, lead_hour):
     urls = [
         f"https://meteofrance-pnt.s3.rbx.io.cloud.ovh.net/pnt/{ref_iso}/arome/001/SP1/arome__001__SP1__{lead_hour:02d}H__{ref_iso}.grib2",
         f"https://object.data.gouv.fr/meteofrance-pnt/pnt/{ref_iso}/arome/001/SP1/arome__001__SP1__{lead_hour:02d}H__{ref_iso}.grib2"
     ]
-
     resp = None
     for url in urls:
         for attempt in range(1, 4):
@@ -437,7 +320,6 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
             break
 
     if resp is None:
-        print(f"⚠️ AROME Stunde +{lead_hour}h konnte nicht geladen werden.", flush=True)
         return None, None, None, None, None
 
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp:
@@ -450,64 +332,20 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
         u_gust_da, v_gust_da, scalar_gust_da = None, None, None
 
         for ds in datasets:
-            if 'u10' in ds:
-                u10_da = ds['u10']
-            elif '10u' in ds:
-                u10_da = ds['10u']
-            if 'v10' in ds:
-                v10_da = ds['v10']
-            elif '10v' in ds:
-                v10_da = ds['10v']
-
+            if 'u10' in ds or '10u' in ds: u10_da = ds.get('u10', ds.get('10u'))
+            if 'v10' in ds or '10v' in ds: v10_da = ds.get('v10', ds.get('10v'))
             if lead_hour > 0:
                 for k in ['fg10', '10fg', 'ff_raf', 'wsgsmax']:
-                    if k in ds:
-                        scalar_gust_da = ds[k]
-                        break
-                for ku in ['efg10', 'u10g', 'u_raf']:
-                    if ku in ds:
-                        u_gust_da = ds[ku]
-                        break
-                for kv in ['nfg10', 'v10g', 'v_raf']:
-                    if kv in ds:
-                        v_gust_da = ds[kv]
-                        break
-
-        if u10_da is None or v10_da is None:
-            for ds in datasets:
-                for var_name in ds.data_vars:
-                    v = ds[var_name]
-                    std_n = getattr(v, 'standard_name', '').lower()
-                    if std_n == 'eastward_wind':
-                        u10_da = v
-                    elif std_n == 'northward_wind':
-                        v10_da = v
-
-        if lead_hour > 0 and scalar_gust_da is None and (u_gust_da is None or v_gust_da is None):
-            for ds in datasets:
-                for var_name in ds.data_vars:
-                    v = ds[var_name]
-                    long_n = getattr(v, 'long_name', '').lower()
-                    grib_n = getattr(v, 'GRIB_name', '').lower()
-                    name_comb = f"{long_n} {grib_n}"
-                    if 'gust' in name_comb or 'rafale' in name_comb:
-                        if 'eastward' in name_comb or ' u ' in name_comb or name_comb.startswith('u '):
-                            u_gust_da = v
-                        elif 'northward' in name_comb or ' v ' in name_comb or name_comb.startswith('v '):
-                            v_gust_da = v
-                        elif 'maximum' in name_comb or 'speed' in name_comb:
-                            scalar_gust_da = v
+                    if k in ds: scalar_gust_da = ds[k]; break
+                for ku, kv in [('efg10', 'nfg10'), ('u10g', 'v10g'), ('u_raf', 'v_raf')]:
+                    if ku in ds and kv in ds:
+                        u_gust_da, v_gust_da = ds[ku], ds[kv]; break
 
         lat_coord = 'latitude' if 'latitude' in u10_da.coords else 'lat'
         lon_coord = 'longitude' if 'longitude' in u10_da.coords else 'lon'
-
-        lat_vals = u10_da[lat_coord].values
-        if lat_vals[0] > lat_vals[-1]:
-            lat_slice = slice(config.LAT_MAX, config.LAT_MIN)
-        else:
-            lat_slice = slice(config.LAT_MIN, config.LAT_MAX)
-
+        lat_slice = slice(config.LAT_MAX, config.LAT_MIN) if u10_da[lat_coord].values[0] > u10_da[lat_coord].values[-1] else slice(config.LAT_MIN, config.LAT_MAX)
         lon_slice = slice(config.LON_MIN, config.LON_MAX)
+
         u_sub = u10_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
         v_sub = v10_da.sel({lat_coord: lat_slice, lon_coord: lon_slice}).values
 
@@ -528,32 +366,25 @@ def fetch_arome_single_hour(ref_iso, lead_hour):
 
         for ds in datasets:
             ds.close()
-
         return u_sub.ravel(), v_sub.ravel(), g_sub.ravel(), glon.ravel(), glat.ravel()
     except Exception as e:
         print(f"Fehler beim Dekodieren von AROME GRIB2 (+{lead_hour}h): {e}", flush=True)
         return None, None, None, None, None
     finally:
         if os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except Exception:
-                pass
+            try: os.remove(tmp_path)
+            except Exception: pass
 
 def fetch_arome_hd_data(start_step, end_step, ref_time_str):
-    print(f"-> Lade AROME HD (Wind & Böen) für Schritte {start_step} bis {end_step} ({ref_time_str})...", flush=True)
-    lead_hours = list(range(start_step, end_step + 1))
+    print(f"-> Lade AROME HD (Wind & Böen) für Schritte {start_step}..{end_step} ({ref_time_str})...", flush=True)
     u_list, v_list, g_list = [], [], []
     ref_lon, ref_lat = None, None
 
-    for h in lead_hours:
+    for h in range(start_step, end_step + 1):
         u_arr, v_arr, g_arr, lons, lats = fetch_arome_single_hour(ref_time_str, h)
         if u_arr is not None:
-            u_list.append(u_arr)
-            v_list.append(v_arr)
-            g_list.append(g_arr)
-            if ref_lon is None:
-                ref_lon, ref_lat = lons, lats
+            u_list.append(u_arr); v_list.append(v_arr); g_list.append(g_arr)
+            if ref_lon is None: ref_lon, ref_lat = lons, lats
         else:
             dummy_len = len(ref_lon) if ref_lon is not None else 1000
             u_list.append(np.full(dummy_len, np.nan, dtype=np.float32))
@@ -566,37 +397,26 @@ def fetch_arome_hd_data(start_step, end_step, ref_time_str):
             "v_h": xr.DataArray(np.stack(v_list, axis=0), dims=["lead_time", "cell"]),
             "g_h": xr.DataArray(np.stack(g_list, axis=0), dims=["lead_time", "cell"])
         },
-        "altitude_hl": {},
-        "altitude_ens": {},
-        "ref_lon": ref_lon,
-        "ref_lat": ref_lat
+        "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
 
-# ================= DWD ICON-D2 FETCHER =================
-def _download_and_extract_dwd_bytes(url):
-    for attempt in range(1, 4):
-        try:
-            r = requests.get(url, timeout=35)
-            if r.status_code == 200 and len(r.content) > 1000:
-                return bz2.decompress(r.content)
-            elif r.status_code == 404:
-                return None
-        except Exception:
-            time.sleep(2 * attempt)
-    return None
+# ================= DWD ICON-D2 =================
+def _download_and_extract_dwd(url):
+    def _get():
+        r = requests.get(url, timeout=35)
+        if r.status_code == 200 and len(r.content) > 1000:
+            return bz2.decompress(r.content)
+        return None
+    return retry_call(_get, max_attempts=3, delay_factor=2)
 
 def _find_dwd_coord_url(cycle_hh, param_name):
-    candidate_dirs = [
-        f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/{cycle_hh}/{param_name}/",
-        f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/00/{param_name}/"
-    ]
-    for d_url in candidate_dirs:
+    for d_url in [f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/{cycle_hh}/{param_name}/",
+                  f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/00/{param_name}/"]:
         try:
             r = requests.get(d_url, timeout=10)
             if r.status_code == 200:
                 matches = re.findall(r'href="([^"]*' + param_name + r'[^"]*\.bz2)"', r.text, re.IGNORECASE)
-                if matches:
-                    return d_url.rstrip('/') + '/' + matches[-1]
+                if matches: return d_url.rstrip('/') + '/' + matches[-1]
         except Exception:
             pass
     return None
@@ -606,48 +426,26 @@ def _load_icond2_grid_coords(ref_iso):
     if "valid_indices" in _ICOND2_GRID_CACHE:
         return _ICOND2_GRID_CACHE
 
-    disk_cache = "/tmp/icon_d2_swiss_grid.npz"
-    if os.path.exists(disk_cache):
-        try:
-            data = np.load(disk_cache)
-            _ICOND2_GRID_CACHE = {
-                "valid_indices": data["valid_indices"],
-                "ref_lat": data["ref_lat"],
-                "ref_lon": data["ref_lon"]
-            }
-            return _ICOND2_GRID_CACHE
-        except Exception:
-            pass
-
     try:
         ref_dt = datetime.fromisoformat(ref_iso.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
     except Exception:
         ref_dt = datetime.now(ZoneInfo("UTC"))
 
     cycle_hh = ref_dt.strftime("%H")
-    url_lat = _find_dwd_coord_url(cycle_hh, "clat")
-    url_lon = _find_dwd_coord_url(cycle_hh, "clon")
-
-    clat_bytes = _download_and_extract_dwd_bytes(url_lat)
-    clon_bytes = _download_and_extract_dwd_bytes(url_lon)
+    clat_b = _download_and_extract_dwd(_find_dwd_coord_url(cycle_hh, "clat"))
+    clon_b = _download_and_extract_dwd(_find_dwd_coord_url(cycle_hh, "clon"))
 
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_lat, \
          tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_lon:
-        tmp_lat.write(clat_bytes)
-        tmp_lon.write(clon_bytes)
+        tmp_lat.write(clat_b); tmp_lon.write(clon_b)
         path_lat, path_lon = tmp_lat.name, tmp_lon.name
 
     try:
         with SilenceStderr():
-            ds_lat = cfgrib.open_dataset(path_lat)
-            ds_lon = cfgrib.open_dataset(path_lon)
-
-        var_lat = list(ds_lat.data_vars.keys())[0]
-        var_lon = list(ds_lon.data_vars.keys())[0]
-        lats = ds_lat[var_lat].values.ravel().astype(np.float64)
-        lons = ds_lon[var_lon].values.ravel().astype(np.float64)
-        ds_lat.close()
-        ds_lon.close()
+            ds_lat, ds_lon = cfgrib.open_dataset(path_lat), cfgrib.open_dataset(path_lon)
+        lats = ds_lat[list(ds_lat.data_vars.keys())[0]].values.ravel().astype(np.float64)
+        lons = ds_lon[list(ds_lon.data_vars.keys())[0]].values.ravel().astype(np.float64)
+        ds_lat.close(); ds_lon.close()
 
         if np.nanmax(np.abs(lats)) <= 1.6:
             lats, lons = np.rad2deg(lats), np.rad2deg(lons)
@@ -661,104 +459,60 @@ def _load_icond2_grid_coords(ref_iso):
             "ref_lat": lats[valid_indices].astype(np.float32),
             "ref_lon": lons[valid_indices].astype(np.float32)
         }
-        try:
-            np.savez_compressed(disk_cache, valid_indices=valid_indices, ref_lat=_ICOND2_GRID_CACHE["ref_lat"], ref_lon=_ICOND2_GRID_CACHE["ref_lon"])
-        except Exception:
-            pass
         return _ICOND2_GRID_CACHE
     finally:
         for p in [path_lat, path_lon]:
             if os.path.exists(p):
-                try:
-                    os.remove(p)
-                except Exception:
-                    pass
+                try: os.remove(p)
+                except Exception: pass
 
 def _extract_grib_array(raw_bytes, valid_indices, is_ensemble=False):
-    if raw_bytes is None:
-        return None
+    if raw_bytes is None: return None
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp:
-        tmp.write(raw_bytes)
-        tmp_path = tmp.name
-
+        tmp.write(raw_bytes); tmp_path = tmp.name
     try:
         with SilenceStderr():
             ds = cfgrib.open_dataset(tmp_path)
-        var_name = list(ds.data_vars.keys())[0]
-        vals = ds[var_name].values
+        vals = ds[list(ds.data_vars.keys())[0]].values
         ds.close()
 
         if is_ensemble:
-            if vals.ndim == 1:
-                vals = vals[np.newaxis, :]
-            elif vals.ndim > 2:
-                vals = np.squeeze(vals)
-                if vals.ndim == 1:
-                    vals = vals[np.newaxis, :]
+            if vals.ndim == 1: vals = vals[np.newaxis, :]
+            elif vals.ndim > 2: vals = np.squeeze(vals)
+            if vals.ndim == 1: vals = vals[np.newaxis, :]
             return vals[:, valid_indices].astype(np.float32)
-        else:
-            return vals.ravel()[valid_indices].astype(np.float32)
-    except Exception as e:
-        print(f"   ⚠️ Fehler beim Dekodieren von DWD GRIB: {e}", flush=True)
+        return vals.ravel()[valid_indices].astype(np.float32)
+    except Exception:
         return None
     finally:
         if os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except Exception:
-                pass
+            try: os.remove(tmp_path)
+            except Exception: pass
 
-def fetch_icond2_single_hour(ref_iso, lead_hour, grid_info):
-    try:
-        ref_dt = datetime.fromisoformat(ref_iso.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
-    except Exception:
-        ref_dt = datetime.now(ZoneInfo("UTC"))
-
-    cycle_hh = ref_dt.strftime("%H")
-    date_ymd = ref_dt.strftime("%Y%m%d")
-
-    base_det = f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/{cycle_hh}"
-    base_eps = f"https://opendata.dwd.de/weather/nwp/icon-d2-eps/grib/{cycle_hh}"
-
-    url_u_hl = f"{base_det}/u_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_u_10m.grib2.bz2"
-    url_v_hl = f"{base_det}/v_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_v_10m.grib2.bz2"
-    url_g_hl = f"{base_det}/vmax_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_vmax_10m.grib2.bz2"
-
-    url_u_ens = f"{base_eps}/u_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_u_10m.grib2.bz2"
-    url_v_ens = f"{base_eps}/v_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_v_10m.grib2.bz2"
-    url_g_ens = f"{base_eps}/vmax_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_vmax_10m.grib2.bz2"
-
+def fetch_icond2_data(start_step, end_step, ref_time_str):
+    print(f"-> Lade ICON-D2 (10m Wind & Böen) für Schritte {start_step}..{end_step} ({ref_time_str})...", flush=True)
+    grid_info = _load_icond2_grid_coords(ref_time_str)
     valid_indices = grid_info["valid_indices"]
     num_pts = len(valid_indices)
 
-    u_h = _extract_grib_array(_download_and_extract_dwd_bytes(url_u_hl), valid_indices, is_ensemble=False)
-    v_h = _extract_grib_array(_download_and_extract_dwd_bytes(url_v_hl), valid_indices, is_ensemble=False)
-    g_h = _extract_grib_array(_download_and_extract_dwd_bytes(url_g_hl), valid_indices, is_ensemble=False) if lead_hour > 0 else np.full(num_pts, np.nan, dtype=np.float32)
+    ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
+    cycle_hh, date_ymd = ref_dt.strftime("%H"), ref_dt.strftime("%Y%m%d")
+    base_det = f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/{cycle_hh}"
+    base_eps = f"https://opendata.dwd.de/weather/nwp/icon-d2-eps/grib/{cycle_hh}"
 
-    u_e = _extract_grib_array(_download_and_extract_dwd_bytes(url_u_ens), valid_indices, is_ensemble=True)
-    v_e = _extract_grib_array(_download_and_extract_dwd_bytes(url_v_ens), valid_indices, is_ensemble=True)
-    g_e = _extract_grib_array(_download_and_extract_dwd_bytes(url_g_ens), valid_indices, is_ensemble=True) if lead_hour > 0 else np.full((20, num_pts), np.nan, dtype=np.float32)
+    u_h_list, v_h_list, g_h_list, u_e_list, v_e_list, g_e_list = [], [], [], [], [], []
+    for h in range(start_step, end_step + 1):
+        u_h = _extract_grib_array(_download_and_extract_dwd(f"{base_det}/u_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_2d_u_10m.grib2.bz2"), valid_indices)
+        v_h = _extract_grib_array(_download_and_extract_dwd(f"{base_det}/v_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_2d_v_10m.grib2.bz2"), valid_indices)
+        g_h = _extract_grib_array(_download_and_extract_dwd(f"{base_det}/vmax_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_2d_vmax_10m.grib2.bz2"), valid_indices) if h > 0 else np.full(num_pts, np.nan, dtype=np.float32)
 
-    if u_e is None:
-        print(f"⚠️ [icon-d2] EPS Wind U für Stunde +{lead_hour}h nicht verfügbar oder Download fehlgeschlagen.", flush=True)
+        u_e = _extract_grib_array(_download_and_extract_dwd(f"{base_eps}/u_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_2d_u_10m.grib2.bz2"), valid_indices, is_ensemble=True)
+        v_e = _extract_grib_array(_download_and_extract_dwd(f"{base_eps}/v_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_2d_v_10m.grib2.bz2"), valid_indices, is_ensemble=True)
+        g_e = _extract_grib_array(_download_and_extract_dwd(f"{base_eps}/vmax_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_2d_vmax_10m.grib2.bz2"), valid_indices, is_ensemble=True) if h > 0 else np.full((20, num_pts), np.nan, dtype=np.float32)
 
-    return u_h, v_h, g_h, u_e, v_e, g_e
-
-def fetch_icond2_data(start_step, end_step, ref_time_str):
-    print(f"-> Lade ICON-D2 (10m Wind & Böen inkl. 20 Member) für Schritte {start_step} bis {end_step} ({ref_time_str})...", flush=True)
-    grid_info = _load_icond2_grid_coords(ref_time_str)
-    lead_hours = list(range(start_step, end_step + 1))
-    num_pts = len(grid_info["valid_indices"])
-
-    u_h_list, v_h_list, g_h_list = [], [], []
-    u_e_list, v_e_list, g_e_list = [], [], []
-
-    for h in lead_hours:
-        u_h, v_h, g_h, u_e, v_e, g_e = fetch_icond2_single_hour(ref_time_str, h, grid_info)
         u_h_list.append(u_h if u_h is not None else np.full(num_pts, np.nan, dtype=np.float32))
         v_h_list.append(v_h if v_h is not None else np.full(num_pts, np.nan, dtype=np.float32))
         g_h_list.append(g_h if g_h is not None else np.full(num_pts, np.nan, dtype=np.float32))
-
         u_e_list.append(u_e if u_e is not None else np.full((20, num_pts), np.nan, dtype=np.float32))
         v_e_list.append(v_e if v_e is not None else np.full((20, num_pts), np.nan, dtype=np.float32))
         g_e_list.append(g_e if g_e is not None else np.full((20, num_pts), np.nan, dtype=np.float32))
@@ -772,81 +526,51 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
             "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
             "g_e": xr.DataArray(np.stack(g_e_list, axis=0), dims=["lead_time", "eps", "cell"])
         },
-        "altitude_hl": {},
-        "altitude_ens": {},
-        "ref_lon": grid_info["ref_lon"],
-        "ref_lat": grid_info["ref_lat"]
+        "altitude_hl": {}, "altitude_ens": {}, "ref_lon": grid_info["ref_lon"], "ref_lat": grid_info["ref_lat"]
     }
 
-# ================= ECMWF 0.1° ULTRA-FAST ECCODES DECODER =================
+# ================= ECMWF 0.1° =================
 def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
     if not os.path.exists(grib_path) or os.path.getsize(grib_path) < 1000:
         return None, None, None, None
 
-    u_fields = {}
-    v_fields = {}
-    ref_lons = None
-    ref_lats = None
-
+    u_fields, v_fields = {}, {}
+    ref_lons, ref_lats = None, None
     try:
         with open(grib_path, "rb") as f:
             while True:
                 gid = eccodes.codes_grib_new_from_file(f)
-                if gid is None:
-                    break
-
+                if gid is None: break
                 try:
                     param = eccodes.codes_get(gid, "shortName")
-                    if param not in ["10u", "10v"]:
-                        continue
-
-                    try:
-                        m_num = int(eccodes.codes_get(gid, "perturbationNumber"))
+                    if param not in ["10u", "10v"]: continue
+                    try: m_num = int(eccodes.codes_get(gid, "perturbationNumber"))
                     except Exception:
-                        try:
-                            m_num = int(eccodes.codes_get(gid, "number"))
-                        except Exception:
-                            m_num = 0
+                        try: m_num = int(eccodes.codes_get(gid, "number"))
+                        except Exception: m_num = 0
 
                     vals = eccodes.codes_get_values(gid)
-                    n_lats = int(eccodes.codes_get(gid, "Nj"))
-                    n_lons = int(eccodes.codes_get(gid, "Ni"))
-
-                    la1 = float(eccodes.codes_get(gid, "latitudeOfFirstGridPointInDegrees"))
-                    lo1 = float(eccodes.codes_get(gid, "longitudeOfFirstGridPointInDegrees"))
-                    d_lat = float(eccodes.codes_get(gid, "jDirectionIncrementInDegrees"))
-                    d_lon = float(eccodes.codes_get(gid, "iDirectionIncrementInDegrees"))
+                    n_lats, n_lons = int(eccodes.codes_get(gid, "Nj")), int(eccodes.codes_get(gid, "Ni"))
+                    la1, lo1 = float(eccodes.codes_get(gid, "latitudeOfFirstGridPointInDegrees")), float(eccodes.codes_get(gid, "longitudeOfFirstGridPointInDegrees"))
+                    d_lat, d_lon = float(eccodes.codes_get(gid, "jDirectionIncrementInDegrees")), float(eccodes.codes_get(gid, "iDirectionIncrementInDegrees"))
                     j_scans_pos = int(eccodes.codes_get(gid, "jScansPositively"))
 
                     matrix = vals.reshape(n_lats, n_lons)
-
-                    if j_scans_pos == 1:
-                        lat_arr = la1 + np.arange(n_lats) * d_lat
-                    else:
-                        lat_arr = la1 - np.arange(n_lats) * d_lat
-
+                    lat_arr = la1 + np.arange(n_lats) * d_lat if j_scans_pos == 1 else la1 - np.arange(n_lats) * d_lat
                     lon_arr = (lo1 + np.arange(n_lons) * d_lon + 180.0) % 360.0 - 180.0
 
                     r_mask = np.where((lat_arr >= config.LAT_MIN) & (lat_arr <= config.LAT_MAX))[0]
                     c_mask = np.where((lon_arr >= config.LON_MIN) & (lon_arr <= config.LON_MAX))[0]
-
                     r_min, r_max = r_mask[0], r_mask[-1] + 1
                     c_min, c_max = c_mask[0], c_mask[-1] + 1
-
                     sub = matrix[r_min:r_max, c_min:c_max]
 
                     if ref_lons is None:
-                        sub_lats = lat_arr[r_min:r_max]
-                        sub_lons = lon_arr[c_min:c_max]
-                        glon, glat = np.meshgrid(sub_lons, sub_lats)
-                        ref_lons = glon.ravel().astype(np.float32)
-                        ref_lats = glat.ravel().astype(np.float32)
+                        glon, glat = np.meshgrid(lon_arr[c_min:c_max], lat_arr[r_min:r_max])
+                        ref_lons, ref_lats = glon.ravel().astype(np.float32), glat.ravel().astype(np.float32)
 
-                    if param == "10u":
-                        u_fields[m_num] = sub.ravel().astype(np.float32)
-                    elif param == "10v":
-                        v_fields[m_num] = sub.ravel().astype(np.float32)
-
+                    if param == "10u": u_fields[m_num] = sub.ravel().astype(np.float32)
+                    elif param == "10v": v_fields[m_num] = sub.ravel().astype(np.float32)
                 finally:
                     eccodes.codes_release(gid)
 
@@ -854,125 +578,71 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
             return None, None, None, None
 
         if is_ens:
-            sorted_keys = sorted(u_fields.keys())
-            target_keys = sorted_keys if len(sorted_keys) >= 50 else list(range(1, 51))
-            
-            u_stack = []
-            v_stack = []
-            fallback_u = next(iter(u_fields.values()))
-            fallback_v = next(iter(v_fields.values()))
-
-            for k in target_keys:
-                u_stack.append(u_fields.get(k, fallback_u))
-                v_stack.append(v_fields.get(k, fallback_v))
-
-            return np.array(u_stack, dtype=np.float32), np.array(v_stack, dtype=np.float32), ref_lons, ref_lats
-        else:
-            first_key = next(iter(u_fields.keys()))
-            return u_fields[first_key], v_fields[first_key], ref_lons, ref_lats
-
+            target_keys = sorted(u_fields.keys()) if len(u_fields) >= 50 else list(range(1, 51))
+            fb_u, fb_v = next(iter(u_fields.values())), next(iter(v_fields.values()))
+            return np.array([u_fields.get(k, fb_u) for k in target_keys], dtype=np.float32), \
+                   np.array([v_fields.get(k, fb_v) for k in target_keys], dtype=np.float32), ref_lons, ref_lats
+        first_key = next(iter(u_fields.keys()))
+        return u_fields[first_key], v_fields[first_key], ref_lons, ref_lats
     except Exception as e:
-        print(f"   ⚠️ ecCodes Fehler beim Lesen: {e}", flush=True)
+        print(f"⚠️ ecCodes Fehler beim Lesen: {e}", flush=True)
         return None, None, None, None
-
-def fetch_ecmwf_single_step(client, date_ymd, time_hh, step_hour):
-    with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ctrl, \
-         tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ens:
-        path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
-
-    u_h, v_h = None, None
-    u_e, v_e = None, None
-    lons, lats = None, None
-
-    try:
-        client.download(
-            date=date_ymd, time=time_hh, step=step_hour,
-            type="fc", levtype="sfc", target=path_ctrl
-        )
-        u_h, v_h, lons, lats = _extract_swiss_subgrid_fast(path_ctrl, is_ens=False)
-    except Exception as e:
-        print(f"   ⚠️ ECMWF Hauptlauf (+{step_hour}h): {e}", flush=True)
-
-    try:
-        client.download(
-            date=date_ymd, time=time_hh, step=step_hour,
-            stream="enfo", type="ef", levtype="sfc",
-            target=path_ens
-        )
-        u_e, v_e, elons, elats = _extract_swiss_subgrid_fast(path_ens, is_ens=True)
-        if lons is None:
-            lons, lats = elons, elats
-    except Exception as e:
-        print(f"   ⚠️ ECMWF Ensemble (+{step_hour}h): {e}", flush=True)
-
-    for p in [path_ctrl, path_ens]:
-        if os.path.exists(p):
-            try:
-                os.remove(p)
-            except Exception:
-                pass
-
-    if u_h is None and u_e is not None:
-        u_h, v_h = u_e[0], v_e[0]
-    elif u_e is None and u_h is not None:
-        u_e = np.repeat(u_h[np.newaxis, :], 50, axis=0)
-        v_e = np.repeat(v_h[np.newaxis, :], 50, axis=0)
-
-    return u_h, v_h, u_e, v_e, lons, lats
 
 def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     from ecmwf.opendata import Client
-    print(f"-> Lade ECMWF 0.1° (10m Wind inkl. 50 Member) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
+    print(f"-> Lade ECMWF 0.1° (10m Wind) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
 
-    try:
-        ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
-    except Exception:
-        ref_dt = datetime.now(ZoneInfo("UTC"))
+    ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
+    date_ymd, time_hh = int(ref_dt.strftime("%Y%m%d")), int(ref_dt.strftime("%H"))
+    target_steps = config.get_model_step_hours("ecmwf", ref_dt)[start_step : end_step + 1]
 
-    date_ymd = int(ref_dt.strftime("%Y%m%d"))
-    time_hh = int(ref_dt.strftime("%H"))
-
-    all_steps = config.get_model_step_hours("ecmwf", ref_dt)
-    target_steps = all_steps[start_step : end_step + 1]
-
-    try:
-        client = Client(source="google", model="ifs", resol="0p1")
-    except Exception:
+    client = None
+    for src in ["google", "ecmwf", "azure"]:
         try:
-            client = Client(source="ecmwf", model="ifs", resol="0p1")
+            client = Client(source=src, model="ifs", resol="0p1")
+            break
         except Exception:
-            client = Client(source="azure", model="ifs", resol="0p1")
+            pass
 
-    u_h_list, v_h_list = [], []
-    u_e_list, v_e_list = [], []
+    u_h_list, v_h_list, u_e_list, v_e_list = [], [], [], []
     ref_lon, ref_lat = None, None
 
     for sh in target_steps:
-        t0 = time.time()
-        u_h, v_h, u_e, v_e, lons, lats = fetch_ecmwf_single_step(client, date_ymd, time_hh, sh)
-        dt = time.time() - t0
+        with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ctrl, \
+             tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ens:
+            path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
 
-        if u_h is not None and ref_lon is None:
-            ref_lon, ref_lat = lons, lats
-        elif u_e is not None and ref_lon is None:
-            ref_lon, ref_lat = lons, lats
+        u_h, v_h, u_e, v_e, lons, lats = None, None, None, None, None, None
+        try:
+            client.download(date=date_ymd, time=time_hh, step=sh, type="fc", levtype="sfc", target=path_ctrl)
+            u_h, v_h, lons, lats = _extract_swiss_subgrid_fast(path_ctrl, is_ens=False)
+        except Exception:
+            pass
 
-        status_txt = "OK" if (u_h is not None) else "FEHLT"
-        print(f"   ✓ ECMWF Schritt +{sh}h [{status_txt}] verarbeitet in {dt:.1f}s", flush=True)
+        try:
+            client.download(date=date_ymd, time=time_hh, step=sh, stream="enfo", type="ef", levtype="sfc", target=path_ens)
+            u_e, v_e, elons, elats = _extract_swiss_subgrid_fast(path_ens, is_ens=True)
+            if lons is None: lons, lats = elons, elats
+        except Exception:
+            pass
 
+        for p in [path_ctrl, path_ens]:
+            if os.path.exists(p):
+                try: os.remove(p)
+                except Exception: pass
+
+        if u_h is None and u_e is not None: u_h, v_h = u_e[0], v_e[0]
+        elif u_e is None and u_h is not None:
+            u_e = np.repeat(u_h[np.newaxis, :], 50, axis=0)
+            v_e = np.repeat(v_h[np.newaxis, :], 50, axis=0)
+
+        if ref_lon is None and lons is not None: ref_lon, ref_lat = lons, lats
         pts = len(ref_lon) if ref_lon is not None else 1352
 
         u_h_list.append(u_h if u_h is not None else np.full(pts, np.nan, dtype=np.float32))
         v_h_list.append(v_h if v_h is not None else np.full(pts, np.nan, dtype=np.float32))
-
         u_e_list.append(u_e if u_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
         v_e_list.append(v_e if v_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
-
-    if ref_lon is None:
-        target_lons = np.arange(config.LON_MIN, config.LON_MAX + 0.05, 0.1)
-        target_lats = np.arange(config.LAT_MAX, config.LAT_MIN - 0.05, -0.1)
-        glon, glat = np.meshgrid(target_lons, target_lats)
-        ref_lon, ref_lat = glon.ravel().astype(np.float32), glat.ravel().astype(np.float32)
 
     return {
         "surface": {
@@ -981,139 +651,90 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
             "u_e": xr.DataArray(np.stack(u_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
             "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"])
         },
-        "altitude_hl": {},
-        "altitude_ens": {},
-        "ref_lon": ref_lon,
-        "ref_lat": ref_lat
+        "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
 
 # ================= ALLGEMEINER DISPATCHER =================
 def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
-    if model_name == "kenda-ch1":
-        return fetch_kenda_data(start_step, end_step, ref_time_str)
-    if model_name == "arome":
-        return fetch_arome_hd_data(start_step, end_step, ref_time_str)
-    if model_name == "icon-d2":
-        return fetch_icond2_data(start_step, end_step, ref_time_str)
-    if model_name == "ecmwf":
-        return fetch_ecmwf_data(start_step, end_step, ref_time_str)
+    if model_name == "kenda-ch1": return fetch_kenda_data(start_step, end_step, ref_time_str)
+    if model_name == "arome":     return fetch_arome_hd_data(start_step, end_step, ref_time_str)
+    if model_name == "icon-d2":   return fetch_icond2_data(start_step, end_step, ref_time_str)
+    if model_name == "ecmwf":     return fetch_ecmwf_data(start_step, end_step, ref_time_str)
 
     model_cfg = config.MODELS_CONFIG[model_name]
-    collection = model_cfg["collection"]
-    active_vars = model_cfg["active_variables"]
-    ens_vars = model_cfg["ensemble_variables"]
-
+    collection, active_vars, ens_vars = model_cfg["collection"], model_cfg["active_variables"], model_cfg["ensemble_variables"]
     lead_times = [timedelta(hours=h) for h in range(start_step, end_step + 1)]
 
-    print(f"1. Pilot-Download [{model_name}]: Hole Referenzgitter aus Stunde 1...", flush=True)
-    req_pilot = ogd_api.Request(
-        collection=collection,
-        variable="U_10M",
-        ref_time=ref_time_str,
-        perturbed=False,
-        lead_time=[timedelta(hours=1)]
-    )
-    for attempt in range(1, 4):
-        try:
-            with SilenceStderr():
-                ds_pilot = ogd_api.get_from_ogd(req_pilot)
-            break
-        except Exception as e:
-            if attempt == 3:
-                raise e
-            time.sleep(3)
+    print(f"1. Pilot-Download [{model_name}]: Referenzgitter laden...", flush=True)
+    req_pilot = ogd_api.Request(collection=collection, variable="U_10M", ref_time=ref_time_str, perturbed=False, lead_time=[timedelta(hours=1)])
+    ds_pilot = retry_call(lambda: ogd_api.get_from_ogd(req_pilot), err_msg="Pilot-Download fehlgeschlagen")
 
-    lats = ds_pilot.coords['lat'].values
-    lons = ds_pilot.coords['lon'].values
+    lats, lons = ds_pilot.coords['lat'].values, ds_pilot.coords['lon'].values
     valid_cells = np.where((lats >= config.LAT_MIN) & (lats <= config.LAT_MAX) & (lons >= config.LON_MIN) & (lons <= config.LON_MAX))[0]
-    
-    ref_lon = ds_pilot.coords['lon'].values[valid_cells]
-    ref_lat = ds_pilot.coords['lat'].values[valid_cells]
+    ref_lon, ref_lat = lons[valid_cells], lats[valid_cells]
     del ds_pilot
-    gc.collect()
+    trim_memory()
 
     surface_results = {}
-    print(f"2. Lade 2D-Felder für [{model_name}] ({active_vars}) parallel...", flush=True)
-
-    def _fetch_2d_task(key, grib_name, perturbed):
-        return key, fetch_single_2d(collection, grib_name, perturbed, ref_time_str, lead_times, valid_cells)
-
-    def _fetch_sun_task(key, perturbed):
-        return key, fetch_dursun_hourly(collection, perturbed, ref_time_str, start_step, end_step, valid_cells)
-
     tasks_2d = []
     if "wind" in active_vars:
-        tasks_2d.append(("u_h", "U_10M", False))
-        tasks_2d.append(("v_h", "V_10M", False))
-        if "wind" in ens_vars:
-            tasks_2d.append(("u_e", "U_10M", True))
-            tasks_2d.append(("v_e", "V_10M", True))
-
+        tasks_2d += [("u_h", "U_10M", False), ("v_h", "V_10M", False)]
+        if "wind" in ens_vars: tasks_2d += [("u_e", "U_10M", True), ("v_e", "V_10M", True)]
     if "gust" in active_vars:
         tasks_2d.append(("g_h", "VMAX_10M", False))
-        if "gust" in ens_vars:
-            tasks_2d.append(("g_e", "VMAX_10M", True))
-
+        if "gust" in ens_vars: tasks_2d.append(("g_e", "VMAX_10M", True))
     if "dbz" in active_vars:
         tasks_2d.append(("dbz_h", "DBZ_CMAX", False))
-        if "dbz" in ens_vars:
-            tasks_2d.append(("dbz_e", "DBZ_CMAX", True))
+        if "dbz" in ens_vars: tasks_2d.append(("dbz_e", "DBZ_CMAX", True))
 
-    CLOUD_VAR_MAP = {"clct": "CLCT", "clch": "CLCH", "clcm": "CLCM", "clcl": "CLCL"}
-    for key, grib_name in CLOUD_VAR_MAP.items():
-        if key in active_vars:
-            tasks_2d.append((f"{key}_h", grib_name, False))
-            if key in ens_vars:
-                tasks_2d.append((f"{key}_e", grib_name, True))
+    for k, grib_n in {"clct": "CLCT", "clch": "CLCH", "clcm": "CLCM", "clcl": "CLCL"}.items():
+        if k in active_vars:
+            tasks_2d.append((f"{k}_h", grib_n, False))
+            if k in ens_vars: tasks_2d.append((f"{k}_e", grib_n, True))
+
+    def _task_exec(t):
+        k, grib_n, pert = t
+        return k, fetch_single_2d(collection, grib_n, pert, ref_time_str, lead_times, valid_cells)
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = [pool.submit(_fetch_2d_task, k, g, p) for k, g, p in tasks_2d]
+        futures = [pool.submit(_task_exec, t) for t in tasks_2d]
         if "sun" in active_vars:
-            futures.append(pool.submit(_fetch_sun_task, "sun_h", False))
+            futures.append(pool.submit(lambda: ("sun_h", fetch_dursun_hourly(collection, False, ref_time_str, start_step, end_step, valid_cells))))
             if "sun" in ens_vars:
-                futures.append(pool.submit(_fetch_sun_task, "sun_e", True))
-
+                futures.append(pool.submit(lambda: ("sun_e", fetch_dursun_hourly(collection, True, ref_time_str, start_step, end_step, valid_cells))))
         for f in futures:
             key, ds = f.result()
             surface_results[key] = ds
 
-    _trim_memory()
+    trim_memory()
 
-    hl_altitudes = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and k in active_vars]
-    ens_altitudes = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and k in ens_vars]
-    all_target_alts = sorted(list(set(hl_altitudes + ens_altitudes)))
+    hl_alts = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and k in active_vars]
+    ens_alts = [v["altitude"] for k, v in config.VARIABLES_CONFIG.items() if v.get("type") == "altitude" and k in ens_vars]
+    all_target_alts = sorted(list(set(hl_alts + ens_alts)))
 
-    altitude_hl_res = {}
-    altitude_ens_res = {}
-
+    altitude_hl_res, altitude_ens_res = {}, {}
     if all_target_alts:
         print(f"3. Lade vertikale Höhenwinde [{model_name}] für {all_target_alts}m...", flush=True)
         alt_prep = get_hhl_and_weights(collection, model_cfg["hhl_asset"], valid_cells, all_target_alts)
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            future_u_hl = pool.submit(fetch_3d_and_slice, collection, "U", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
-            future_v_hl = pool.submit(fetch_3d_and_slice, collection, "V", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_altitudes)
-            u_hl_by_alt = future_u_hl.result()
-            v_hl_by_alt = future_v_hl.result()
+            f_u = pool.submit(fetch_3d_and_slice, collection, "U", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_alts)
+            f_v = pool.submit(fetch_3d_and_slice, collection, "V", False, ref_time_str, lead_times, valid_cells, alt_prep, hl_alts)
+            u_hl, v_hl = f_u.result(), f_v.result()
 
-        if ens_altitudes:
-            u_ens_by_alt = fetch_3d_and_slice(collection, "U", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
-            _trim_memory()
-            v_ens_by_alt = fetch_3d_and_slice(collection, "V", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_altitudes)
-            _trim_memory()
-        else:
-            u_ens_by_alt, v_ens_by_alt = {}, {}
+        u_ens, v_ens = {}, {}
+        if ens_alts:
+            u_ens = fetch_3d_and_slice(collection, "U", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_alts)
+            trim_memory()
+            v_ens = fetch_3d_and_slice(collection, "V", True, ref_time_str, lead_times, valid_cells, alt_prep, ens_alts)
+            trim_memory()
 
-        altitude_hl_res = {alt: (u_hl_by_alt[alt], v_hl_by_alt[alt]) for alt in hl_altitudes if alt in u_hl_by_alt and alt in v_hl_by_alt}
-        altitude_ens_res = {alt: (u_ens_by_alt[alt], v_ens_by_alt[alt]) for alt in ens_altitudes if alt in u_ens_by_alt and alt in v_ens_by_alt}
+        altitude_hl_res = {alt: (u_hl[alt], v_hl[alt]) for alt in hl_alts if alt in u_hl and alt in v_hl}
+        altitude_ens_res = {alt: (u_ens[alt], v_ens[alt]) for alt in ens_alts if alt in u_ens and alt in v_ens}
         del alt_prep
-        _trim_memory()
+        trim_memory()
 
-    print(f"✓ Datensätze für [{model_name}] bereitgestellt!", flush=True)
     return {
-        "surface": surface_results,
-        "altitude_hl": altitude_hl_res,
-        "altitude_ens": altitude_ens_res,
-        "ref_lon": ref_lon,
-        "ref_lat": ref_lat
+        "surface": surface_results, "altitude_hl": altitude_hl_res,
+        "altitude_ens": altitude_ens_res, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
