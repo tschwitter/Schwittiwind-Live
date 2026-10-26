@@ -527,12 +527,15 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": grid_info["ref_lon"], "ref_lat": grid_info["ref_lat"]
     }
 
-# ================= ECMWF 0.1° (10m WIND, BÖEN & WOLKEN) =================
+# ================= ECMWF 0.1° (WIND, BÖEN & WOLKENSCHICHTEN) =================
 def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
     if not os.path.exists(grib_path) or os.path.getsize(grib_path) < 1000:
         return None, None
 
-    fields = {"10u": {}, "10v": {}, "gust": {}, "clct": {}}
+    fields = {
+        "10u": {}, "10v": {}, "gust": {},
+        "clct": {}, "clch": {}, "clcm": {}, "clcl": {}
+    }
     ref_lons, ref_lats = None, None
 
     try:
@@ -552,6 +555,12 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
                         norm_param = "gust"
                     elif param in ["tcc", "clct"]:
                         norm_param = "clct"
+                    elif param in ["hcc", "clch"]:
+                        norm_param = "clch"
+                    elif param in ["mcc", "clcm"]:
+                        norm_param = "clcm"
+                    elif param in ["lcc", "clcl"]:
+                        norm_param = "clcl"
 
                     if norm_param is None:
                         continue
@@ -587,7 +596,7 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
 
                     arr = sub.ravel().astype(np.float32)
                     # Wolkenbedeckung von 0..1 auf 0..100% skalieren falls nötig
-                    if norm_param == "clct" and np.nanmax(arr) <= 1.01:
+                    if norm_param in ["clct", "clch", "clcm", "clcl"] and np.nanmax(arr) <= 1.01:
                         arr = np.clip(arr * 100.0, 0.0, 100.0)
 
                     fields[norm_param][m_num] = arr
@@ -599,10 +608,11 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
 
         grid_coords = (ref_lons, ref_lats)
         out_data = {}
+        all_pars = ["10u", "10v", "gust", "clct", "clch", "clcm", "clcl"]
 
         if is_ens:
             target_keys = list(range(1, 51))
-            for p_name in ["10u", "10v", "gust", "clct"]:
+            for p_name in all_pars:
                 p_dict = fields[p_name]
                 if p_dict:
                     fb = next(iter(p_dict.values()))
@@ -610,7 +620,7 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
                 else:
                     out_data[p_name] = None
         else:
-            for p_name in ["10u", "10v", "gust", "clct"]:
+            for p_name in all_pars:
                 p_dict = fields[p_name]
                 out_data[p_name] = p_dict[next(iter(p_dict.keys()))] if p_dict else None
 
@@ -621,7 +631,7 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
 
 def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     from ecmwf.opendata import Client
-    print(f"-> Lade ECMWF 0.1° (Wind, Böen & Wolken inkl. 50 Member) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
+    print(f"-> Lade ECMWF 0.1° (Wind, Böen & Wolkenschichten inkl. 50 Member) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
 
     ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
     date_ymd, time_hh = int(ref_dt.strftime("%Y%m%d")), int(ref_dt.strftime("%H"))
@@ -635,8 +645,12 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         except Exception:
             pass
 
-    u_h_list, v_h_list, g_h_list, c_h_list = [], [], [], []
-    u_e_list, v_e_list, g_e_list, c_e_list = [], [], [], []
+    u_h_list, v_h_list, g_h_list = [], [], []
+    c_h_list, ch_h_list, cm_h_list, cl_h_list = [], [], [], []
+
+    u_e_list, v_e_list, g_e_list = [], [], []
+    c_e_list, ch_e_list, cm_e_list, cl_e_list = [], [], [], []
+
     ref_lon, ref_lat = None, None
 
     for sh in target_steps:
@@ -670,16 +684,22 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         pts = len(ref_lon) if ref_lon is not None else 1352
 
         # 1. Hauptlauf-Felder
-        u_h = ctrl_data.get("10u") if ctrl_data else None
-        v_h = ctrl_data.get("10v") if ctrl_data else None
-        g_h = ctrl_data.get("gust") if ctrl_data else None
-        c_h = ctrl_data.get("clct") if ctrl_data else None
+        u_h  = ctrl_data.get("10u")  if ctrl_data else None
+        v_h  = ctrl_data.get("10v")  if ctrl_data else None
+        g_h  = ctrl_data.get("gust") if ctrl_data else None
+        c_h  = ctrl_data.get("clct") if ctrl_data else None
+        ch_h = ctrl_data.get("clch") if ctrl_data else None
+        cm_h = ctrl_data.get("clcm") if ctrl_data else None
+        cl_h = ctrl_data.get("clcl") if ctrl_data else None
 
         # 2. Ensemble-Felder
-        u_e = ens_data.get("10u") if ens_data else None
-        v_e = ens_data.get("10v") if ens_data else None
-        g_e = ens_data.get("gust") if ens_data else None
-        c_e = ens_data.get("clct") if ens_data else None
+        u_e  = ens_data.get("10u")  if ens_data else None
+        v_e  = ens_data.get("10v")  if ens_data else None
+        g_e  = ens_data.get("gust") if ens_data else None
+        c_e  = ens_data.get("clct") if ens_data else None
+        ch_e = ens_data.get("clch") if ens_data else None
+        cm_e = ens_data.get("clcm") if ens_data else None
+        cl_e = ens_data.get("clcl") if ens_data else None
 
         # Fallback bei Schritt 0 für fehlende Ensembles
         if u_e is None and u_h is not None:
@@ -688,25 +708,40 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         elif u_h is None and u_e is not None:
             u_h, v_h = u_e[0], v_e[0]
 
-        if c_e is None and c_h is not None:
-            c_e = np.repeat(c_h[np.newaxis, :], 50, axis=0)
-        elif c_h is None and c_e is not None:
-            c_h = c_e[0]
+        for (v_h_item, v_e_item) in [(g_h, g_e), (c_h, c_e), (ch_h, ch_e), (cm_h, cm_e), (cl_h, cl_e)]:
+            if v_e_item is None and v_h_item is not None:
+                pass  # Fallback-Zuweisung unten über dict/variables
 
-        if g_e is None and g_h is not None:
-            g_e = np.repeat(g_h[np.newaxis, :], 50, axis=0)
-        elif g_h is None and g_e is not None:
-            g_h = g_e[0]
+        if g_e is None and g_h is not None: g_e = np.repeat(g_h[np.newaxis, :], 50, axis=0)
+        elif g_h is None and g_e is not None: g_h = g_e[0]
+
+        if c_e is None and c_h is not None: c_e = np.repeat(c_h[np.newaxis, :], 50, axis=0)
+        elif c_h is None and c_e is not None: c_h = c_e[0]
+
+        if ch_e is None and ch_h is not None: ch_e = np.repeat(ch_h[np.newaxis, :], 50, axis=0)
+        elif ch_h is None and ch_e is not None: ch_h = ch_e[0]
+
+        if cm_e is None and cm_h is not None: cm_e = np.repeat(cm_h[np.newaxis, :], 50, axis=0)
+        elif cm_h is None and cm_e is not None: cm_h = cm_e[0]
+
+        if cl_e is None and cl_h is not None: cl_e = np.repeat(cl_h[np.newaxis, :], 50, axis=0)
+        elif cl_h is None and cl_e is not None: cl_h = cl_e[0]
 
         u_h_list.append(u_h if u_h is not None else np.full(pts, np.nan, dtype=np.float32))
         v_h_list.append(v_h if v_h is not None else np.full(pts, np.nan, dtype=np.float32))
         g_h_list.append(g_h if g_h is not None else np.full(pts, np.nan, dtype=np.float32))
         c_h_list.append(c_h if c_h is not None else np.full(pts, np.nan, dtype=np.float32))
+        ch_h_list.append(ch_h if ch_h is not None else np.full(pts, np.nan, dtype=np.float32))
+        cm_h_list.append(cm_h if cm_h is not None else np.full(pts, np.nan, dtype=np.float32))
+        cl_h_list.append(cl_h if cl_h is not None else np.full(pts, np.nan, dtype=np.float32))
 
         u_e_list.append(u_e if u_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
         v_e_list.append(v_e if v_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
         g_e_list.append(g_e if g_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
         c_e_list.append(c_e if c_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
+        ch_e_list.append(ch_e if ch_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
+        cm_e_list.append(cm_e if cm_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
+        cl_e_list.append(cl_e if cl_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
 
     return {
         "surface": {
@@ -714,10 +749,17 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
             "v_h": xr.DataArray(np.stack(v_h_list, axis=0), dims=["lead_time", "cell"]),
             "g_h": xr.DataArray(np.stack(g_h_list, axis=0), dims=["lead_time", "cell"]),
             "clct_h": xr.DataArray(np.stack(c_h_list, axis=0), dims=["lead_time", "cell"]),
+            "clch_h": xr.DataArray(np.stack(ch_h_list, axis=0), dims=["lead_time", "cell"]),
+            "clcm_h": xr.DataArray(np.stack(cm_h_list, axis=0), dims=["lead_time", "cell"]),
+            "clcl_h": xr.DataArray(np.stack(cl_h_list, axis=0), dims=["lead_time", "cell"]),
+
             "u_e": xr.DataArray(np.stack(u_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
             "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
             "g_e": xr.DataArray(np.stack(g_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
-            "clct_e": xr.DataArray(np.stack(c_e_list, axis=0), dims=["lead_time", "eps", "cell"])
+            "clct_e": xr.DataArray(np.stack(c_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
+            "clch_e": xr.DataArray(np.stack(ch_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
+            "clcm_e": xr.DataArray(np.stack(cm_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
+            "clcl_e": xr.DataArray(np.stack(cl_e_list, axis=0), dims=["lead_time", "eps", "cell"])
         },
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
