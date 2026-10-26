@@ -73,14 +73,13 @@ MODELS_CONFIG = {
         "name": "ECMWF (0.1°)",
         "collection": "ifs-0p1",
         "nx": 200, "ny": 120, "max_members": 51, "max_runs": 4,
-        "active_variables": ["wind"],
-        "ensemble_variables": ["wind"],
+        "active_variables": ["wind", "gust", "clct"],
+        "ensemble_variables": ["wind", "gust", "clct"],
         "max_chunks": 4
     }
 }
 
 def get_model_step_hours(model_name, ref_dt):
-    """Gibt die Liste der Prognoseschritt-Stunden zurück."""
     if model_name == "kenda-ch1":
         return list(range(5))
     if model_name == "ecmwf":
