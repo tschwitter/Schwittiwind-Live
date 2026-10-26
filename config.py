@@ -32,24 +32,15 @@ MODELS_CONFIG = {
         "name": "KENDA-CH1 (1km Analyse)",
         "collection": "ogd-analysis-kenda-ch1",
         "hhl_asset": "vertical_constants_icon-ch1-eps.grib2",
-        "nx": 400,
-        "ny": 240,
-        "hours": 5,
-        "max_members": 1,
-        "max_runs": 4,
+        "nx": 400, "ny": 240, "hours": 5, "max_members": 1, "max_runs": 4,
         "active_variables": ["wind", "gust", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"],
-        "ensemble_variables": [],
-        "max_chunks": 1
+        "ensemble_variables": [], "max_chunks": 1
     },
     "icon-ch1": {
         "name": "ICON-CH1 (1km)",
         "collection": "ogd-forecasting-icon-ch1",
         "hhl_asset": "vertical_constants_icon-ch1-eps.grib2",
-        "nx": 400,
-        "ny": 240,
-        "hours": 33,
-        "max_members": 11,
-        "max_runs": 8,
+        "nx": 400, "ny": 240, "hours": 33, "max_members": 11, "max_runs": 8,
         "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"],
         "ensemble_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"],
         "max_chunks": 4
@@ -58,11 +49,7 @@ MODELS_CONFIG = {
         "name": "ICON-CH2 (2.1km)",
         "collection": "ogd-forecasting-icon-ch2",
         "hhl_asset": "vertical_constants_icon-ch2-eps.grib2",
-        "nx": 200,
-        "ny": 120,
-        "hours": 120,
-        "max_members": 21,
-        "max_runs": 4,
+        "nx": 200, "ny": 120, "hours": 120, "max_members": 21, "max_runs": 4,
         "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"],
         "ensemble_variables": ["wind", "gust", "sun", "dbz"],
         "max_chunks": 3
@@ -70,23 +57,14 @@ MODELS_CONFIG = {
     "arome": {
         "name": "AROME HD (1.3km)",
         "collection": "arome-001",
-        "nx": 400,
-        "ny": 240,
-        "hours": 42,
-        "max_members": 1,
-        "max_runs": 8,
+        "nx": 400, "ny": 240, "hours": 42, "max_members": 1, "max_runs": 8,
         "active_variables": ["wind", "gust"],
-        "ensemble_variables": [],
-        "max_chunks": 1
+        "ensemble_variables": [], "max_chunks": 1
     },
     "icon-d2": {
         "name": "ICON-D2 (2.2km)",
         "collection": "dwd-icon-d2",
-        "nx": 200,
-        "ny": 120,
-        "hours": 48,
-        "max_members": 21,  
-        "max_runs": 8,
+        "nx": 200, "ny": 120, "hours": 48, "max_members": 21, "max_runs": 8,
         "active_variables": ["wind", "gust"],
         "ensemble_variables": ["wind", "gust"],
         "max_chunks": 2
@@ -94,10 +72,7 @@ MODELS_CONFIG = {
     "ecmwf": {
         "name": "ECMWF (0.1°)",
         "collection": "ifs-0p1",
-        "nx": 200,
-        "ny": 120,
-        "max_members": 51,
-        "max_runs": 4,
+        "nx": 200, "ny": 120, "max_members": 51, "max_runs": 4,
         "active_variables": ["wind"],
         "ensemble_variables": ["wind"],
         "max_chunks": 4
@@ -105,18 +80,16 @@ MODELS_CONFIG = {
 }
 
 def get_model_step_hours(model_name, ref_dt):
-    """Gibt die Liste der echten Modellstunden zurück."""
+    """Gibt die Liste der Prognoseschritt-Stunden zurück."""
     if model_name == "kenda-ch1":
         return list(range(5))
     if model_name == "ecmwf":
-        if ref_dt.hour in [0, 12]:
-            return list(range(0, 145, 3)) + list(range(150, 241, 6))
-        else:
-            return list(range(0, 145, 3))
+        return list(range(0, 145, 3)) + (list(range(150, 241, 6)) if ref_dt and ref_dt.hour in [0, 12] else [])
     
     total_hours = MODELS_CONFIG[model_name].get("hours", 33)
     return list(range(total_hours + 1))
 
+# ================= FARBPALETTEN =================
 LEVELS = [0, 4, 7, 11, 14, 18, 23, 27, 36, 45, 55, 65, 75, 85, 95, 105, 115, 125, 135, 150]
 COLORS = [
     '#f1f6ff', '#baddf3', '#5cd184', '#89db4c', '#fed148',
@@ -152,15 +125,17 @@ IQR_BASE_COLORS = [
     '#ffffff00', '#e0f3db', '#a8ddb5', '#7bccc4', '#4eb3d3',
     '#2b8cbe', '#fec44f', '#fe9929', '#ec7014', '#d7301f'
 ]
-
 IQR_WIND_LEVELS = [0, 2, 4, 6, 8, 10, 14, 18, 24, 30, 120]
-IQR_WIND_COLORS = IQR_BASE_COLORS
+IQR_DBZ_LEVELS  = [0, 6, 12, 18, 25, 32, 40, 48, 56, 65, 120]
+IQR_PERCENT_LEVELS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 
-IQR_DBZ_LEVELS = [0, 6, 12, 18, 25, 32, 40, 48, 56, 65, 120]
-IQR_DBZ_COLORS = IQR_BASE_COLORS
-
-IQR_SUN_LEVELS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-IQR_SUN_COLORS = IQR_BASE_COLORS
-
-IQR_CLOUD_LEVELS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-IQR_CLOUD_COLORS = IQR_BASE_COLORS
+PALETTES_DICT = {
+    "wind":      {"levels": LEVELS,             "colors": COLORS},
+    "sun":       {"levels": SUN_LEVELS,         "colors": SUN_COLORS},
+    "dbz":       {"levels": DBZ_LEVELS,         "colors": DBZ_COLORS},
+    "cloud":     {"levels": CLOUD_LEVELS,       "colors": CLOUD_COLORS},
+    "iqr_wind":  {"levels": IQR_WIND_LEVELS,    "colors": IQR_BASE_COLORS},
+    "iqr_dbz":   {"levels": IQR_DBZ_LEVELS,     "colors": IQR_BASE_COLORS},
+    "iqr_sun":   {"levels": IQR_PERCENT_LEVELS, "colors": IQR_BASE_COLORS},
+    "iqr_cloud": {"levels": IQR_PERCENT_LEVELS, "colors": IQR_BASE_COLORS}
+}
