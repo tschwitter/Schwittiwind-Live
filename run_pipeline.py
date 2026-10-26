@@ -26,17 +26,18 @@ import config
 SHARED_DATA = {}
 
 def load_existing_runs(model_name):
-    """Lädt bestehende gültige Runs aus runs.json."""
-    model_base_dir = f"dist/data/{model_name}"
-    runs_file = f"{model_base_dir}/runs.json"
-    if not os.path.exists(runs_file):
-        return []
-    try:
-        with open(runs_file, "r") as f:
-            runs = json.load(f)
-        return [r for r in runs if os.path.exists(f"{model_base_dir}/{r.get('id')}/config.json")]
-    except Exception:
-        return []
+    """Lädt die Liste aller vorhandenen Läufe aus runs.json (prüft beide Ordner: dist und dist-meta)."""
+    for base in ["dist/data", "dist-meta/data"]:
+        runs_file = f"{base}/{model_name}/runs.json"
+        if os.path.exists(runs_file):
+            try:
+                with open(runs_file, "r") as f:
+                    runs = json.load(f)
+                if isinstance(runs, list) and len(runs) > 0:
+                    return runs
+            except Exception:
+                pass
+    return []
 
 def _generate_candidate_dts(hours_list):
     """Generiert UTC-Kandidatenzeiten für heute und gestern."""
@@ -50,7 +51,7 @@ def _generate_candidate_dts(hours_list):
     return sorted([dt for dt in candidates if dt <= now_utc], reverse=True)[:4]
 
 def _check_http_candidates(model_name, hours_list, url_template):
-    """Allgemeiner Prüfer für HTTP-Header-basierte Datenquellen (ECMWF, AROME, ICON-D2)."""
+    """Prüft HTTP-Endpunkte auf den neuesten Lauf."""
     existing_runs = load_existing_runs(model_name)
     latest_known_id = existing_runs[0]["id"] if existing_runs else None
 
@@ -74,7 +75,7 @@ def _check_http_candidates(model_name, hours_list, url_template):
     return False, None, "latest", None, None
 
 def check_model_new_data(model_name):
-    """Prüft zentral, ob ein neuer Lauf für das jeweilige Modell verfügbar ist."""
+    """Zentrale Prüfung aller Wettermodelle."""
     if model_name == "arome":
         return _check_http_candidates(
             "arome", [0, 3, 6, 9, 12, 15, 18, 21],
@@ -86,7 +87,6 @@ def check_model_new_data(model_name):
             lambda dt, iso: f"https://opendata.dwd.de/weather/nwp/icon-d2-eps/grib/{dt.strftime('%H')}/u_10m/icon-d2-eps_germany_icosahedral_single-level_{dt.strftime('%Y%m%d%H')}_048_2d_u_10m.grib2.bz2"
         )
     if model_name == "ecmwf":
-        # Primär über Client, Fallback auf HTTP-Index
         try:
             from ecmwf.opendata import Client
             latest_dt = Client(source="google", model="ifs", resol="0p1").latest(type="fc", levtype="sfc", step=24)
@@ -154,13 +154,12 @@ def get_dynamic_chunks(total_steps, max_chunks=4):
     return chunks
 
 def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
-    """Erzeugt Metadaten (times.json, config.json, runs.json) für dist/data und dist-meta/data."""
+    """Erzeugt Metadaten und erhält die bisherige Historie in runs.json sauber aufrecht."""
     model_cfg = config.MODELS_CONFIG[model_name]
     nx, ny = model_cfg.get("nx", config.NX), model_cfg.get("ny", config.NY)
     local_tz = ZoneInfo("Europe/Zurich")
     ref_dt = datetime.fromisoformat(iso_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC")) if (iso_str and iso_str not in ["latest", "None"]) else datetime.now(ZoneInfo("UTC"))
 
-    # Schrittzeiten ermitteln
     if model_name == "kenda-ch1":
         times_by_step = [{"step_hours": h, "local_str": (ref_dt - timedelta(hours=4 - h)).astimezone(local_tz).strftime("%d.%m.%Y %H:%M Local")} for h in range(5)]
     else:
@@ -183,22 +182,28 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
         "variables_config": active_cfg, "palettes": config.PALETTES_DICT
     }
 
+    existing_runs = load_existing_runs(model_name)
+    existing_filtered = [r for r in existing_runs if r.get("id") != run_id]
+    new_entry = {
+        "id": run_id,
+        "label": run_dt.strftime("%d.%m. %HZ") if run_dt else run_id,
+        "ref_time_utc": ref_time_str
+    }
+    max_runs = model_cfg.get("max_runs", 4)
+    updated_runs = ([new_entry] + existing_filtered)[:max_runs]
+
     for base_folder in ["dist/data", "dist-meta/data"]:
-        run_dir = f"{base_folder}/{model_name}/{run_id}"
+        model_dir = f"{base_folder}/{model_name}"
+        run_dir = f"{model_dir}/{run_id}"
         os.makedirs(run_dir, exist_ok=True)
         with open(f"{run_dir}/times.json", "w") as f: json.dump(times_by_step, f)
         with open(f"{run_dir}/config.json", "w") as f: json.dump(config_data, f)
+        with open(f"{model_dir}/runs.json", "w") as f: json.dump(updated_runs, f)
 
-        model_dir = f"{base_folder}/{model_name}"
-        existing = [r for r in load_existing_runs(model_name) if r.get("id") != run_id]
-        new_entry = {"id": run_id, "label": run_dt.strftime("%d.%m. %HZ") if run_dt else run_id, "ref_time_utc": ref_time_str}
-        valid_runs = ([new_entry] + existing)[:model_cfg.get("max_runs", 4)]
-        with open(f"{model_dir}/runs.json", "w") as f: json.dump(valid_runs, f)
-
-    print(f"✓ Metadaten für [{model_name} / {run_id}] bereitgestellt ({nx}x{ny}, {len(times_by_step)} Schritte)!", flush=True)
+    print(f"✓ Metadaten für [{model_name} / {run_id}] bereitgestellt ({nx}x{ny}, {len(times_by_step)} Schritte, {len(updated_runs)} Läufe in Historie)!", flush=True)
 
 def prune_old_runs():
-    """Bereinigt historische Läufe und entfernt Einzelmember bei alten Läufen."""
+    """Bereinigt nur wirklich veraltete Läufe (jenseits max_runs) und Member-Dateien alter Läufe."""
     print("--- PRUNING: Bereinige Läufe & Historie ---", flush=True)
     base_data_dir = "dist/data"
 
@@ -207,7 +212,15 @@ def prune_old_runs():
         if not os.path.exists(model_dir):
             continue
 
-        valid_runs = load_existing_runs(m_name)
+        runs_file = f"{model_dir}/runs.json"
+        valid_runs = []
+        if os.path.exists(runs_file):
+            try:
+                with open(runs_file, "r") as f:
+                    valid_runs = json.load(f)
+            except Exception:
+                valid_runs = []
+
         valid_ids = [r["id"] for r in valid_runs]
         latest_id = valid_ids[0] if valid_ids else None
         num_ens = m_cfg["max_members"] - 1
@@ -217,8 +230,9 @@ def prune_old_runs():
             if os.path.isfile(p) and entry != "runs.json":
                 os.remove(p)
             elif os.path.isdir(p):
-                if entry not in valid_ids:
-                    print(f"-> Entferne Lauf älter als Historienfenster ({m_name}): {entry}", flush=True)
+                # Nur löschen, wenn es definitiv nicht in den validen IDs gelistet ist
+                if valid_ids and entry not in valid_ids:
+                    print(f"-> Entferne veralteten Lauf ({m_name}): {entry}", flush=True)
                     shutil.rmtree(p, ignore_errors=True)
                 elif entry != latest_id and num_ens > 0:
                     pruned = 0
@@ -292,6 +306,14 @@ def main():
         for sf in ["index.html", "style.css", "app.js"]:
             if os.path.exists(sf):
                 shutil.copy(sf, f"dist-meta/{sf}")
+
+        # Kopiere bestehende runs.json-Dateien aus dist/data in dist-meta/data, damit bisherige Historie nie verloren geht
+        for m_name in config.MODELS_CONFIG:
+            src_runs = f"dist/data/{m_name}/runs.json"
+            dst_dir = f"dist-meta/data/{m_name}"
+            os.makedirs(dst_dir, exist_ok=True)
+            if os.path.exists(src_runs):
+                shutil.copy(src_runs, f"{dst_dir}/runs.json")
 
         all_chunks = []
         any_new = False
