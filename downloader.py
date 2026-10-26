@@ -580,7 +580,6 @@ def _download_and_extract_dwd_bytes(url):
             if r.status_code == 200 and len(r.content) > 1000:
                 return bz2.decompress(r.content)
             elif r.status_code == 404:
-                # Datei existiert beim DWD noch nicht
                 return None
         except Exception:
             time.sleep(2 * attempt)
@@ -767,7 +766,7 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
     return {
         "surface": {
             "u_h": xr.DataArray(np.stack(u_h_list, axis=0), dims=["lead_time", "cell"]),
-            "v_h": xr.DataArray(np.stack(v_list, axis=0), dims=["lead_time", "cell"]),
+            "v_h": xr.DataArray(np.stack(v_h_list, axis=0), dims=["lead_time", "cell"]),
             "g_h": xr.DataArray(np.stack(g_h_list, axis=0), dims=["lead_time", "cell"]),
             "u_e": xr.DataArray(np.stack(u_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
             "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
