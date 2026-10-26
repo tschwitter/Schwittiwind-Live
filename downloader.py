@@ -518,7 +518,7 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
     return {
         "surface": {
             "u_h": xr.DataArray(np.stack(u_h_list, axis=0), dims=["lead_time", "cell"]),
-            "v_h": xr.DataArray(np.stack(v_list, axis=0), dims=["lead_time", "cell"]),
+            "v_h": xr.DataArray(np.stack(v_h_list, axis=0), dims=["lead_time", "cell"]),
             "g_h": xr.DataArray(np.stack(g_h_list, axis=0), dims=["lead_time", "cell"]),
             "u_e": xr.DataArray(np.stack(u_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
             "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
@@ -585,7 +585,6 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
             return None, None, None, None
 
         if is_ens:
-            # 50 Ensemble-Member (1 bis 50)
             u_stack, v_stack = [], []
             fb_u = next(iter(u_fields.values()))
             fb_v = next(iter(v_fields.values()))
@@ -632,7 +631,6 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
             print(f"   ⚠️ ECMWF Hauptlauf (+{sh}h): {e}", flush=True)
 
         try:
-            # Bei ECMWF OpenData: step=0 hat im 'enfo'-Stream keine Perturbations, ab step > 0 sind 1..50 vorhanden
             client.download(date=date_ymd, time=time_hh, step=sh, stream="enfo", type="ef", levtype="sfc", target=path_ens)
             u_e, v_e, elons, elats = _extract_swiss_subgrid_fast(path_ens, is_ens=True)
             if lons is None:
@@ -650,7 +648,6 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
             ref_lon, ref_lat = lons, lats
         pts = len(ref_lon) if ref_lon is not None else 1352
 
-        # Nur wenn das Ensemble wirklich fehlt (z. B. Schritt 0), als Fallback duplizieren
         if u_e is None and u_h is not None:
             u_e = np.repeat(u_h[np.newaxis, :], 50, axis=0)
             v_e = np.repeat(v_h[np.newaxis, :], 50, axis=0)
