@@ -26,7 +26,6 @@ _ICOND2_GRID_CACHE = {}
 _OGD_SEMAPHORE = threading.Semaphore(2)
 
 def trim_memory():
-    """Gibt ungenutzten Heap-RAM sofort an das Betriebssystem zurück."""
     try:
         gc.collect()
         ctypes.CDLL('libc.so.6').malloc_trim(0)
@@ -64,7 +63,6 @@ class SilenceStderr:
                 SilenceStderr._null_fd = None
 
 def retry_call(fn, max_attempts=3, delay_factor=2, err_msg="Operation fehlgeschlagen"):
-    """Führt Aufrufe mit Exponential-Backoff durch."""
     for attempt in range(1, max_attempts + 1):
         try:
             return fn()
@@ -136,7 +134,7 @@ def get_hhl_and_weights(collection, hhl_asset, valid_cells=None, target_alts=Non
 
     del ds_vert
     trim_memory()
-    print(f"✓ HHL geladen & Gewichte für {len(target_alts)} Höhen vorberechnet (Schichten {min_l}..{max_l})!", flush=True)
+    print(f"✓ HHL geladen & Gewichte für {len(target_alts)} Höhen vorberechnet!", flush=True)
     return alt_prep
 
 def _interpolate_3d(vals_3d, prep, is_ensemble=True):
@@ -520,7 +518,7 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
     return {
         "surface": {
             "u_h": xr.DataArray(np.stack(u_h_list, axis=0), dims=["lead_time", "cell"]),
-            "v_h": xr.DataArray(np.stack(v_h_list, axis=0), dims=["lead_time", "cell"]),
+            "v_h": xr.DataArray(np.stack(v_list, axis=0), dims=["lead_time", "cell"]),
             "g_h": xr.DataArray(np.stack(g_h_list, axis=0), dims=["lead_time", "cell"]),
             "u_e": xr.DataArray(np.stack(u_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
             "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
@@ -529,7 +527,7 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": grid_info["ref_lon"], "ref_lat": grid_info["ref_lat"]
     }
 
-# ================= ECMWF 0.1° =================
+# ================= ECMWF 0.1° (EXAKTE MEMBER-ZUORDNUNG) =================
 def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
     if not os.path.exists(grib_path) or os.path.getsize(grib_path) < 1000:
         return None, None, None, None
@@ -540,14 +538,21 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
         with open(grib_path, "rb") as f:
             while True:
                 gid = eccodes.codes_grib_new_from_file(f)
-                if gid is None: break
+                if gid is None:
+                    break
                 try:
                     param = eccodes.codes_get(gid, "shortName")
-                    if param not in ["10u", "10v"]: continue
-                    try: m_num = int(eccodes.codes_get(gid, "perturbationNumber"))
-                    except Exception:
-                        try: m_num = int(eccodes.codes_get(gid, "number"))
-                        except Exception: m_num = 0
+                    if param not in ["10u", "10v"]:
+                        continue
+
+                    m_num = 0
+                    if is_ens:
+                        for key in ["perturbationNumber", "number"]:
+                            try:
+                                m_num = int(eccodes.codes_get(gid, key))
+                                break
+                            except Exception:
+                                pass
 
                     vals = eccodes.codes_get_values(gid)
                     n_lats, n_lons = int(eccodes.codes_get(gid, "Nj")), int(eccodes.codes_get(gid, "Ni"))
@@ -569,8 +574,10 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
                         glon, glat = np.meshgrid(lon_arr[c_min:c_max], lat_arr[r_min:r_max])
                         ref_lons, ref_lats = glon.ravel().astype(np.float32), glat.ravel().astype(np.float32)
 
-                    if param == "10u": u_fields[m_num] = sub.ravel().astype(np.float32)
-                    elif param == "10v": v_fields[m_num] = sub.ravel().astype(np.float32)
+                    if param == "10u":
+                        u_fields[m_num] = sub.ravel().astype(np.float32)
+                    elif param == "10v":
+                        v_fields[m_num] = sub.ravel().astype(np.float32)
                 finally:
                     eccodes.codes_release(gid)
 
@@ -578,19 +585,24 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
             return None, None, None, None
 
         if is_ens:
-            target_keys = sorted(u_fields.keys()) if len(u_fields) >= 50 else list(range(1, 51))
-            fb_u, fb_v = next(iter(u_fields.values())), next(iter(v_fields.values()))
-            return np.array([u_fields.get(k, fb_u) for k in target_keys], dtype=np.float32), \
-                   np.array([v_fields.get(k, fb_v) for k in target_keys], dtype=np.float32), ref_lons, ref_lats
-        first_key = next(iter(u_fields.keys()))
-        return u_fields[first_key], v_fields[first_key], ref_lons, ref_lats
+            # 50 Ensemble-Member (1 bis 50)
+            u_stack, v_stack = [], []
+            fb_u = next(iter(u_fields.values()))
+            fb_v = next(iter(v_fields.values()))
+            for m in range(1, 51):
+                u_stack.append(u_fields.get(m, fb_u))
+                v_stack.append(v_fields.get(m, fb_v))
+            return np.array(u_stack, dtype=np.float32), np.array(v_stack, dtype=np.float32), ref_lons, ref_lats
+
+        first_k = next(iter(u_fields.keys()))
+        return u_fields[first_k], v_fields[first_k], ref_lons, ref_lats
     except Exception as e:
         print(f"⚠️ ecCodes Fehler beim Lesen: {e}", flush=True)
         return None, None, None, None
 
 def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     from ecmwf.opendata import Client
-    print(f"-> Lade ECMWF 0.1° (10m Wind) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
+    print(f"-> Lade ECMWF 0.1° (10m Wind & 50 Member) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
 
     ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
     date_ymd, time_hh = int(ref_dt.strftime("%Y%m%d")), int(ref_dt.strftime("%H"))
@@ -616,28 +628,34 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         try:
             client.download(date=date_ymd, time=time_hh, step=sh, type="fc", levtype="sfc", target=path_ctrl)
             u_h, v_h, lons, lats = _extract_swiss_subgrid_fast(path_ctrl, is_ens=False)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"   ⚠️ ECMWF Hauptlauf (+{sh}h): {e}", flush=True)
 
         try:
+            # Bei ECMWF OpenData: step=0 hat im 'enfo'-Stream keine Perturbations, ab step > 0 sind 1..50 vorhanden
             client.download(date=date_ymd, time=time_hh, step=sh, stream="enfo", type="ef", levtype="sfc", target=path_ens)
             u_e, v_e, elons, elats = _extract_swiss_subgrid_fast(path_ens, is_ens=True)
-            if lons is None: lons, lats = elons, elats
-        except Exception:
-            pass
+            if lons is None:
+                lons, lats = elons, elats
+        except Exception as e:
+            if sh > 0:
+                print(f"   ⚠️ ECMWF Ensemble (+{sh}h): {e}", flush=True)
 
         for p in [path_ctrl, path_ens]:
             if os.path.exists(p):
                 try: os.remove(p)
                 except Exception: pass
 
-        if u_h is None and u_e is not None: u_h, v_h = u_e[0], v_e[0]
-        elif u_e is None and u_h is not None:
+        if ref_lon is None and lons is not None:
+            ref_lon, ref_lat = lons, lats
+        pts = len(ref_lon) if ref_lon is not None else 1352
+
+        # Nur wenn das Ensemble wirklich fehlt (z. B. Schritt 0), als Fallback duplizieren
+        if u_e is None and u_h is not None:
             u_e = np.repeat(u_h[np.newaxis, :], 50, axis=0)
             v_e = np.repeat(v_h[np.newaxis, :], 50, axis=0)
-
-        if ref_lon is None and lons is not None: ref_lon, ref_lat = lons, lats
-        pts = len(ref_lon) if ref_lon is not None else 1352
+        elif u_h is None and u_e is not None:
+            u_h, v_h = u_e[0], v_e[0]
 
         u_h_list.append(u_h if u_h is not None else np.full(pts, np.nan, dtype=np.float32))
         v_h_list.append(v_h if v_h is not None else np.full(pts, np.nan, dtype=np.float32))
