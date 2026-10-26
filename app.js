@@ -132,17 +132,53 @@ function getActiveStateSide(domSide) {
     return isSplitActive ? domSide : 'left';
 }
 
+function isCurrentRunHistorical(side) {
+    var stateSide = getActiveStateSide(side);
+    var st = modelsState[stateSide];
+    if (!st) return false;
+    var runs = availableRuns[st.currentModel] || [];
+    return Boolean(runs.length > 0 && st.currentRunId && st.currentRunId !== runs[0].id);
+}
+
+function sanitizeMemberIndex(side) {
+    var stateSide = getActiveStateSide(side);
+    var st = modelsState[stateSide];
+    if (!st || !st.config) return;
+
+    if (!modelHasEnsembleForCurrentVar(stateSide)) {
+        st.currentMemberIdx = 0;
+        return;
+    }
+
+    var cfg = st.config;
+    var statOffset = (cfg.member_names && cfg.member_names.length > 6) ? (cfg.member_names.length - 6) : 1;
+
+    // Für historische Läufe sind nur Hauptlauf (0) und Statistiken (>= statOffset) vorhanden
+    if (isCurrentRunHistorical(stateSide)) {
+        if (st.currentMemberIdx >= 1 && st.currentMemberIdx < statOffset) {
+            st.currentMemberIdx = 0;
+        }
+    }
+
+    var maxIdx = (cfg.member_names && cfg.member_names.length > 0) ? (cfg.member_names.length - 1) : 0;
+    if (st.currentMemberIdx > maxIdx || st.currentMemberIdx < 0) {
+        st.currentMemberIdx = 0;
+    }
+}
+
 function getStepIdxForSide(domSide) {
     var stateSide = getActiveStateSide(domSide);
     var st = modelsState[stateSide];
     if (!st || !st.times || st.times.length === 0) return 0;
 
     var baseTimes = modelsState.left.times;
-    if (!baseTimes || !baseTimes[currentStepIdx]) return 0;
-    var targetForecastHour = baseTimes[currentStepIdx].step_hours;
+    if (!baseTimes || baseTimes.length === 0) return 0;
+    
+    var safeMasterIdx = Math.max(0, Math.min(baseTimes.length - 1, currentStepIdx));
+    var targetForecastHour = baseTimes[safeMasterIdx].step_hours;
 
     var bestIdx = 0;
-    var minDiff = 9999;
+    var minDiff = 999999;
     for (var i = 0; i < st.times.length; i++) {
         var diff = Math.abs(st.times[i].step_hours - targetForecastHour);
         if (diff < minDiff) {
@@ -151,6 +187,32 @@ function getStepIdxForSide(domSide) {
         }
     }
     return bestIdx;
+}
+
+function clampAndSyncMasterStep(newTimes) {
+    if (!newTimes || newTimes.length === 0) {
+        currentStepIdx = 0;
+        return;
+    }
+
+    // Wenn der vorherige Zeitschritt noch gültig ist, behalte seinen Prognose-Stundenwert bei
+    var oldTimes = modelsState.left.times;
+    var targetHour = (oldTimes && oldTimes[currentStepIdx]) ? oldTimes[currentStepIdx].step_hours : null;
+
+    if (targetHour !== null) {
+        var bestIdx = 0;
+        var minDiff = 999999;
+        for (var i = 0; i < newTimes.length; i++) {
+            var diff = Math.abs(newTimes[i].step_hours - targetHour);
+            if (diff < minDiff) {
+                minDiff = diff;
+                bestIdx = i;
+            }
+        }
+        currentStepIdx = bestIdx;
+    } else {
+        currentStepIdx = Math.max(0, Math.min(newTimes.length - 1, currentStepIdx));
+    }
 }
 
 function modelHasEnsembleForCurrentVar(stateSide) {
@@ -292,20 +354,6 @@ function updateCityLabels() {
             }
         });
     });
-}
-
-function parseLocalStr(str) {
-    if (!str) return new Date();
-    var parts = str.split(" ");
-    var dateParts = parts[0].split(".");
-    var timeParts = parts[1].split(":");
-    return new Date(
-        parseInt(dateParts[2]),
-        parseInt(dateParts[1]) - 1,
-        parseInt(dateParts[0]),
-        parseInt(timeParts[0]),
-        parseInt(timeParts[1] || 0)
-    );
 }
 
 function getDateKeyForStep(stepIdx) {
@@ -547,15 +595,19 @@ async function loadModelAndRun(side, modelName, runId) {
 
         const timesRes = await fetch(`${runPath}/times.json?t=${cacheBuster}`);
         if (!timesRes.ok) throw new Error("Konnte times.json nicht laden: " + timesRes.status);
-        st.times = await timesRes.json();
+        const newTimes = await timesRes.json();
+
+        // Wenn die linke Master-Seite das Modell wechselt, Zeitschritt sicher anpassen!
+        if (side === 'left') {
+            clampAndSyncMasterStep(newTimes);
+        }
+        st.times = newTimes;
     } catch (e) {
         console.error("Fehler beim Laden von " + modelName, e);
         return;
     }
 
-    if (!modelHasEnsembleForCurrentVar(side)) {
-        st.currentMemberIdx = 0;
-    }
+    sanitizeMemberIndex(side);
 
     initNavigationBars();
     initLayer2Dropdown();
@@ -854,6 +906,7 @@ function navUp() {
     } else {
         st.currentMemberIdx = Math.max(0, st.currentMemberIdx - 1);
     }
+    sanitizeMemberIndex(side);
     updateForecast();
 }
 
@@ -877,6 +930,7 @@ function navDown() {
     } else {
         st.currentMemberIdx = Math.min(maxIdx, st.currentMemberIdx + 1);
     }
+    sanitizeMemberIndex(side);
     updateForecast();
 }
 
@@ -954,13 +1008,10 @@ function renderMemberButtonsForTarget(domSide) {
     eCont.innerHTML = "";
     sCont.innerHTML = "";
 
-    var hasEns = modelHasEnsembleForCurrentVar(stateSide);
-    if (!hasEns) {
-        st.currentMemberIdx = 0;
-    }
+    sanitizeMemberIndex(stateSide);
 
-    var runs = availableRuns[st.currentModel] || [];
-    var isOldRun = (runs.length > 0 && st.currentRunId !== runs[0].id);
+    var hasEns = modelHasEnsembleForCurrentVar(stateSide);
+    var isOldRun = isCurrentRunHistorical(stateSide);
     var statOffset = (cfg.member_names && cfg.member_names.length > 6) ? (cfg.member_names.length - 6) : 1;
 
     cfg.member_names.forEach((name, idx) => {
@@ -976,14 +1027,15 @@ function renderMemberButtonsForTarget(domSide) {
             };
             hCont.appendChild(btn);
         } else if (hasEns && idx >= 1 && idx < statOffset) {
-            btn.innerText = "Member " + idx;
+            // Bei historischen Läufen wurden Einzel-Member gelöscht: Button gar nicht anzeigen!
             if (!isOldRun) {
+                btn.innerText = "Member " + idx;
                 btn.onclick = function() {
                     st.currentMemberIdx = idx;
                     updateForecast();
                 };
+                eCont.appendChild(btn);
             }
-            eCont.appendChild(btn);
         } else if (hasEns) {
             btn.innerText = name;
             btn.onclick = function() {
@@ -994,8 +1046,11 @@ function renderMemberButtonsForTarget(domSide) {
         }
     });
 
-    if (ensGroup) ensGroup.style.display = hasEns ? "block" : "none";
-    if (notice) notice.style.display = hasEns ? "none" : "block";
+    var hasVisibleEnsemble = hasEns && (!isOldRun || (cfg.member_names && cfg.member_names.length > statOffset));
+    if (ensGroup) ensGroup.style.display = hasVisibleEnsemble ? "block" : "none";
+    if (notice) notice.style.display = (!hasEns || isOldRun) ? "block" : "none";
+    if (notice && isOldRun && hasEns) notice.innerText = "Alter Lauf: Nur Hauptlauf & Statistiken verfügbar";
+    else if (notice) notice.innerText = "Nur Hauptlauf verfügbar";
 }
 
 function initMemberPanelsAll() {
@@ -1088,13 +1143,14 @@ function updateLegend() {
 
 async function fetchAndDecompress(url) {
     const response = await fetch(url);
-    if (!response.ok) throw new Error("Fehler beim Laden von: " + url);
+    if (!response.ok) return null;
     const ds = new DecompressionStream('gzip');
     const decompressedStream = response.body.pipeThrough(ds);
     return await new Response(decompressedStream).arrayBuffer();
 }
 
 function decodeBinaryGrid(buffer, cfg) {
+    if (!buffer) return null;
     const totalPoints = cfg.nx * cfg.ny;
     const lowBytes = new Uint8Array(buffer, 0, totalPoints);
     const highBytes = new Uint8Array(buffer, totalPoints, totalPoints);
@@ -1108,6 +1164,7 @@ function decodeBinaryGrid(buffer, cfg) {
 }
 
 function generateContoursClient(gridObj, paletteType, cfg) {
+    if (!gridObj || !gridObj.s) return null;
     const p = cfg.palettes[paletteType] || cfg.palettes["wind"];
     const levels = p.levels;
     const colors = p.colors;
@@ -1155,10 +1212,18 @@ async function ensureDataLoaded(side, varName, memberIdx, stepIdx) {
         const runBuster = encodeURIComponent(st.config.ref_time_utc);
         const basePath = st.currentRunId ? `data/${st.currentModel}/${st.currentRunId}` : `data/${st.currentModel}`;
         if (!cacheGrid[cacheKey]) {
-            const rawBuffer = await fetchAndDecompress(`${basePath}/grid_${varName}_m${memberIdx}_s${stepIdx}.bin.gz?v=${runBuster}`);
-            cacheGrid[cacheKey] = decodeBinaryGrid(rawBuffer, st.config);
+            try {
+                const rawBuffer = await fetchAndDecompress(`${basePath}/grid_${varName}_m${memberIdx}_s${stepIdx}.bin.gz?v=${runBuster}`);
+                if (rawBuffer) {
+                    cacheGrid[cacheKey] = decodeBinaryGrid(rawBuffer, st.config);
+                }
+            } catch (err) {
+                console.warn("Konnte Daten nicht laden: " + cacheKey, err);
+            }
         }
-        cacheContours[cacheKey] = generateContoursClient(cacheGrid[cacheKey], paletteType, st.config);
+        if (cacheGrid[cacheKey]) {
+            cacheContours[cacheKey] = generateContoursClient(cacheGrid[cacheKey], paletteType, st.config);
+        }
     }
     return cacheKey;
 }
@@ -1282,15 +1347,17 @@ async function fetchModelFiles(side, modelName, runId) {
 
         const timesRes = await fetch(`${runPath}/times.json?t=${cacheBuster}`);
         if (!timesRes.ok) throw new Error("Konnte times.json nicht laden für " + modelName);
-        st.times = await timesRes.json();
+        const newTimes = await timesRes.json();
+        if (side === 'left') {
+            clampAndSyncMasterStep(newTimes);
+        }
+        st.times = newTimes;
     } catch (e) {
         console.error("Fehler beim Laden von " + modelName, e);
         return false;
     }
 
-    if (!modelHasEnsembleForCurrentVar(side)) {
-        st.currentMemberIdx = 0;
-    }
+    sanitizeMemberIndex(side);
     return true;
 }
 
@@ -1384,7 +1451,12 @@ async function updateForecast() {
     var sidesToUpdate = isSplitActive ? ['left', 'right'] : ['left'];
     var effectiveSide = 'left';
     var times = modelsState[effectiveSide].times;
-    if (!times || !times[currentStepIdx]) return;
+    if (!times || times.length === 0) return;
+
+    if (currentStepIdx >= times.length) {
+        currentStepIdx = times.length - 1;
+    }
+    if (currentStepIdx < 0) currentStepIdx = 0;
 
     var curDateKey = getDateKeyForStep(currentStepIdx);
     var currentHour = parseInt(times[currentStepIdx].local_str.split(" ")[1].split(":")[0]);
@@ -1399,11 +1471,8 @@ async function updateForecast() {
             var st = modelsState[side];
             if (!st.config) continue;
 
+            sanitizeMemberIndex(side);
             var stepForSide = getStepIdxForSide(side);
-
-            if (!modelHasEnsembleForCurrentVar(side)) {
-                st.currentMemberIdx = 0;
-            }
 
             await ensureDataLoaded(side, layer1Var, st.currentMemberIdx, stepForSide);
             if (layer2Var) {
@@ -1486,20 +1555,22 @@ function renderContours(side) {
 
     const key1 = `${st.currentModel}_${st.currentRunId}_${layer1Var}_${st.currentMemberIdx}_${stepForSide}`;
     
-    st.contourLayer1 = L.geoJson(cacheContours[key1], {
-        pane: 'contourPane1',
-        renderer: st.canvasRenderer1,
-        smoothFactor: 1.0,
-        style: function(feature) {
-            var fill = feature.properties.fill;
-            var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
-            if (layer1Mode === 'line') {
-                return { fill: false, color: isTrans ? 'transparent' : fill, weight: 1.8, opacity: 1.0 };
-            } else {
-                return { fillColor: fill, color: isTrans ? 'transparent' : fill, weight: 0.5, fillOpacity: isTrans ? 0 : 1.0 };
+    if (cacheContours[key1]) {
+        st.contourLayer1 = L.geoJson(cacheContours[key1], {
+            pane: 'contourPane1',
+            renderer: st.canvasRenderer1,
+            smoothFactor: 1.0,
+            style: function(feature) {
+                var fill = feature.properties.fill;
+                var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
+                if (layer1Mode === 'line') {
+                    return { fill: false, color: isTrans ? 'transparent' : fill, weight: 1.8, opacity: 1.0 };
+                } else {
+                    return { fillColor: fill, color: isTrans ? 'transparent' : fill, weight: 0.5, fillOpacity: isTrans ? 0 : 1.0 };
+                }
             }
-        }
-    }).addTo(targetMap);
+        }).addTo(targetMap);
+    }
 
     if (st.contourLayer2) { targetMap.removeLayer(st.contourLayer2); st.contourLayer2 = null; }
     if (layer2Var) {
@@ -1507,20 +1578,22 @@ function renderContours(side) {
         var m2 = vCfg2.has_ensemble ? st.currentMemberIdx : 0;
         const key2 = `${st.currentModel}_${st.currentRunId}_${layer2Var}_${m2}_${stepForSide}`;
 
-        st.contourLayer2 = L.geoJson(cacheContours[key2], {
-            pane: 'contourPane2',
-            renderer: st.canvasRenderer2,
-            smoothFactor: 1.0,
-            style: function(feature) {
-                var fill = feature.properties.fill;
-                var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
-                if (layer2Mode === 'line') {
-                    return { fill: false, color: isTrans ? 'transparent' : fill, weight: 2.2, opacity: 1.0 };
-                } else {
-                    return { fillColor: fill, color: isTrans ? 'transparent' : fill, weight: 0.5, fillOpacity: isTrans ? 0 : 1.0 };
+        if (cacheContours[key2]) {
+            st.contourLayer2 = L.geoJson(cacheContours[key2], {
+                pane: 'contourPane2',
+                renderer: st.canvasRenderer2,
+                smoothFactor: 1.0,
+                style: function(feature) {
+                    var fill = feature.properties.fill;
+                    var isTrans = (fill === 'transparent' || fill === '#ffffff00' || (fill.length === 9 && fill.endsWith('00')));
+                    if (layer2Mode === 'line') {
+                        return { fill: false, color: isTrans ? 'transparent' : fill, weight: 2.2, opacity: 1.0 };
+                    } else {
+                        return { fillColor: fill, color: isTrans ? 'transparent' : fill, weight: 0.5, fillOpacity: isTrans ? 0 : 1.0 };
+                    }
                 }
-            }
-        }).addTo(targetMap);
+            }).addTo(targetMap);
+        }
     }
 }
 
