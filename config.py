@@ -73,8 +73,8 @@ MODELS_CONFIG = {
         "name": "ECMWF (0.1°)",
         "collection": "ifs-0p1",
         "nx": 200, "ny": 120, "max_members": 51, "max_runs": 4,
-        "active_variables": ["wind", "gust", "clct"],
-        "ensemble_variables": ["wind", "gust", "clct"],
+        "active_variables": ["wind", "gust", "clct", "clch", "clcm", "clcl"],
+        "ensemble_variables": ["wind", "gust", "clct", "clch", "clcm", "clcl"],
         "max_chunks": 4
     }
 }
