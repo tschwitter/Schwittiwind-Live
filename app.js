@@ -128,6 +128,20 @@ var CITIES = [
     { name: "Glarus", lat: 47.0406, lon: 9.0678, minZoom: 10 }
 ];
 
+function parseLocalStr(str) {
+    if (!str) return new Date();
+    var parts = str.split(" ");
+    var dateParts = parts[0].split(".");
+    var timeParts = parts[1].split(":");
+    return new Date(
+        parseInt(dateParts[2]),
+        parseInt(dateParts[1]) - 1,
+        parseInt(dateParts[0]),
+        parseInt(timeParts[0]),
+        parseInt(timeParts[1] || 0)
+    );
+}
+
 function getActiveStateSide(domSide) {
     return isSplitActive ? domSide : 'left';
 }
@@ -166,6 +180,7 @@ function sanitizeMemberIndex(side) {
     }
 }
 
+// Sucht im Modell der angegebenen Seite den Schritt mit der geringsten zeitlichen Differenz zur LOKALZEIT (LT)
 function getStepIdxForSide(domSide) {
     var stateSide = getActiveStateSide(domSide);
     var st = modelsState[stateSide];
@@ -175,12 +190,13 @@ function getStepIdxForSide(domSide) {
     if (!baseTimes || baseTimes.length === 0) return 0;
     
     var safeMasterIdx = Math.max(0, Math.min(baseTimes.length - 1, currentStepIdx));
-    var targetForecastHour = baseTimes[safeMasterIdx].step_hours;
+    var targetDateMs = parseLocalStr(baseTimes[safeMasterIdx].local_str).getTime();
 
     var bestIdx = 0;
-    var minDiff = 999999;
+    var minDiff = Infinity;
     for (var i = 0; i < st.times.length; i++) {
-        var diff = Math.abs(st.times[i].step_hours - targetForecastHour);
+        var curMs = parseLocalStr(st.times[i].local_str).getTime();
+        var diff = Math.abs(curMs - targetDateMs);
         if (diff < minDiff) {
             minDiff = diff;
             bestIdx = i;
@@ -189,21 +205,22 @@ function getStepIdxForSide(domSide) {
     return bestIdx;
 }
 
+// Hält beim Wechsel des Modells auf der linken Seite die exakt selbe Lokalzeit (LT) bei
 function clampAndSyncMasterStep(newTimes) {
     if (!newTimes || newTimes.length === 0) {
         currentStepIdx = 0;
         return;
     }
 
-    // Wenn der vorherige Zeitschritt noch gültig ist, behalte seinen Prognose-Stundenwert bei
     var oldTimes = modelsState.left.times;
-    var targetHour = (oldTimes && oldTimes[currentStepIdx]) ? oldTimes[currentStepIdx].step_hours : null;
+    var targetDateMs = (oldTimes && oldTimes[currentStepIdx]) ? parseLocalStr(oldTimes[currentStepIdx].local_str).getTime() : null;
 
-    if (targetHour !== null) {
+    if (targetDateMs !== null) {
         var bestIdx = 0;
-        var minDiff = 999999;
+        var minDiff = Infinity;
         for (var i = 0; i < newTimes.length; i++) {
-            var diff = Math.abs(newTimes[i].step_hours - targetHour);
+            var curMs = parseLocalStr(newTimes[i].local_str).getTime();
+            var diff = Math.abs(curMs - targetDateMs);
             if (diff < minDiff) {
                 minDiff = diff;
                 bestIdx = i;
@@ -274,7 +291,7 @@ function toggleSplitScreen(e) {
         wrapper.classList.remove("single-view");
         wrapper.classList.add("split-view");
     } else {
-        wrapper.classList.remove("single-view");
+        wrapper.classList.remove("split-view");
         wrapper.classList.add("single-view");
     }
 
@@ -597,7 +614,7 @@ async function loadModelAndRun(side, modelName, runId) {
         if (!timesRes.ok) throw new Error("Konnte times.json nicht laden: " + timesRes.status);
         const newTimes = await timesRes.json();
 
-        // Wenn die linke Master-Seite das Modell wechselt, Zeitschritt sicher anpassen!
+        // Wenn die linke Master-Seite das Modell wechselt, Zeitschritt exakt nach Lokalzeit (LT) synchronisieren!
         if (side === 'left') {
             clampAndSyncMasterStep(newTimes);
         }
@@ -1001,6 +1018,7 @@ function renderMemberButtonsForTarget(domSide) {
     var sCont = document.getElementById(domSide === 'left' ? "statistikenContainerLeft" : "statistikenContainerRight");
     var ensGroup = document.getElementById(domSide === 'left' ? "ensembleGroupLeft" : "ensembleGroupRight");
     var notice = document.getElementById(domSide === 'left' ? "onlyHlNoticeLeft" : "onlyHlNoticeRight");
+    var btnToggleEns = document.getElementById(domSide === 'left' ? "btnToggleEnsembleLeft" : "btnToggleEnsembleRight");
 
     if (!hCont || !eCont || !sCont) return;
 
@@ -1027,7 +1045,7 @@ function renderMemberButtonsForTarget(domSide) {
             };
             hCont.appendChild(btn);
         } else if (hasEns && idx >= 1 && idx < statOffset) {
-            // Bei historischen Läufen wurden Einzel-Member gelöscht: Button gar nicht anzeigen!
+            // Bei historischen Läufen: Einzelmember gar nicht rendern
             if (!isOldRun) {
                 btn.innerText = "Member " + idx;
                 btn.onclick = function() {
@@ -1046,11 +1064,29 @@ function renderMemberButtonsForTarget(domSide) {
         }
     });
 
-    var hasVisibleEnsemble = hasEns && (!isOldRun || (cfg.member_names && cfg.member_names.length > statOffset));
-    if (ensGroup) ensGroup.style.display = hasVisibleEnsemble ? "block" : "none";
-    if (notice) notice.style.display = (!hasEns || isOldRun) ? "block" : "none";
-    if (notice && isOldRun && hasEns) notice.innerText = "Alter Lauf: Nur Hauptlauf & Statistiken verfügbar";
-    else if (notice) notice.innerText = "Nur Hauptlauf verfügbar";
+    if (hasEns) {
+        if (ensGroup) ensGroup.style.display = "block";
+        if (isOldRun) {
+            // Bei altem Lauf: Ausklappbutton weg, Notiz direkt unter ENSEMBLE anzeigen
+            if (btnToggleEns) btnToggleEns.style.display = "none";
+            if (eCont) eCont.style.display = "none";
+            if (notice) {
+                notice.style.display = "block";
+                notice.innerText = "Alter Lauf: Nur Hauptlauf & Statistiken verfügbar";
+            }
+        } else {
+            // Normaler aktueller Lauf
+            if (btnToggleEns) btnToggleEns.style.display = "flex";
+            if (notice) notice.style.display = "none";
+        }
+    } else {
+        // Modell hat gar kein Ensemble
+        if (ensGroup) ensGroup.style.display = "none";
+        if (notice) {
+            notice.style.display = "block";
+            notice.innerText = "Nur Hauptlauf verfügbar";
+        }
+    }
 }
 
 function initMemberPanelsAll() {
