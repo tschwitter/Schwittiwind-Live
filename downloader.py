@@ -298,10 +298,6 @@ def fetch_3d_and_slice(collection, var_name, perturbed, ref_time_str, lead_times
 
 # ================= KENDA-CH1 (METEOSCHWEIZ ANALYSE) FETCHER =================
 def fetch_kenda_data(start_step, end_step, ref_time_str):
-    """
-    Lädt stündliche KENDA-CH1 Ist-Zustände der letzten 5 Stunden.
-    Schritt 0 entspricht T - 4h, Schritt 4 entspricht T (aktuellster Zustand).
-    """
     print(f"-> Lade KENDA-CH1 Analysen für Schritte {start_step} bis {end_step} (Basis: {ref_time_str})...", flush=True)
     collection = "ogd-analysis-kenda-ch1"
     hhl_asset = config.MODELS_CONFIG["kenda-ch1"]["hhl_asset"]
@@ -580,9 +576,12 @@ def fetch_arome_hd_data(start_step, end_step, ref_time_str):
 def _download_and_extract_dwd_bytes(url):
     for attempt in range(1, 4):
         try:
-            r = requests.get(url, timeout=30)
+            r = requests.get(url, timeout=35)
             if r.status_code == 200 and len(r.content) > 1000:
                 return bz2.decompress(r.content)
+            elif r.status_code == 404:
+                # Datei existiert beim DWD noch nicht
+                return None
         except Exception:
             time.sleep(2 * attempt)
     return None
@@ -700,7 +699,8 @@ def _extract_grib_array(raw_bytes, valid_indices, is_ensemble=False):
             return vals[:, valid_indices].astype(np.float32)
         else:
             return vals.ravel()[valid_indices].astype(np.float32)
-    except Exception:
+    except Exception as e:
+        print(f"   ⚠️ Fehler beim Dekodieren von DWD GRIB: {e}", flush=True)
         return None
     finally:
         if os.path.exists(tmp_path):
@@ -726,7 +726,7 @@ def fetch_icond2_single_hour(ref_iso, lead_hour, grid_info):
     url_g_hl = f"{base_det}/vmax_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_vmax_10m.grib2.bz2"
 
     url_u_ens = f"{base_eps}/u_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_u_10m.grib2.bz2"
-    url_v_ens = f"{base_eps}/v_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_vmax_10m.grib2.bz2"
+    url_v_ens = f"{base_eps}/v_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_v_10m.grib2.bz2"
     url_g_ens = f"{base_eps}/vmax_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{lead_hour:03d}_2d_vmax_10m.grib2.bz2"
 
     valid_indices = grid_info["valid_indices"]
@@ -739,6 +739,9 @@ def fetch_icond2_single_hour(ref_iso, lead_hour, grid_info):
     u_e = _extract_grib_array(_download_and_extract_dwd_bytes(url_u_ens), valid_indices, is_ensemble=True)
     v_e = _extract_grib_array(_download_and_extract_dwd_bytes(url_v_ens), valid_indices, is_ensemble=True)
     g_e = _extract_grib_array(_download_and_extract_dwd_bytes(url_g_ens), valid_indices, is_ensemble=True) if lead_hour > 0 else np.full((20, num_pts), np.nan, dtype=np.float32)
+
+    if u_e is None:
+        print(f"⚠️ [icon-d2] EPS Wind U für Stunde +{lead_hour}h nicht verfügbar oder Download fehlgeschlagen.", flush=True)
 
     return u_h, v_h, g_h, u_e, v_e, g_e
 
@@ -764,7 +767,7 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
     return {
         "surface": {
             "u_h": xr.DataArray(np.stack(u_h_list, axis=0), dims=["lead_time", "cell"]),
-            "v_h": xr.DataArray(np.stack(v_h_list, axis=0), dims=["lead_time", "cell"]),
+            "v_h": xr.DataArray(np.stack(v_list, axis=0), dims=["lead_time", "cell"]),
             "g_h": xr.DataArray(np.stack(g_h_list, axis=0), dims=["lead_time", "cell"]),
             "u_e": xr.DataArray(np.stack(u_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
             "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
