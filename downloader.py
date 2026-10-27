@@ -757,56 +757,95 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
 
-# ================= ECMWF AIFS (0.25° KI) =================
+# ================= ECMWF AIFS (0.25° KI INKL. 50 MEMBER) =================
 def fetch_aifs_data(start_step, end_step, ref_time_str):
     from ecmwf.opendata import Client
-    print(f"-> Lade ECMWF AIFS 0.25° KI (10m Wind) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
+    print(f"-> Lade ECMWF AIFS 0.25° KI (10m Wind & 50 Member) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
 
     ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
     date_ymd, time_hh = int(ref_dt.strftime("%Y%m%d")), int(ref_dt.strftime("%H"))
     target_steps = config.get_model_step_hours("aifs", ref_dt)[start_step : end_step + 1]
 
-    client = None
+    client_single, client_ens = None, None
     for src in ["google", "ecmwf", "azure", "aws"]:
         try:
-            client = Client(source=src, model="aifs-single", resol="0p25")
+            client_single = Client(source=src, model="aifs-single", resol="0p25")
+            client_ens = Client(source=src, model="aifs-ens", resol="0p25")
             break
         except Exception:
             pass
 
     u_h_list, v_h_list = [], []
+    u_e_list, v_e_list = [], []
     ref_lon, ref_lat = None, None
 
     for sh in target_steps:
-        with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_f:
-            path_tmp = tmp_f.name
+        with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ctrl, \
+             tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ens:
+            path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
 
-        ctrl_data = None
+        ctrl_data, ens_data = None, None
+
+        # 1. Hauptlauf (aifs-single)
         try:
-            client.download(date=date_ymd, time=time_hh, step=sh, target=path_tmp)
-            ctrl_data, coords_ctrl = _extract_swiss_subgrid_fast(path_tmp, is_ens=False)
+            client_single.download(date=date_ymd, time=time_hh, step=sh, target=path_ctrl)
+            ctrl_data, coords_ctrl = _extract_swiss_subgrid_fast(path_ctrl, is_ens=False)
             if ref_lon is None and coords_ctrl:
                 ref_lon, ref_lat = coords_ctrl
         except Exception as e:
-            print(f"   ⚠️ AIFS Schritt (+{sh}h): {e}", flush=True)
+            print(f"   ⚠️ AIFS Hauptlauf (+{sh}h): {e}", flush=True)
 
-        if os.path.exists(path_tmp):
-            try:
-                os.remove(path_tmp)
-            except Exception:
-                pass
+        # 2. Ensemble (aifs-ens, 50 Member)
+        try:
+            download_ok = False
+            for ens_type in ["ef", "pf"]:
+                try:
+                    client_ens.download(date=date_ymd, time=time_hh, step=sh, stream="enfo", type=ens_type, target=path_ens)
+                    download_ok = True
+                    break
+                except Exception:
+                    pass
+            if not download_ok:
+                client_ens.download(date=date_ymd, time=time_hh, step=sh, target=path_ens)
+
+            ens_data, coords_ens = _extract_swiss_subgrid_fast(path_ens, is_ens=True)
+            if ref_lon is None and coords_ens:
+                ref_lon, ref_lat = coords_ens
+        except Exception as e:
+            if sh > 0:
+                print(f"   ⚠️ AIFS Ensemble (+{sh}h): {e}", flush=True)
+
+        for p in [path_ctrl, path_ens]:
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
 
         pts = len(ref_lon) if ref_lon is not None else 1352
         u_h = ctrl_data.get("10u") if ctrl_data else None
         v_h = ctrl_data.get("10v") if ctrl_data else None
+        u_e = ens_data.get("10u") if ens_data else None
+        v_e = ens_data.get("10v") if ens_data else None
+
+        # Fallback bei Schritt 0 oder falls Ensemble temporär fehlt
+        if u_e is None and u_h is not None:
+            u_e = np.repeat(u_h[np.newaxis, :], 50, axis=0)
+            v_e = np.repeat(v_h[np.newaxis, :], 50, axis=0)
+        elif u_h is None and u_e is not None:
+            u_h, v_h = u_e[0], v_e[0]
 
         u_h_list.append(u_h if u_h is not None else np.full(pts, np.nan, dtype=np.float32))
         v_h_list.append(v_h if v_h is not None else np.full(pts, np.nan, dtype=np.float32))
+        u_e_list.append(u_e if u_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
+        v_e_list.append(v_e if v_e is not None else np.full((50, pts), np.nan, dtype=np.float32))
 
     return {
         "surface": {
             "u_h": xr.DataArray(np.stack(u_h_list, axis=0), dims=["lead_time", "cell"]),
-            "v_h": xr.DataArray(np.stack(v_h_list, axis=0), dims=["lead_time", "cell"])
+            "v_h": xr.DataArray(np.stack(v_h_list, axis=0), dims=["lead_time", "cell"]),
+            "u_e": xr.DataArray(np.stack(u_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
+            "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"])
         },
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
