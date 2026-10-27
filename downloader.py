@@ -527,7 +527,7 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": grid_info["ref_lon"], "ref_lat": grid_info["ref_lat"]
     }
 
-# ================= ECMWF 0.1° (WIND, BÖEN & WOLKENSCHICHTEN) =================
+# ================= ECMWF & AIFS SUBGRID EXTRACTOR =================
 def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
     if not os.path.exists(grib_path) or os.path.getsize(grib_path) < 1000:
         return None, None
@@ -595,7 +595,6 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
                         ref_lons, ref_lats = glon.ravel().astype(np.float32), glat.ravel().astype(np.float32)
 
                     arr = sub.ravel().astype(np.float32)
-                    # Wolkenbedeckung von 0..1 auf 0..100% skalieren falls nötig
                     if norm_param in ["clct", "clch", "clcm", "clcl"] and np.nanmax(arr) <= 1.01:
                         arr = np.clip(arr * 100.0, 0.0, 100.0)
 
@@ -629,16 +628,17 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
         print(f"⚠️ ecCodes Fehler beim Lesen: {e}", flush=True)
         return None, None
 
+# ================= ECMWF IFS =================
 def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     from ecmwf.opendata import Client
-    print(f"-> Lade ECMWF 0.1° (Wind, Böen & Wolkenschichten inkl. 50 Member) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
+    print(f"-> Lade ECMWF 0.1° für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
 
     ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
     date_ymd, time_hh = int(ref_dt.strftime("%Y%m%d")), int(ref_dt.strftime("%H"))
     target_steps = config.get_model_step_hours("ecmwf", ref_dt)[start_step : end_step + 1]
 
     client = None
-    for src in ["google", "ecmwf", "azure"]:
+    for src in ["google", "ecmwf", "azure", "aws"]:
         try:
             client = Client(source=src, model="ifs", resol="0p1")
             break
@@ -683,7 +683,6 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
 
         pts = len(ref_lon) if ref_lon is not None else 1352
 
-        # 1. Hauptlauf-Felder
         u_h  = ctrl_data.get("10u")  if ctrl_data else None
         v_h  = ctrl_data.get("10v")  if ctrl_data else None
         g_h  = ctrl_data.get("gust") if ctrl_data else None
@@ -692,7 +691,6 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         cm_h = ctrl_data.get("clcm") if ctrl_data else None
         cl_h = ctrl_data.get("clcl") if ctrl_data else None
 
-        # 2. Ensemble-Felder
         u_e  = ens_data.get("10u")  if ens_data else None
         v_e  = ens_data.get("10v")  if ens_data else None
         g_e  = ens_data.get("gust") if ens_data else None
@@ -701,16 +699,11 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         cm_e = ens_data.get("clcm") if ens_data else None
         cl_e = ens_data.get("clcl") if ens_data else None
 
-        # Fallback bei Schritt 0 für fehlende Ensembles
         if u_e is None and u_h is not None:
             u_e = np.repeat(u_h[np.newaxis, :], 50, axis=0)
             v_e = np.repeat(v_h[np.newaxis, :], 50, axis=0)
         elif u_h is None and u_e is not None:
             u_h, v_h = u_e[0], v_e[0]
-
-        for (v_h_item, v_e_item) in [(g_h, g_e), (c_h, c_e), (ch_h, ch_e), (cm_h, cm_e), (cl_h, cl_e)]:
-            if v_e_item is None and v_h_item is not None:
-                pass  # Fallback-Zuweisung unten über dict/variables
 
         if g_e is None and g_h is not None: g_e = np.repeat(g_h[np.newaxis, :], 50, axis=0)
         elif g_h is None and g_e is not None: g_h = g_e[0]
@@ -764,12 +757,67 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
 
+# ================= ECMWF AIFS (0.25° KI) =================
+def fetch_aifs_data(start_step, end_step, ref_time_str):
+    from ecmwf.opendata import Client
+    print(f"-> Lade ECMWF AIFS 0.25° KI (10m Wind) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
+
+    ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
+    date_ymd, time_hh = int(ref_dt.strftime("%Y%m%d")), int(ref_dt.strftime("%H"))
+    target_steps = config.get_model_step_hours("aifs", ref_dt)[start_step : end_step + 1]
+
+    client = None
+    for src in ["google", "ecmwf", "azure", "aws"]:
+        try:
+            client = Client(source=src, model="aifs-single", resol="0p25")
+            break
+        except Exception:
+            pass
+
+    u_h_list, v_h_list = [], []
+    ref_lon, ref_lat = None, None
+
+    for sh in target_steps:
+        with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_f:
+            path_tmp = tmp_f.name
+
+        ctrl_data = None
+        try:
+            client.download(date=date_ymd, time=time_hh, step=sh, target=path_tmp)
+            ctrl_data, coords_ctrl = _extract_swiss_subgrid_fast(path_tmp, is_ens=False)
+            if ref_lon is None and coords_ctrl:
+                ref_lon, ref_lat = coords_ctrl
+        except Exception as e:
+            print(f"   ⚠️ AIFS Schritt (+{sh}h): {e}", flush=True)
+
+        if os.path.exists(path_tmp):
+            try:
+                os.remove(path_tmp)
+            except Exception:
+                pass
+
+        pts = len(ref_lon) if ref_lon is not None else 1352
+        u_h = ctrl_data.get("10u") if ctrl_data else None
+        v_h = ctrl_data.get("10v") if ctrl_data else None
+
+        u_h_list.append(u_h if u_h is not None else np.full(pts, np.nan, dtype=np.float32))
+        v_h_list.append(v_h if v_h is not None else np.full(pts, np.nan, dtype=np.float32))
+
+    return {
+        "surface": {
+            "u_h": xr.DataArray(np.stack(u_h_list, axis=0), dims=["lead_time", "cell"]),
+            "v_h": xr.DataArray(np.stack(v_h_list, axis=0), dims=["lead_time", "cell"])
+        },
+        "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
+    }
+
 # ================= ALLGEMEINER DISPATCHER =================
 def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
     if model_name == "kenda-ch1": return fetch_kenda_data(start_step, end_step, ref_time_str)
     if model_name == "arome":     return fetch_arome_hd_data(start_step, end_step, ref_time_str)
     if model_name == "icon-d2":   return fetch_icond2_data(start_step, end_step, ref_time_str)
     if model_name == "ecmwf":     return fetch_ecmwf_data(start_step, end_step, ref_time_str)
+    if model_name == "aifs":      return fetch_aifs_data(start_step, end_step, ref_time_str)
 
     model_cfg = config.MODELS_CONFIG[model_name]
     collection, active_vars, ens_vars = model_cfg["collection"], model_cfg["active_variables"], model_cfg["ensemble_variables"]
