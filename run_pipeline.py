@@ -26,7 +26,6 @@ import config
 SHARED_DATA = {}
 
 def load_existing_runs(model_name):
-    """Lädt die Liste aller vorhandenen Läufe aus runs.json (prüft beide Ordner: dist und dist-meta)."""
     for base in ["dist/data", "dist-meta/data"]:
         runs_file = f"{base}/{model_name}/runs.json"
         if os.path.exists(runs_file):
@@ -40,7 +39,6 @@ def load_existing_runs(model_name):
     return []
 
 def _generate_candidate_dts(hours_list):
-    """Generiert UTC-Kandidatenzeiten für heute und gestern."""
     now_utc = datetime.now(ZoneInfo("UTC"))
     candidates = [
         datetime(d.year, d.month, d.day, h, 0, 0, tzinfo=ZoneInfo("UTC"))
@@ -51,7 +49,6 @@ def _generate_candidate_dts(hours_list):
     return sorted([dt for dt in candidates if dt <= now_utc], reverse=True)[:4]
 
 def _check_http_candidates(model_name, hours_list, url_template):
-    """Prüft HTTP-Endpunkte auf den neuesten Lauf."""
     existing_runs = load_existing_runs(model_name)
     latest_known_id = existing_runs[0]["id"] if existing_runs else None
 
@@ -75,7 +72,6 @@ def _check_http_candidates(model_name, hours_list, url_template):
     return False, None, "latest", None, None
 
 def check_model_new_data(model_name):
-    """Zentrale Prüfung aller Wettermodelle."""
     if model_name == "arome":
         return _check_http_candidates(
             "arome", [0, 3, 6, 9, 12, 15, 18, 21],
@@ -85,6 +81,22 @@ def check_model_new_data(model_name):
         return _check_http_candidates(
             "icon-d2", [0, 3, 6, 9, 12, 15, 18, 21],
             lambda dt, iso: f"https://opendata.dwd.de/weather/nwp/icon-d2-eps/grib/{dt.strftime('%H')}/u_10m/icon-d2-eps_germany_icosahedral_single-level_{dt.strftime('%Y%m%d%H')}_048_2d_u_10m.grib2.bz2"
+        )
+    if model_name == "aifs":
+        try:
+            from ecmwf.opendata import Client
+            latest_dt = Client(source="google", model="aifs-single", resol="0p25").latest(type="fc", step=24)
+            if latest_dt:
+                latest_dt = latest_dt.replace(tzinfo=ZoneInfo("UTC"))
+                run_id = latest_dt.strftime("%Y%m%d_%H")
+                existing = load_existing_runs("aifs")
+                is_new = not (existing and existing[0]["id"] == run_id)
+                return is_new, latest_dt.strftime("%d.%m.%Y %H:00 UTC"), latest_dt.strftime("%Y-%m-%dT%H:00:00Z"), run_id, latest_dt
+        except Exception:
+            pass
+        return _check_http_candidates(
+            "aifs", [0, 6, 12, 18],
+            lambda dt, iso: f"https://data.ecmwf.int/forecasts/{dt.strftime('%Y%m%d')}/{dt.strftime('%H')}z/aifs-single/0p25/oper/{dt.strftime('%Y%m%d%H')}0000-0h-oper-fc.grib2"
         )
     if model_name == "ecmwf":
         try:
@@ -103,7 +115,7 @@ def check_model_new_data(model_name):
             lambda dt, iso: f"https://data.ecmwf.int/forecasts/{dt.strftime('%Y%m%d')}/{dt.strftime('%H')}z/ifs/0p1/enfo/{dt.strftime('%Y%m%d%H')}0000-0h-enfo-ef-sfc.grib2"
         )
 
-    # MeteoSchweiz OGD (kenda-ch1, icon-ch1, icon-ch2)
+    # MeteoSchweiz OGD
     from meteodatalab import ogd_api
     model_cfg = config.MODELS_CONFIG[model_name]
     existing_runs = load_existing_runs(model_name)
@@ -154,7 +166,6 @@ def get_dynamic_chunks(total_steps, max_chunks=4):
     return chunks
 
 def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
-    """Erzeugt Metadaten und erhält die bisherige Historie in runs.json sauber aufrecht."""
     model_cfg = config.MODELS_CONFIG[model_name]
     nx, ny = model_cfg.get("nx", config.NX), model_cfg.get("ny", config.NY)
     local_tz = ZoneInfo("Europe/Zurich")
@@ -203,7 +214,6 @@ def prepare_model_base_site(model_name, ref_time_str, iso_str, run_id, run_dt):
     print(f"✓ Metadaten für [{model_name} / {run_id}] bereitgestellt ({nx}x{ny}, {len(times_by_step)} Schritte, {len(updated_runs)} Läufe in Historie)!", flush=True)
 
 def prune_old_runs():
-    """Bereinigt nur wirklich veraltete Läufe (jenseits max_runs) und Member-Dateien alter Läufe."""
     print("--- PRUNING: Bereinige Läufe & Historie ---", flush=True)
     base_data_dir = "dist/data"
 
@@ -230,7 +240,6 @@ def prune_old_runs():
             if os.path.isfile(p) and entry != "runs.json":
                 os.remove(p)
             elif os.path.isdir(p):
-                # Nur löschen, wenn es definitiv nicht in den validen IDs gelistet ist
                 if valid_ids and entry not in valid_ids:
                     print(f"-> Entferne veralteten Lauf ({m_name}): {entry}", flush=True)
                     shutil.rmtree(p, ignore_errors=True)
@@ -307,7 +316,6 @@ def main():
             if os.path.exists(sf):
                 shutil.copy(sf, f"dist-meta/{sf}")
 
-        # Kopiere bestehende runs.json-Dateien aus dist/data in dist-meta/data, damit bisherige Historie nie verloren geht
         for m_name in config.MODELS_CONFIG:
             src_runs = f"dist/data/{m_name}/runs.json"
             dst_dir = f"dist-meta/data/{m_name}"
