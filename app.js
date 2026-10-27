@@ -5,7 +5,7 @@ let isSyncingMaps = false;
 let isLegendOpen = false;
 let syncRafId = null;
 
-const ALL_MODELS = ["kenda-ch1", "icon-ch1", "icon-ch2", "arome", "icon-d2", "ecmwf"];
+const ALL_MODELS = ["kenda-ch1", "icon-ch1", "icon-ch2", "arome", "icon-d2", "ecmwf", "aifs"];
 let isMobileModelExpanded = false;
 
 const modelsState = {
@@ -21,10 +21,10 @@ const modelsState = {
     }
 };
 
-const availableRuns = { "kenda-ch1": [], "icon-ch1": [], "icon-ch2": [], "arome": [], "icon-d2": [], "ecmwf": [] };
+const availableRuns = { "kenda-ch1": [], "icon-ch1": [], "icon-ch2": [], "arome": [], "icon-d2": [], "ecmwf": [], "aifs": [] };
 const selectedRuns = {
-    left: { "kenda-ch1": null, "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null, "ecmwf": null },
-    right: { "kenda-ch1": null, "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null, "ecmwf": null }
+    left: { "kenda-ch1": null, "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null, "ecmwf": null, "aifs": null },
+    right: { "kenda-ch1": null, "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null, "ecmwf": null, "aifs": null }
 };
 
 let verticalNavMode = 'member';
@@ -48,7 +48,6 @@ let riversLayerLeft, riversLayerRight;
 let cantonalBoundaryLayerLeft, cantonalBoundaryLayerRight;
 let cityLayerGroupLeft, cityLayerGroupRight;
 
-// Begrenzter Cache zur Vermeidung von Memory-Leaks im Browser
 const MAX_CACHE_ENTRIES = 70;
 const cacheGrid = {};
 const cacheContours = {};
@@ -56,7 +55,7 @@ const cacheContours = {};
 function storeInBoundedCache(cache, key, value) {
     const keys = Object.keys(cache);
     if (keys.length >= MAX_CACHE_ENTRIES) {
-        delete cache[keys[0]]; // Ältesten Eintrag verwerfen
+        delete cache[keys[0]];
     }
     cache[key] = value;
 }
@@ -409,7 +408,7 @@ async function fetchAvailableRuns(modelName) {
 }
 
 function getModelShortLabel(m) {
-    const LABELS = { "kenda-ch1": "KND", "icon-ch1": "CH1", "icon-ch2": "CH2", "icon-d2": "D2", "ecmwf": "EC" };
+    const LABELS = { "kenda-ch1": "KND", "icon-ch1": "CH1", "icon-ch2": "CH2", "icon-d2": "D2", "ecmwf": "EC", "aifs": "AI" };
     return LABELS[m] || "AROME";
 }
 
