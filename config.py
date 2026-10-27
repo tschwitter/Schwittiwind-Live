@@ -84,6 +84,14 @@ MODELS_CONFIG = {
         "active_variables": ["wind"],
         "ensemble_variables": ["wind"],
         "max_chunks": 1
+    },
+    "gfs": {
+        "name": "GFS (0.25° NOAA)",
+        "collection": "gfs_0p25",
+        "nx": 80, "ny": 50, "hours": 120, "max_members": 1, "max_runs": 4,
+        "active_variables": ["wind", "gust"],
+        "ensemble_variables": [],
+        "max_chunks": 2
     }
 }
 
@@ -92,6 +100,8 @@ def get_model_step_hours(model_name, ref_dt):
         return list(range(5))
     if model_name == "aifs":
         return list(range(0, 145, 6))
+    if model_name == "gfs":
+        return list(range(0, 121, 3))
     if model_name == "ecmwf":
         return list(range(0, 145, 3)) + (list(range(150, 241, 6)) if ref_dt and ref_dt.hour in [0, 12] else [])
     
