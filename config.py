@@ -80,9 +80,9 @@ MODELS_CONFIG = {
     "aifs": {
         "name": "AIFS (0.25° KI)",
         "collection": "aifs-single",
-        "nx": 80, "ny": 50, "max_members": 1, "max_runs": 4,
+        "nx": 80, "ny": 50, "max_members": 51, "max_runs": 4,
         "active_variables": ["wind"],
-        "ensemble_variables": [],
+        "ensemble_variables": ["wind"],
         "max_chunks": 1
     }
 }
