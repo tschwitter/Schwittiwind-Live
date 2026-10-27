@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Wetter & Wind (KENDA, ICON CH1, CH2, D2, AROME & ECMWF 0.1°)</title>
+    <title>Wetter & Wind (KENDA, ICON CH1, CH2, D2, AROME, ECMWF & AIFS KI)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=46" />
+    <link rel="stylesheet" href="style.css?v=47" />
 </head>
 <body>
 
@@ -75,6 +75,10 @@
                         <span class="model-title">EC ▾</span>
                         <span class="model-time">--</span>
                     </button>
+                    <button class="model-btn" id="btnModel-left-aifs" onclick="handleModelButtonClick('aifs', 'left')">
+                        <span class="model-title">AI ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
                 </div>
             </div>
 
@@ -136,6 +140,10 @@
                         <span class="model-title">EC ▾</span>
                         <span class="model-time">--</span>
                     </button>
+                    <button class="model-btn" id="btnModel-right-aifs" onclick="handleModelButtonClick('aifs', 'right')">
+                        <span class="model-title">AI ▾</span>
+                        <span class="model-time">--</span>
+                    </button>
                 </div>
             </div>
 
@@ -169,6 +177,7 @@
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-left-arome"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-left-icon-d2"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-left-ecmwf"></div>
+    <div class="floating-popup runs-dropdown-popup" id="runDropdown-left-aifs"></div>
 
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-kenda-ch1"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-icon-ch1"></div>
@@ -176,6 +185,7 @@
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-arome"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-icon-d2"></div>
     <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-ecmwf"></div>
+    <div class="floating-popup runs-dropdown-popup" id="runDropdown-right-aifs"></div>
 
     <div class="floating-popup layer2-dropdown-popup" id="layer2Dropdown"></div>
 
@@ -261,6 +271,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
-    <script src="app.js?v=46"></script>
+    <script src="app.js?v=47"></script>
 </body>
 </html>
