@@ -82,7 +82,7 @@ MODELS_CONFIG = {
     "aifs": {
         "name": "AIFS (0.25° KI)",
         "collection": "aifs-single",
-        "nx": 80, "ny": 50, "max_members": 51, "max_runs": 4,
+        "nx": 80, "ny": 50, "hours": 240, "max_members": 51, "max_runs": 4,
         "active_variables": ["wind"],
         "ensemble_variables": ["wind"],
         "max_chunks": 1
@@ -90,7 +90,7 @@ MODELS_CONFIG = {
     "gfs": {
         "name": "GFS (0.25° NOAA)",
         "collection": "gefs_0p25",
-        "nx": 80, "ny": 50, "hours": 120, "max_members": 31, "max_runs": 4,
+        "nx": 80, "ny": 50, "hours": 240, "max_members": 31, "max_runs": 4,
         "active_variables": ["wind", "gust"],
         "ensemble_variables": ["wind", "gust"],
         "max_chunks": 1
@@ -101,9 +101,9 @@ def get_model_step_hours(model_name, ref_dt):
     if model_name == "kenda-ch1":
         return list(range(5))
     if model_name == "aifs":
-        return list(range(0, 145, 6))
+        return list(range(0, 241, 6))
     if model_name == "gfs":
-        return list(range(0, 121, 3))
+        return list(range(0, 241, 3))
     if model_name == "ecmwf":
         return list(range(0, 145, 3)) + (list(range(150, 241, 6)) if ref_dt and ref_dt.hour in [0, 12] else [])
     
