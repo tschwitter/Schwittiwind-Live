@@ -25,7 +25,6 @@ tempfile.tempdir = WORKSPACE_TMP
 _ICOND2_GRID_CACHE = {}
 _OGD_SEMAPHORE = threading.Semaphore(2)
 _HTTP_SESSION = requests.Session()
-_ECMWF_GRID_CACHE = {}
 
 def trim_memory():
     try:
@@ -529,9 +528,8 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": grid_info["ref_lon"], "ref_lat": grid_info["ref_lat"]
     }
 
-# ================= ECMWF, AIFS & GFS SUBGRID EXTRACTOR (MIT HEBEL 2: SCHWEIZ-GRID-CACHING) =================
+# ================= ECMWF, AIFS & GFS SUBGRID EXTRACTOR =================
 def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
-    global _ECMWF_GRID_CACHE
     if not os.path.exists(grib_path) or os.path.getsize(grib_path) < 500:
         return None, None
 
@@ -596,50 +594,33 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
                     vals = eccodes.codes_get_values(gid)
                     n_lats = int(eccodes.codes_get(gid, "Nj"))
                     n_lons = int(eccodes.codes_get(gid, "Ni"))
+                    la1 = float(eccodes.codes_get(gid, "latitudeOfFirstGridPointInDegrees"))
+                    lo1 = float(eccodes.codes_get(gid, "longitudeOfFirstGridPointInDegrees"))
+                    d_lat = float(eccodes.codes_get(gid, "jDirectionIncrementInDegrees"))
+                    d_lon = float(eccodes.codes_get(gid, "iDirectionIncrementInDegrees"))
+                    j_scans_pos = int(eccodes.codes_get(gid, "jScansPositively"))
 
-                    # HEBEL 2: Schnitte und Koordinaten einmalig pro Gitterdimension cachen
-                    grid_key = f"{n_lats}x{n_lons}"
-                    if grid_key in _ECMWF_GRID_CACHE:
-                        cached = _ECMWF_GRID_CACHE[grid_key]
-                        r_min, r_max, c_min, c_max = cached["slices"]
-                        sub = vals.reshape(n_lats, n_lons)[r_min:r_max, c_min:c_max]
-                        if ref_lons is None:
-                            ref_lons, ref_lats = cached["ref_lons"], cached["ref_lats"]
+                    matrix = vals.reshape(n_lats, n_lons)
+                    lat_arr = la1 + np.arange(n_lats) * d_lat if j_scans_pos == 1 else la1 - np.arange(n_lats) * d_lat
+                    lon_arr = (lo1 + np.arange(n_lons) * d_lon + 180.0) % 360.0 - 180.0
+
+                    r_mask = np.where((lat_arr >= config.LAT_MIN - 0.2) & (lat_arr <= config.LAT_MAX + 0.2))[0]
+                    c_mask = np.where((lon_arr >= config.LON_MIN - 0.2) & (lon_arr <= config.LON_MAX + 0.2))[0]
+
+                    if len(r_mask) == 0 or len(c_mask) == 0 or (n_lats <= 30 and n_lons <= 40):
+                        sub = matrix
+                        sub_lats = lat_arr
+                        sub_lons = lon_arr
                     else:
-                        la1 = float(eccodes.codes_get(gid, "latitudeOfFirstGridPointInDegrees"))
-                        lo1 = float(eccodes.codes_get(gid, "longitudeOfFirstGridPointInDegrees"))
-                        d_lat = float(eccodes.codes_get(gid, "jDirectionIncrementInDegrees"))
-                        d_lon = float(eccodes.codes_get(gid, "iDirectionIncrementInDegrees"))
-                        j_scans_pos = int(eccodes.codes_get(gid, "jScansPositively"))
+                        r_min, r_max = r_mask[0], r_mask[-1] + 1
+                        c_min, c_max = c_mask[0], c_mask[-1] + 1
+                        sub = matrix[r_min:r_max, c_min:c_max]
+                        sub_lats = lat_arr[r_min:r_max]
+                        sub_lons = lon_arr[c_min:c_max]
 
-                        matrix = vals.reshape(n_lats, n_lons)
-                        lat_arr = la1 + np.arange(n_lats) * d_lat if j_scans_pos == 1 else la1 - np.arange(n_lats) * d_lat
-                        lon_arr = (lo1 + np.arange(n_lons) * d_lon + 180.0) % 360.0 - 180.0
-
-                        r_mask = np.where((lat_arr >= config.LAT_MIN - 0.2) & (lat_arr <= config.LAT_MAX + 0.2))[0]
-                        c_mask = np.where((lon_arr >= config.LON_MIN - 0.2) & (lon_arr <= config.LON_MAX + 0.2))[0]
-
-                        if len(r_mask) == 0 or len(c_mask) == 0 or (n_lats <= 25 and n_lons <= 35):
-                            r_min, r_max = 0, n_lats
-                            c_min, c_max = 0, n_lons
-                            sub = matrix
-                            sub_lats, sub_lons = lat_arr, lon_arr
-                        else:
-                            r_min, r_max = r_mask[0], r_mask[-1] + 1
-                            c_min, c_max = c_mask[0], c_mask[-1] + 1
-                            sub = matrix[r_min:r_max, c_min:c_max]
-                            sub_lats, sub_lons = lat_arr[r_min:r_max], lon_arr[c_min:c_max]
-
+                    if ref_lons is None:
                         glon, glat = np.meshgrid(sub_lons, sub_lats)
-                        c_rlons, c_rlats = glon.ravel().astype(np.float32), glat.ravel().astype(np.float32)
-
-                        _ECMWF_GRID_CACHE[grid_key] = {
-                            "slices": (r_min, r_max, c_min, c_max),
-                            "ref_lons": c_rlons,
-                            "ref_lats": c_rlats
-                        }
-                        if ref_lons is None:
-                            ref_lons, ref_lats = c_rlons, c_rlats
+                        ref_lons, ref_lats = glon.ravel().astype(np.float32), glat.ravel().astype(np.float32)
 
                     arr = sub.ravel().astype(np.float32)
                     if norm_param in ["clct", "clch", "clcm", "clcl"] and np.nanmax(arr) <= 1.01:
@@ -677,10 +658,14 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
         print(f"⚠️ ecCodes Fehler beim Lesen: {e}", flush=True)
         return None, None
 
-# ================= ECMWF IFS (MIT HEBEL 1: PARALLELE ZEITSCHRITT-DOWNLOADS) =================
-def _fetch_single_ecmwf_step(args):
-    date_ymd, time_hh, sh = args
+# ================= ECMWF IFS (BEWÄHRTER, SCHNELLER STANDARD) =================
+def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     from ecmwf.opendata import Client
+    print(f"-> Lade ECMWF 0.1° für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
+
+    ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
+    date_ymd, time_hh = int(ref_dt.strftime("%Y%m%d")), int(ref_dt.strftime("%H"))
+    target_steps = config.get_model_step_hours("ecmwf", ref_dt)[start_step : end_step + 1]
 
     client = None
     for src in ["azure", "aws", "google", "ecmwf"]:
@@ -690,63 +675,41 @@ def _fetch_single_ecmwf_step(args):
         except Exception:
             pass
 
-    with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ctrl, \
-         tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ens:
-        path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
-
-    ctrl_data, ens_data, coords = None, None, None
-
-    try:
-        client.download(date=date_ymd, time=time_hh, step=sh, type="fc", levtype="sfc", target=path_ctrl)
-        ctrl_data, coords_ctrl = _extract_swiss_subgrid_fast(path_ctrl, is_ens=False)
-        if coords_ctrl:
-            coords = coords_ctrl
-    except Exception as e:
-        print(f"   ⚠️ ECMWF Hauptlauf (+{sh}h): {e}", flush=True)
-
-    try:
-        client.download(date=date_ymd, time=time_hh, step=sh, stream="enfo", type="ef", levtype="sfc", target=path_ens)
-        ens_data, coords_ens = _extract_swiss_subgrid_fast(path_ens, is_ens=True)
-        if coords is None and coords_ens:
-            coords = coords_ens
-    except Exception as e:
-        if sh > 0:
-            print(f"   ⚠️ ECMWF Ensemble (+{sh}h): {e}", flush=True)
-
-    for p in [path_ctrl, path_ens]:
-        if os.path.exists(p):
-            try:
-                os.remove(p)
-            except Exception:
-                pass
-
-    return sh, ctrl_data, ens_data, coords
-
-def fetch_ecmwf_data(start_step, end_step, ref_time_str):
-    print(f"-> Lade ECMWF 0.1° parallel für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
-    ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
-    date_ymd, time_hh = int(ref_dt.strftime("%Y%m%d")), int(ref_dt.strftime("%H"))
-    target_steps = config.get_model_step_hours("ecmwf", ref_dt)[start_step : end_step + 1]
-
-    tasks = [(date_ymd, time_hh, sh) for sh in target_steps]
-    results_by_sh = {}
-    ref_lon, ref_lat = None, None
-
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        for sh, ctrl_data, ens_data, coords in pool.map(_fetch_single_ecmwf_step, tasks):
-            results_by_sh[sh] = (ctrl_data, ens_data)
-            if ref_lon is None and coords:
-                ref_lon, ref_lat = coords
-
     u_h_list, v_h_list, g_h_list = [], [], []
     c_h_list, ch_h_list, cm_h_list, cl_h_list = [], [], [], []
     u_e_list, v_e_list, g_e_list = [], [], []
     c_e_list, ch_e_list, cm_e_list, cl_e_list = [], [], [], []
-
-    pts = len(ref_lon) if ref_lon is not None else 1352
+    ref_lon, ref_lat = None, None
 
     for sh in target_steps:
-        ctrl_data, ens_data = results_by_sh.get(sh, (None, None))
+        with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ctrl, \
+             tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ens:
+            path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
+
+        ctrl_data, ens_data = None, None
+        try:
+            client.download(date=date_ymd, time=time_hh, step=sh, type="fc", levtype="sfc", target=path_ctrl)
+            ctrl_data, coords_ctrl = _extract_swiss_subgrid_fast(path_ctrl, is_ens=False)
+            if ref_lon is None and coords_ctrl:
+                ref_lon, ref_lat = coords_ctrl
+        except Exception as e:
+            print(f"   ⚠️ ECMWF Hauptlauf (+{sh}h): {e}", flush=True)
+
+        try:
+            client.download(date=date_ymd, time=time_hh, step=sh, stream="enfo", type="ef", levtype="sfc", target=path_ens)
+            ens_data, coords_ens = _extract_swiss_subgrid_fast(path_ens, is_ens=True)
+            if ref_lon is None and coords_ens:
+                ref_lon, ref_lat = coords_ens
+        except Exception as e:
+            if sh > 0:
+                print(f"   ⚠️ ECMWF Ensemble (+{sh}h): {e}", flush=True)
+
+        for p in [path_ctrl, path_ens]:
+            if os.path.exists(p):
+                try: os.remove(p)
+                except Exception: pass
+
+        pts = len(ref_lon) if ref_lon is not None else 1352
 
         u_h  = ctrl_data.get("10u")  if ctrl_data else None
         v_h  = ctrl_data.get("10v")  if ctrl_data else None
@@ -818,7 +781,7 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
 
-# ================= ECMWF AIFS (0.25° KI INKL. 50 MEMBER VIA RETRIEVE) =================
+# ================= ECMWF AIFS (0.25° KI INKL. 50 MEMBER) =================
 def fetch_aifs_data(start_step, end_step, ref_time_str):
     from ecmwf.opendata import Client
     print(f"-> Lade ECMWF AIFS 0.25° KI (10m Wind & 50 Member) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
@@ -883,10 +846,8 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
 
         for p in [path_ctrl, path_ens]:
             if os.path.exists(p):
-                try:
-                    os.remove(p)
-                except Exception:
-                    pass
+                try: os.remove(p)
+                except Exception: pass
 
         pts = len(ref_lon) if ref_lon is not None else 1352
         u_h = ctrl_data.get("10u") if ctrl_data else None
@@ -915,7 +876,7 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
 
-# ================= NOAA GEFS 0.25° (HAUPTLAUF + 30 MEMBER INKL. BÖEN) =================
+# ================= NOAA GEFS 0.25° (ECHTE 0.25° AUFLÖSUNG: HAUPTLAUF + 30 MEMBER) =================
 def _fetch_single_gefs_025_member_step(date_ymd, cycle_hh, step_h, prefix):
     filename = f"{prefix}.t{cycle_hh:02d}z.pgrb2s.0p25.f{step_h:03d}"
     url = (
