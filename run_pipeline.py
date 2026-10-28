@@ -85,7 +85,7 @@ def check_model_new_data(model_name):
     if model_name == "gfs":
         return _check_http_candidates(
             "gfs", [0, 6, 12, 18],
-            lambda dt, iso: f"https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod/gfs.{dt.strftime('%Y%m%d')}/{dt.strftime('%H')}/atmos/gfs.t{dt.strftime('%H')}z.pgrb2.0p25.f120.idx"
+            lambda dt, iso: f"https://nomads.ncep.noaa.gov/pub/data/nccf/com/gens/prod/gefs.{dt.strftime('%Y%m%d')}/{dt.strftime('%H')}/atmos/pgrb2ap5/gec00.t{dt.strftime('%H')}z.pgrb2a.0p50.f120"
         )
     if model_name == "aifs":
         try:
