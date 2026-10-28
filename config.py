@@ -75,7 +75,7 @@ MODELS_CONFIG = {
         "nx": 100, "ny": 60, "max_members": 51, "max_runs": 4,
         "active_variables": ["wind", "gust", "clct", "clch", "clcm", "clcl"],
         "ensemble_variables": ["wind", "gust", "clct", "clch", "clcm", "clcl"],
-        "max_chunks": 3
+        "max_chunks": 4
     },
     "aifs": {
         "name": "AIFS (0.25° KI)",
