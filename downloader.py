@@ -546,12 +546,26 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
                     break
                 try:
                     param = eccodes.codes_get(gid, "shortName")
-                    
-                    # WICHTIGER FIX: Oberflächenwind strikt nur an 10u/10v binden (niemals an 3D Jetstream-Höhenwind 'u'/'v'!)
+
+                    # Schichttyp & Level abfragen
+                    try:
+                        type_of_level = eccodes.codes_get(gid, "typeOfLevel")
+                    except Exception:
+                        type_of_level = "surface"
+
+                    try:
+                        level = int(eccodes.codes_get(gid, "level"))
+                    except Exception:
+                        level = 0
+
+                    # Reine Druckflächen (z. B. 200 hPa Jetstream) strikt überspringen!
+                    if type_of_level in ["isobaricInhPa", "isobaricInPa", "hybrid", "pl"]:
+                        continue
+
                     norm_param = None
-                    if param in ["10u", "u10", "ugrd"]:
+                    if param in ["10u", "u10"] or (param in ["ugrd", "u"] and (type_of_level in ["heightAboveGround", "surface", "sfc"] or level == 10)):
                         norm_param = "10u"
-                    elif param in ["10v", "v10", "vgrd"]:
+                    elif param in ["10v", "v10"] or (param in ["vgrd", "v"] and (type_of_level in ["heightAboveGround", "surface", "sfc"] or level == 10)):
                         norm_param = "10v"
                     elif param in ["10fg", "10fg3", "10fg6", "fg10", "gust"]:
                         norm_param = "gust"
@@ -566,14 +580,6 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
 
                     if norm_param is None:
                         continue
-
-                    # Druckflächen (z. B. 200 hPa Jetstream) strikt überspringen
-                    try:
-                        lev_type = eccodes.codes_get(gid, "typeOfLevel")
-                        if lev_type in ["isobaricInhPa", "isobaricInPa", "hybrid", "pl"]:
-                            continue
-                    except Exception:
-                        pass
 
                     m_num = 0
                     if is_ens:
@@ -594,8 +600,8 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
                     lat_arr = la1 + np.arange(n_lats) * d_lat if j_scans_pos == 1 else la1 - np.arange(n_lats) * d_lat
                     lon_arr = (lo1 + np.arange(n_lons) * d_lon + 180.0) % 360.0 - 180.0
 
-                    r_mask = np.where((lat_arr >= config.LAT_MIN) & (lat_arr <= config.LAT_MAX))[0]
-                    c_mask = np.where((lon_arr >= config.LON_MIN) & (lon_arr <= config.LON_MAX))[0]
+                    r_mask = np.where((lat_arr >= config.LAT_MIN - 0.1) & (lat_arr <= config.LAT_MAX + 0.1))[0]
+                    c_mask = np.where((lon_arr >= config.LON_MIN - 0.1) & (lon_arr <= config.LON_MAX + 0.1))[0]
 
                     if len(r_mask) == 0 or len(c_mask) == 0:
                         r_min, r_max = 0, n_lats
@@ -726,7 +732,7 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         if c_e is None and c_h is not None: c_e = np.repeat(c_h[np.newaxis, :], 50, axis=0)
         elif c_h is None and c_e is not None: c_h = c_e[0]
         if ch_e is None and ch_h is not None: ch_e = np.repeat(ch_h[np.newaxis, :], 50, axis=0)
-        elif ch_h is None and ch_e is not None: ch_h = ch_e[0]
+        elif ch_h is None and ch_e is not None: ch_e = ch_e[0]
         if cm_e is None and cm_h is not None: cm_e = np.repeat(cm_h[np.newaxis, :], 50, axis=0)
         elif cm_h is None and cm_e is not None: cm_h = cm_e[0]
         if cl_e is None and cl_h is not None: cl_e = np.repeat(cl_h[np.newaxis, :], 50, axis=0)
@@ -873,18 +879,19 @@ def _fetch_single_gefs_member_step(date_ymd, cycle_hh, step_h, prefix):
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_f:
         path_tmp = tmp_f.name
 
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     for attempt in range(1, 4):
         try:
-            r = requests.get(url, timeout=25)
-            if r.status_code == 200 and len(r.content) > 1000:
+            r = requests.get(url, headers=headers, timeout=25)
+            if r.status_code == 200 and len(r.content) > 500:
                 with open(path_tmp, "wb") as f:
                     f.write(r.content)
                 break
         except Exception:
-            time.sleep(attempt)
+            time.sleep(attempt * 1.5)
 
     data, coords = None, None
-    if os.path.exists(path_tmp) and os.path.getsize(path_tmp) > 1000:
+    if os.path.exists(path_tmp) and os.path.getsize(path_tmp) > 500:
         data, coords = _extract_swiss_subgrid_fast(path_tmp, is_ens=False)
 
     if os.path.exists(path_tmp):
@@ -899,25 +906,29 @@ def fetch_gfs_data(start_step, end_step, ref_time_str):
     date_ymd, cycle_hh = int(ref_dt.strftime("%Y%m%d")), int(ref_dt.strftime("%H"))
     target_steps = config.get_model_step_hours("gfs", ref_dt)[start_step : end_step + 1]
 
+    # Schweizer Referenzgitter als garantierter Fallback
+    target_lons = np.arange(config.LON_MIN, config.LON_MAX + 0.5, 0.5)
+    target_lats = np.arange(config.LAT_MAX, config.LAT_MIN - 0.5, -0.5)
+    glon, glat = np.meshgrid(target_lons, target_lats)
+    ref_lon, ref_lat = glon.ravel().astype(np.float32), glat.ravel().astype(np.float32)
+
     u_h_list, v_h_list, g_h_list = [], [], []
     u_e_list, v_e_list, g_e_list = [], [], []
-    ref_lon, ref_lat = None, None
 
     for sh in target_steps:
-        # Aufgaben für alle 31 Member: gec00 (Control) + gep01 bis gep30
         member_prefixes = ["gec00"] + [f"gep{m:02d}" for m in range(1, 31)]
         tasks = [(date_ymd, cycle_hh, sh, pfx) for pfx in member_prefixes]
 
         step_results = {}
-        with ThreadPoolExecutor(max_workers=6) as pool:
+        with ThreadPoolExecutor(max_workers=4) as pool:
             futures = [pool.submit(lambda t: _fetch_single_gefs_member_step(*t), task) for task in tasks]
             for f in futures:
                 pfx, d, coords = f.result()
                 step_results[pfx] = d
-                if ref_lon is None and coords:
+                if coords and len(coords[0]) > 0:
                     ref_lon, ref_lat = coords
 
-        pts = len(ref_lon) if ref_lon is not None else 1352
+        pts = len(ref_lon)
 
         # 1. Hauptlauf (gec00)
         c_data = step_results.get("gec00")
