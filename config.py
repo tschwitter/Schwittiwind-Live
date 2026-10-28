@@ -91,7 +91,7 @@ MODELS_CONFIG = {
         "nx": 80, "ny": 50, "hours": 120, "max_members": 31, "max_runs": 4,
         "active_variables": ["wind", "gust"],
         "ensemble_variables": ["wind", "gust"],
-        "max_chunks": 4
+        "max_chunks": 1
     }
 }
 
