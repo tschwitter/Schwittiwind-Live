@@ -75,7 +75,7 @@ MODELS_CONFIG = {
         "nx": 100, "ny": 60, "max_members": 51, "max_runs": 4,
         "active_variables": ["wind", "gust", "clct", "clch", "clcm", "clcl"],
         "ensemble_variables": ["wind", "gust", "clct", "clch", "clcm", "clcl"],
-        "max_chunks": 4
+        "max_chunks": 3
     },
     "aifs": {
         "name": "AIFS (0.25° KI)",
@@ -87,10 +87,10 @@ MODELS_CONFIG = {
     },
     "gfs": {
         "name": "GFS (0.25° NOAA)",
-        "collection": "gefs_atmos_0p50a",
+        "collection": "gfs_0p25",
         "nx": 80, "ny": 50, "hours": 120, "max_members": 31, "max_runs": 4,
         "active_variables": ["wind", "gust"],
-        "ensemble_variables": ["wind", "gust"],
+        "ensemble_variables": ["wind"],
         "max_chunks": 1
     }
 }
