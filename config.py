@@ -87,10 +87,10 @@ MODELS_CONFIG = {
     },
     "gfs": {
         "name": "GFS (0.25° NOAA)",
-        "collection": "gfs_0p25",
+        "collection": "gefs_0p25",
         "nx": 80, "ny": 50, "hours": 120, "max_members": 31, "max_runs": 4,
         "active_variables": ["wind", "gust"],
-        "ensemble_variables": ["wind"],
+        "ensemble_variables": ["wind", "gust"],
         "max_chunks": 1
     }
 }
