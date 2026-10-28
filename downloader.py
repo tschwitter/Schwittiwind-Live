@@ -24,6 +24,7 @@ tempfile.tempdir = WORKSPACE_TMP
 
 _ICOND2_GRID_CACHE = {}
 _OGD_SEMAPHORE = threading.Semaphore(2)
+_HTTP_SESSION = requests.Session()
 
 def trim_memory():
     try:
@@ -529,7 +530,7 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
 
 # ================= ECMWF, AIFS & GFS SUBGRID EXTRACTOR (STRICT SURFACE FILTER) =================
 def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
-    if not os.path.exists(grib_path) or os.path.getsize(grib_path) < 1000:
+    if not os.path.exists(grib_path) or os.path.getsize(grib_path) < 500:
         return None, None
 
     fields = {
@@ -563,9 +564,9 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
                         continue
 
                     norm_param = None
-                    if param in ["10u", "u10"] or (param in ["ugrd", "u"] and (type_of_level in ["heightAboveGround", "surface", "sfc"] or level == 10)):
+                    if param in ["10u", "u10"] or (param in ["ugrd", "u"] and (type_of_level in ["heightAboveGround", "surface", "sfc", "specifiedHeightLevelAboveGround"] or level == 10)):
                         norm_param = "10u"
-                    elif param in ["10v", "v10"] or (param in ["vgrd", "v"] and (type_of_level in ["heightAboveGround", "surface", "sfc"] or level == 10)):
+                    elif param in ["10v", "v10"] or (param in ["vgrd", "v"] and (type_of_level in ["heightAboveGround", "surface", "sfc", "specifiedHeightLevelAboveGround"] or level == 10)):
                         norm_param = "10v"
                     elif param in ["10fg", "10fg3", "10fg6", "fg10", "gust"]:
                         norm_param = "gust"
@@ -591,29 +592,35 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
                                 pass
 
                     vals = eccodes.codes_get_values(gid)
-                    n_lats, n_lons = int(eccodes.codes_get(gid, "Nj")), int(eccodes.codes_get(gid, "Ni"))
-                    la1, lo1 = float(eccodes.codes_get(gid, "latitudeOfFirstGridPointInDegrees")), float(eccodes.codes_get(gid, "longitudeOfFirstGridPointInDegrees"))
-                    d_lat, d_lon = float(eccodes.codes_get(gid, "jDirectionIncrementInDegrees")), float(eccodes.codes_get(gid, "iDirectionIncrementInDegrees"))
+                    n_lats = int(eccodes.codes_get(gid, "Nj"))
+                    n_lons = int(eccodes.codes_get(gid, "Ni"))
+                    la1 = float(eccodes.codes_get(gid, "latitudeOfFirstGridPointInDegrees"))
+                    lo1 = float(eccodes.codes_get(gid, "longitudeOfFirstGridPointInDegrees"))
+                    d_lat = float(eccodes.codes_get(gid, "jDirectionIncrementInDegrees"))
+                    d_lon = float(eccodes.codes_get(gid, "iDirectionIncrementInDegrees"))
                     j_scans_pos = int(eccodes.codes_get(gid, "jScansPositively"))
 
                     matrix = vals.reshape(n_lats, n_lons)
                     lat_arr = la1 + np.arange(n_lats) * d_lat if j_scans_pos == 1 else la1 - np.arange(n_lats) * d_lat
                     lon_arr = (lo1 + np.arange(n_lons) * d_lon + 180.0) % 360.0 - 180.0
 
-                    r_mask = np.where((lat_arr >= config.LAT_MIN - 0.1) & (lat_arr <= config.LAT_MAX + 0.1))[0]
-                    c_mask = np.where((lon_arr >= config.LON_MIN - 0.1) & (lon_arr <= config.LON_MAX + 0.1))[0]
+                    r_mask = np.where((lat_arr >= config.LAT_MIN - 0.2) & (lat_arr <= config.LAT_MAX + 0.2))[0]
+                    c_mask = np.where((lon_arr >= config.LON_MIN - 0.2) & (lon_arr <= config.LON_MAX + 0.2))[0]
 
-                    if len(r_mask) == 0 or len(c_mask) == 0:
-                        r_min, r_max = 0, n_lats
-                        c_min, c_max = 0, n_lons
+                    # Falls die Datei bereits auf die Schweiz zugeschnitten wurde (NOAA Subregion)
+                    if len(r_mask) == 0 or len(c_mask) == 0 or (n_lats <= 25 and n_lons <= 35):
+                        sub = matrix
+                        sub_lats = lat_arr
+                        sub_lons = lon_arr
                     else:
                         r_min, r_max = r_mask[0], r_mask[-1] + 1
                         c_min, c_max = c_mask[0], c_mask[-1] + 1
-
-                    sub = matrix[r_min:r_max, c_min:c_max]
+                        sub = matrix[r_min:r_max, c_min:c_max]
+                        sub_lats = lat_arr[r_min:r_max]
+                        sub_lons = lon_arr[c_min:c_max]
 
                     if ref_lons is None:
-                        glon, glat = np.meshgrid(lon_arr[c_min:c_max], lat_arr[r_min:r_max])
+                        glon, glat = np.meshgrid(sub_lons, sub_lats)
                         ref_lons, ref_lats = glon.ravel().astype(np.float32), glat.ravel().astype(np.float32)
 
                     arr = sub.ravel().astype(np.float32)
@@ -736,7 +743,7 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         if cm_e is None and cm_h is not None: cm_e = np.repeat(cm_h[np.newaxis, :], 50, axis=0)
         elif cm_h is None and cm_e is not None: cm_h = cm_e[0]
         if cl_e is None and cl_h is not None: cl_e = np.repeat(cl_h[np.newaxis, :], 50, axis=0)
-        elif cl_h is None and cl_e is not None: cl_h = cl_e[0]
+        elif cl_h is None and cl_e is not None: cl_e = cl_e[0]
 
         u_h_list.append(u_h if u_h is not None else np.full(pts, np.nan, dtype=np.float32))
         v_h_list.append(v_h if v_h is not None else np.full(pts, np.nan, dtype=np.float32))
@@ -803,8 +810,6 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
             path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
 
         ctrl_data, ens_data = None, None
-
-        # 1. Hauptlauf (aifs-single)
         try:
             client_single.download(date=date_ymd, time=time_hh, step=sh, target=path_ctrl)
             ctrl_data, coords_ctrl = _extract_swiss_subgrid_fast(path_ctrl, is_ens=False)
@@ -813,7 +818,6 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
         except Exception as e:
             print(f"   ⚠️ AIFS Hauptlauf (+{sh}h): {e}", flush=True)
 
-        # 2. Ensemble (aifs-ens, 50 Member)
         try:
             download_ok = False
             for ens_type in ["ef", "pf"]:
@@ -865,30 +869,61 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
 
-# ================= NOAA GFS & GEFS (0.50° ENSEMBLE INKL. 30 MEMBER) =================
-def _fetch_single_gefs_member_step(date_ymd, cycle_hh, step_h, prefix):
-    filename = f"{prefix}.t{cycle_hh:02d}z.pgrb2a.0p50.f{step_h:03d}"
+# ================= NOAA GFS & GEFS (HAUPTLAUF + 30 ENSEMBLE MEMBER) =================
+def _fetch_gfs_main_hour(date_ymd, cycle_hh, step_h):
+    """Lädt den hochauflösenden 0.25° Hauptlauf mit 10m Wind UND Böen."""
     url = (
-        f"https://nomads.ncep.noaa.gov/cgi-bin/filter_gefs_atmos_0p50a.pl?"
-        f"file={filename}&lev_10_m_above_ground=on&lev_surface=on&"
+        f"https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?"
+        f"file=gfs.t{cycle_hh:02d}z.pgrb2.0p25.f{step_h:03d}&lev_10_m_above_ground=on&lev_surface=on&"
         f"var_UGRD=on&var_VGRD=on&var_GUST=on&subregion=&"
         f"leftlon={config.LON_MIN}&rightlon={config.LON_MAX}&toplat={config.LAT_MAX}&bottomlat={config.LAT_MIN}&"
-        f"dir=%2Fgefs.{date_ymd}%2F{cycle_hh:02d}%2Fatmos%2Fpgrb2ap5"
+        f"dir=%2Fgfs.{date_ymd}%2F{cycle_hh:02d}%2Fatmos"
     )
-
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_f:
         path_tmp = tmp_f.name
 
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     for attempt in range(1, 4):
         try:
-            r = requests.get(url, headers=headers, timeout=25)
+            r = _HTTP_SESSION.get(url, timeout=25)
             if r.status_code == 200 and len(r.content) > 500:
                 with open(path_tmp, "wb") as f:
                     f.write(r.content)
                 break
         except Exception:
-            time.sleep(attempt * 1.5)
+            time.sleep(attempt)
+
+    data, coords = None, None
+    if os.path.exists(path_tmp) and os.path.getsize(path_tmp) > 500:
+        data, coords = _extract_swiss_subgrid_fast(path_tmp, is_ens=False)
+
+    if os.path.exists(path_tmp):
+        try: os.remove(path_tmp)
+        except Exception: pass
+
+    return data, coords
+
+def _fetch_single_gefs_member_step(date_ymd, cycle_hh, step_h, prefix):
+    """Lädt einen einzelnen GEFS-Ensemble-Member für 10m Wind (UGRD, VGRD)."""
+    filename = f"{prefix}.t{cycle_hh:02d}z.pgrb2a.0p50.f{step_h:03d}"
+    url = (
+        f"https://nomads.ncep.noaa.gov/cgi-bin/filter_gefs_atmos_0p50a.pl?"
+        f"file={filename}&lev_10_m_above_ground=on&"
+        f"var_UGRD=on&var_VGRD=on&subregion=&"
+        f"leftlon={config.LON_MIN}&rightlon={config.LON_MAX}&toplat={config.LAT_MAX}&bottomlat={config.LAT_MIN}&"
+        f"dir=%2Fgefs.{date_ymd}%2F{cycle_hh:02d}%2Fatmos%2Fpgrb2ap5"
+    )
+    with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_f:
+        path_tmp = tmp_f.name
+
+    for attempt in range(1, 4):
+        try:
+            r = _HTTP_SESSION.get(url, timeout=25)
+            if r.status_code == 200 and len(r.content) > 500:
+                with open(path_tmp, "wb") as f:
+                    f.write(r.content)
+                break
+        except Exception:
+            time.sleep(attempt)
 
     data, coords = None, None
     if os.path.exists(path_tmp) and os.path.getsize(path_tmp) > 500:
@@ -901,7 +936,7 @@ def _fetch_single_gefs_member_step(date_ymd, cycle_hh, step_h, prefix):
     return prefix, data, coords
 
 def fetch_gfs_data(start_step, end_step, ref_time_str):
-    print(f"-> Lade NOAA GFS / GEFS 0.5° (Wind & Böen inkl. 30 Member) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
+    print(f"-> Lade NOAA GFS / GEFS (Wind & Böen inkl. 30 Member) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
     ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
     date_ymd, cycle_hh = int(ref_dt.strftime("%Y%m%d")), int(ref_dt.strftime("%H"))
     target_steps = config.get_model_step_hours("gfs", ref_dt)[start_step : end_step + 1]
@@ -913,41 +948,39 @@ def fetch_gfs_data(start_step, end_step, ref_time_str):
     ref_lon, ref_lat = glon.ravel().astype(np.float32), glat.ravel().astype(np.float32)
 
     u_h_list, v_h_list, g_h_list = [], [], []
-    u_e_list, v_e_list, g_e_list = [], [], []
+    u_e_list, v_e_list = [], []
 
     for sh in target_steps:
-        member_prefixes = ["gec00"] + [f"gep{m:02d}" for m in range(1, 31)]
-        tasks = [(date_ymd, cycle_hh, sh, pfx) for pfx in member_prefixes]
+        # 1. Hauptlauf (GFS 0.25° mit Wind und Böen)
+        main_data, coords_main = _fetch_gfs_main_hour(date_ymd, cycle_hh, sh)
+        if coords_main and len(coords_main[0]) > 0:
+            ref_lon, ref_lat = coords_main
 
+        pts = len(ref_lon)
+        u_h = main_data.get("10u") if main_data else None
+        v_h = main_data.get("10v") if main_data else None
+        g_h = main_data.get("gust") if main_data else None
+
+        # 2. 30 GEFS-Ensemble-Member parallel abrufen
+        member_prefixes = [f"gep{m:02d}" for m in range(1, 31)]
+        tasks = [(date_ymd, cycle_hh, sh, pfx) for pfx in member_prefixes]
         step_results = {}
+
         with ThreadPoolExecutor(max_workers=4) as pool:
             futures = [pool.submit(lambda t: _fetch_single_gefs_member_step(*t), task) for task in tasks]
             for f in futures:
-                pfx, d, coords = f.result()
+                pfx, d, _ = f.result()
                 step_results[pfx] = d
-                if coords and len(coords[0]) > 0:
-                    ref_lon, ref_lat = coords
 
-        pts = len(ref_lon)
-
-        # 1. Hauptlauf (gec00)
-        c_data = step_results.get("gec00")
-        u_h = c_data.get("10u") if c_data else None
-        v_h = c_data.get("10v") if c_data else None
-        g_h = c_data.get("gust") if c_data else None
-
-        # 2. Perturbations-Member gep01..gep30
-        u_ens_step, v_ens_step, g_ens_step = [], [], []
+        u_ens_step, v_ens_step = [], []
         for m in range(1, 31):
             pfx = f"gep{m:02d}"
             m_data = step_results.get(pfx)
-            m_u = m_data.get("10u") if m_data else u_h
-            m_v = m_data.get("10v") if m_data else v_h
-            m_g = m_data.get("gust") if m_data else g_h
+            m_u = (m_data.get("10u") if m_data else None) or u_h
+            m_v = (m_data.get("10v") if m_data else None) or v_h
 
             u_ens_step.append(m_u if m_u is not None else np.full(pts, np.nan, dtype=np.float32))
             v_ens_step.append(m_v if m_v is not None else np.full(pts, np.nan, dtype=np.float32))
-            g_ens_step.append(m_g if m_g is not None else np.full(pts, np.nan, dtype=np.float32))
 
         u_h_list.append(u_h if u_h is not None else np.full(pts, np.nan, dtype=np.float32))
         v_h_list.append(v_h if v_h is not None else np.full(pts, np.nan, dtype=np.float32))
@@ -955,7 +988,6 @@ def fetch_gfs_data(start_step, end_step, ref_time_str):
 
         u_e_list.append(np.array(u_ens_step, dtype=np.float32))
         v_e_list.append(np.array(v_ens_step, dtype=np.float32))
-        g_e_list.append(np.array(g_ens_step, dtype=np.float32))
 
     return {
         "surface": {
@@ -963,8 +995,7 @@ def fetch_gfs_data(start_step, end_step, ref_time_str):
             "v_h": xr.DataArray(np.stack(v_h_list, axis=0), dims=["lead_time", "cell"]),
             "g_h": xr.DataArray(np.stack(g_h_list, axis=0), dims=["lead_time", "cell"]),
             "u_e": xr.DataArray(np.stack(u_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
-            "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
-            "g_e": xr.DataArray(np.stack(g_e_list, axis=0), dims=["lead_time", "eps", "cell"])
+            "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"])
         },
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
