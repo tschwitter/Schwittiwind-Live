@@ -871,49 +871,15 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
 
-# ================= NOAA GFS & GEFS (HAUPTLAUF + 30 ENSEMBLE MEMBER) =================
-def _fetch_gfs_main_hour(date_ymd, cycle_hh, step_h):
-    """Lädt den hochauflösenden 0.25° Hauptlauf mit 10m Wind UND Böen."""
+# ================= NOAA GEFS 0.25° (HAUPTLAUF + 30 MEMBER INKL. BÖEN) =================
+def _fetch_single_gefs_025_member_step(date_ymd, cycle_hh, step_h, prefix):
+    filename = f"{prefix}.t{cycle_hh:02d}z.pgrb2s.0p25.f{step_h:03d}"
     url = (
-        f"https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?"
-        f"file=gfs.t{cycle_hh:02d}z.pgrb2.0p25.f{step_h:03d}&lev_10_m_above_ground=on&lev_surface=on&"
+        f"https://nomads.ncep.noaa.gov/cgi-bin/filter_gefs_atmos_0p25s.pl?"
+        f"file={filename}&lev_10_m_above_ground=on&lev_surface=on&"
         f"var_UGRD=on&var_VGRD=on&var_GUST=on&subregion=&"
         f"leftlon={config.LON_MIN}&rightlon={config.LON_MAX}&toplat={config.LAT_MAX}&bottomlat={config.LAT_MIN}&"
-        f"dir=%2Fgfs.{date_ymd}%2F{cycle_hh:02d}%2Fatmos"
-    )
-    with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_f:
-        path_tmp = tmp_f.name
-
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    for attempt in range(1, 4):
-        try:
-            r = _HTTP_SESSION.get(url, headers=headers, timeout=25)
-            if r.status_code == 200 and len(r.content) > 500:
-                with open(path_tmp, "wb") as f:
-                    f.write(r.content)
-                break
-        except Exception:
-            time.sleep(attempt)
-
-    data, coords = None, None
-    if os.path.exists(path_tmp) and os.path.getsize(path_tmp) > 500:
-        data, coords = _extract_swiss_subgrid_fast(path_tmp, is_ens=False)
-
-    if os.path.exists(path_tmp):
-        try: os.remove(path_tmp)
-        except Exception: pass
-
-    return data, coords
-
-def _fetch_single_gefs_member_step(date_ymd, cycle_hh, step_h, prefix):
-    """Lädt einen einzelnen GEFS-Ensemble-Member für 10m Wind (UGRD, VGRD)."""
-    filename = f"{prefix}.t{cycle_hh:02d}z.pgrb2a.0p50.f{step_h:03d}"
-    url = (
-        f"https://nomads.ncep.noaa.gov/cgi-bin/filter_gefs_atmos_0p50a.pl?"
-        f"file={filename}&lev_10_m_above_ground=on&"
-        f"var_UGRD=on&var_VGRD=on&subregion=&"
-        f"leftlon={config.LON_MIN}&rightlon={config.LON_MAX}&toplat={config.LAT_MAX}&bottomlat={config.LAT_MIN}&"
-        f"dir=%2Fgefs.{date_ymd}%2F{cycle_hh:02d}%2Fatmos%2Fpgrb2ap5"
+        f"dir=%2Fgefs.{date_ymd}%2F{cycle_hh:02d}%2Fatmos%2Fpgrb2sp25"
     )
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_f:
         path_tmp = tmp_f.name
@@ -940,69 +906,71 @@ def _fetch_single_gefs_member_step(date_ymd, cycle_hh, step_h, prefix):
     return prefix, data, coords
 
 def fetch_gfs_data(start_step, end_step, ref_time_str):
-    print(f"-> Lade NOAA GFS / GEFS (Wind & Böen inkl. 30 Member) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
+    print(f"-> Lade NOAA GEFS 0.25° (Wind & Böen inkl. 30 Member) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
     ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
     date_ymd, cycle_hh = int(ref_dt.strftime("%Y%m%d")), int(ref_dt.strftime("%H"))
     target_steps = config.get_model_step_hours("gfs", ref_dt)[start_step : end_step + 1]
 
-    # Schweizer Referenzgitter als garantierter Fallback
-    target_lons = np.arange(config.LON_MIN, config.LON_MAX + 0.5, 0.5)
-    target_lats = np.arange(config.LAT_MAX, config.LAT_MIN - 0.5, -0.5)
+    # Schweizer Referenzgitter als garantierter Fallback (0.25° Raster)
+    target_lons = np.arange(config.LON_MIN, config.LON_MAX + 0.25, 0.25)
+    target_lats = np.arange(config.LAT_MAX, config.LAT_MIN - 0.25, -0.25)
     glon, glat = np.meshgrid(target_lons, target_lats)
     ref_lon, ref_lat = glon.ravel().astype(np.float32), glat.ravel().astype(np.float32)
 
     u_h_list, v_h_list, g_h_list = [], [], []
-    u_e_list, v_e_list = [], []
+    u_e_list, v_e_list, g_e_list = [], [], []
 
     for sh in target_steps:
-        # 1. Hauptlauf (GFS 0.25° mit Wind und Böen)
-        main_data, coords_main = _fetch_gfs_main_hour(date_ymd, cycle_hh, sh)
-        if coords_main and len(coords_main[0]) > 0:
-            ref_lon, ref_lat = coords_main
-
-        pts = len(ref_lon)
-        u_h = main_data.get("10u") if main_data is not None else None
-        v_h = main_data.get("10v") if main_data is not None else None
-        g_h = main_data.get("gust") if main_data is not None else None
-
-        # 2. 30 GEFS-Ensemble-Member parallel abrufen
-        member_prefixes = [f"gep{m:02d}" for m in range(1, 31)]
+        member_prefixes = ["gec00"] + [f"gep{m:02d}" for m in range(1, 31)]
         tasks = [(date_ymd, cycle_hh, sh, pfx) for pfx in member_prefixes]
         step_results = {}
 
         with ThreadPoolExecutor(max_workers=4) as pool:
-            futures = [pool.submit(lambda t: _fetch_single_gefs_member_step(*t), task) for task in tasks]
+            futures = [pool.submit(lambda t: _fetch_single_gefs_025_member_step(*t), task) for task in tasks]
             for f in futures:
-                pfx, d, _ = f.result()
+                pfx, d, coords = f.result()
                 step_results[pfx] = d
+                if coords and len(coords[0]) > 0:
+                    ref_lon, ref_lat = coords
 
-        # Fallback falls Hauptlauf temporär gefehlt hat: Ersten verfügbaren Member nehmen
+        pts = len(ref_lon)
+
+        # 1. Hauptlauf (gec00 = GEFS 0.25° Control)
+        c_data = step_results.get("gec00")
+        u_h = c_data.get("10u") if (c_data and c_data.get("10u") is not None and len(c_data.get("10u")) == pts) else None
+        v_h = c_data.get("10v") if (c_data and c_data.get("10v") is not None and len(c_data.get("10v")) == pts) else None
+        g_h = c_data.get("gust") if (c_data and c_data.get("gust") is not None and len(c_data.get("gust")) == pts) else None
+
+        # Fallback falls gec00 temporär gefehlt hat: Ersten verfügbaren Member nehmen
         if u_h is None:
             for m in range(1, 31):
                 md = step_results.get(f"gep{m:02d}")
-                if md and md.get("10u") is not None:
+                if md and md.get("10u") is not None and len(md.get("10u")) == pts:
                     u_h = md.get("10u")
                     v_h = md.get("10v")
+                    g_h = md.get("gust")
                     break
 
-        u_ens_step, v_ens_step = [], []
+        u_ens_step, v_ens_step, g_ens_step = [], [], []
         for m in range(1, 31):
             pfx = f"gep{m:02d}"
             m_data = step_results.get(pfx)
-            
-            # WICHTIGER FIX: Saubere None-Prüfung ohne NumPy-Array-Wahrheitswert-Konflikt
-            m_u = m_data.get("10u") if (m_data is not None and m_data.get("10u") is not None) else u_h
-            m_v = m_data.get("10v") if (m_data is not None and m_data.get("10v") is not None) else v_h
 
-            u_ens_step.append(m_u if m_u is not None else np.full(pts, np.nan, dtype=np.float32))
-            v_ens_step.append(m_v if m_v is not None else np.full(pts, np.nan, dtype=np.float32))
+            m_u = m_data.get("10u") if (m_data and m_data.get("10u") is not None and len(m_data.get("10u")) == pts) else u_h
+            m_v = m_data.get("10v") if (m_data and m_data.get("10v") is not None and len(m_data.get("10v")) == pts) else v_h
+            m_g = m_data.get("gust") if (m_data and m_data.get("gust") is not None and len(m_data.get("gust")) == pts) else g_h
 
-        u_h_list.append(u_h if u_h is not None else np.full(pts, np.nan, dtype=np.float32))
-        v_h_list.append(v_h if v_h is not None else np.full(pts, np.nan, dtype=np.float32))
-        g_h_list.append(g_h if g_h is not None else np.full(pts, np.nan, dtype=np.float32))
+            u_ens_step.append(m_u if (m_u is not None and len(m_u) == pts) else np.full(pts, np.nan, dtype=np.float32))
+            v_ens_step.append(m_v if (m_v is not None and len(m_v) == pts) else np.full(pts, np.nan, dtype=np.float32))
+            g_ens_step.append(m_g if (m_g is not None and len(m_g) == pts) else np.full(pts, np.nan, dtype=np.float32))
+
+        u_h_list.append(u_h if (u_h is not None and len(u_h) == pts) else np.full(pts, np.nan, dtype=np.float32))
+        v_h_list.append(v_h if (v_h is not None and len(v_h) == pts) else np.full(pts, np.nan, dtype=np.float32))
+        g_h_list.append(g_h if (g_h is not None and len(g_h) == pts) else np.full(pts, np.nan, dtype=np.float32))
 
         u_e_list.append(np.array(u_ens_step, dtype=np.float32))
         v_e_list.append(np.array(v_ens_step, dtype=np.float32))
+        g_e_list.append(np.array(g_ens_step, dtype=np.float32))
 
     return {
         "surface": {
@@ -1010,7 +978,8 @@ def fetch_gfs_data(start_step, end_step, ref_time_str):
             "v_h": xr.DataArray(np.stack(v_h_list, axis=0), dims=["lead_time", "cell"]),
             "g_h": xr.DataArray(np.stack(g_h_list, axis=0), dims=["lead_time", "cell"]),
             "u_e": xr.DataArray(np.stack(u_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
-            "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"])
+            "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
+            "g_e": xr.DataArray(np.stack(g_e_list, axis=0), dims=["lead_time", "eps", "cell"])
         },
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
