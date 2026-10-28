@@ -559,7 +559,7 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
                     except Exception:
                         level = 0
 
-                    # Reine Druckflächen (z. B. 200 hPa Jetstream) strikt überspringen!
+                    # Druckflächen (z. B. 200 hPa Jetstream) strikt überspringen!
                     if type_of_level in ["isobaricInhPa", "isobaricInPa", "hybrid", "pl"]:
                         continue
 
@@ -607,7 +607,6 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
                     r_mask = np.where((lat_arr >= config.LAT_MIN - 0.2) & (lat_arr <= config.LAT_MAX + 0.2))[0]
                     c_mask = np.where((lon_arr >= config.LON_MIN - 0.2) & (lon_arr <= config.LON_MAX + 0.2))[0]
 
-                    # Falls die Datei bereits auf die Schweiz zugeschnitten wurde (NOAA Subregion)
                     if len(r_mask) == 0 or len(c_mask) == 0 or (n_lats <= 25 and n_lons <= 35):
                         sub = matrix
                         sub_lats = lat_arr
@@ -810,6 +809,8 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
             path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
 
         ctrl_data, ens_data = None, None
+
+        # 1. Hauptlauf (aifs-single)
         try:
             client_single.download(date=date_ymd, time=time_hh, step=sh, target=path_ctrl)
             ctrl_data, coords_ctrl = _extract_swiss_subgrid_fast(path_ctrl, is_ens=False)
@@ -818,6 +819,7 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
         except Exception as e:
             print(f"   ⚠️ AIFS Hauptlauf (+{sh}h): {e}", flush=True)
 
+        # 2. Ensemble (aifs-ens, 50 Member)
         try:
             download_ok = False
             for ens_type in ["ef", "pf"]:
@@ -882,9 +884,10 @@ def _fetch_gfs_main_hour(date_ymd, cycle_hh, step_h):
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_f:
         path_tmp = tmp_f.name
 
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     for attempt in range(1, 4):
         try:
-            r = _HTTP_SESSION.get(url, timeout=25)
+            r = _HTTP_SESSION.get(url, headers=headers, timeout=25)
             if r.status_code == 200 and len(r.content) > 500:
                 with open(path_tmp, "wb") as f:
                     f.write(r.content)
@@ -915,9 +918,10 @@ def _fetch_single_gefs_member_step(date_ymd, cycle_hh, step_h, prefix):
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_f:
         path_tmp = tmp_f.name
 
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     for attempt in range(1, 4):
         try:
-            r = _HTTP_SESSION.get(url, timeout=25)
+            r = _HTTP_SESSION.get(url, headers=headers, timeout=25)
             if r.status_code == 200 and len(r.content) > 500:
                 with open(path_tmp, "wb") as f:
                     f.write(r.content)
@@ -957,9 +961,9 @@ def fetch_gfs_data(start_step, end_step, ref_time_str):
             ref_lon, ref_lat = coords_main
 
         pts = len(ref_lon)
-        u_h = main_data.get("10u") if main_data else None
-        v_h = main_data.get("10v") if main_data else None
-        g_h = main_data.get("gust") if main_data else None
+        u_h = main_data.get("10u") if main_data is not None else None
+        v_h = main_data.get("10v") if main_data is not None else None
+        g_h = main_data.get("gust") if main_data is not None else None
 
         # 2. 30 GEFS-Ensemble-Member parallel abrufen
         member_prefixes = [f"gep{m:02d}" for m in range(1, 31)]
@@ -972,12 +976,23 @@ def fetch_gfs_data(start_step, end_step, ref_time_str):
                 pfx, d, _ = f.result()
                 step_results[pfx] = d
 
+        # Fallback falls Hauptlauf temporär gefehlt hat: Ersten verfügbaren Member nehmen
+        if u_h is None:
+            for m in range(1, 31):
+                md = step_results.get(f"gep{m:02d}")
+                if md and md.get("10u") is not None:
+                    u_h = md.get("10u")
+                    v_h = md.get("10v")
+                    break
+
         u_ens_step, v_ens_step = [], []
         for m in range(1, 31):
             pfx = f"gep{m:02d}"
             m_data = step_results.get(pfx)
-            m_u = (m_data.get("10u") if m_data else None) or u_h
-            m_v = (m_data.get("10v") if m_data else None) or v_h
+            
+            # WICHTIGER FIX: Saubere None-Prüfung ohne NumPy-Array-Wahrheitswert-Konflikt
+            m_u = m_data.get("10u") if (m_data is not None and m_data.get("10u") is not None) else u_h
+            m_v = m_data.get("10v") if (m_data is not None and m_data.get("10v") is not None) else v_h
 
             u_ens_step.append(m_u if m_u is not None else np.full(pts, np.nan, dtype=np.float32))
             v_ens_step.append(m_v if m_v is not None else np.full(pts, np.nan, dtype=np.float32))
