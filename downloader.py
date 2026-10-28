@@ -25,8 +25,6 @@ tempfile.tempdir = WORKSPACE_TMP
 _ICOND2_GRID_CACHE = {}
 _OGD_SEMAPHORE = threading.Semaphore(2)
 _HTTP_SESSION = requests.Session()
-
-# HEBEL 2: Globaler Cache für das ECMWF-Schweiz-Subgrid (Slices & Koordinaten)
 _ECMWF_GRID_CACHE = {}
 
 def trim_memory():
@@ -622,7 +620,8 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
                         c_mask = np.where((lon_arr >= config.LON_MIN - 0.2) & (lon_arr <= config.LON_MAX + 0.2))[0]
 
                         if len(r_mask) == 0 or len(c_mask) == 0 or (n_lats <= 25 and n_lons <= 35):
-                            r_min, r_max, c_min, c_max = 0, n_lats, 0, n_lons
+                            r_min, r_max = 0, n_lats
+                            c_min, c_max = 0, n_lons
                             sub = matrix
                             sub_lats, sub_lons = lat_arr, lon_arr
                         else:
@@ -680,12 +679,10 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
 
 # ================= ECMWF IFS (MIT HEBEL 1: PARALLELE ZEITSCHRITT-DOWNLOADS) =================
 def _fetch_single_ecmwf_step(args):
-    """Lädt und entpackt einen einzelnen ECMWF-Schritt."""
     date_ymd, time_hh, sh = args
     from ecmwf.opendata import Client
 
     client = None
-    # Azure & AWS an erster Stelle für schnellste Anbindung im Cloud-Backbone
     for src in ["azure", "aws", "google", "ecmwf"]:
         try:
             client = Client(source=src, model="ifs", resol="0p1")
@@ -735,7 +732,6 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     results_by_sh = {}
     ref_lon, ref_lat = None, None
 
-    # HEBEL 1: 3 Zeitschritte gleichzeitig über das Netzwerk laden
     with ThreadPoolExecutor(max_workers=3) as pool:
         for sh, ctrl_data, ens_data, coords in pool.map(_fetch_single_ecmwf_step, tasks):
             results_by_sh[sh] = (ctrl_data, ens_data)
@@ -749,7 +745,6 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
 
     pts = len(ref_lon) if ref_lon is not None else 1352
 
-    # In exakter chronologischer Reihenfolge zusammenstellen
     for sh in target_steps:
         ctrl_data, ens_data = results_by_sh.get(sh, (None, None))
 
@@ -920,15 +915,15 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
 
-# ================= NOAA GEFS 0.50° (KONSISTENT HAUPTLAUF + 30 MEMBER) =================
-def _fetch_single_gefs_member_step(date_ymd, cycle_hh, step_h, prefix):
-    filename = f"{prefix}.t{cycle_hh:02d}z.pgrb2a.0p50.f{step_h:03d}"
+# ================= NOAA GEFS 0.25° (HAUPTLAUF + 30 MEMBER INKL. BÖEN) =================
+def _fetch_single_gefs_025_member_step(date_ymd, cycle_hh, step_h, prefix):
+    filename = f"{prefix}.t{cycle_hh:02d}z.pgrb2s.0p25.f{step_h:03d}"
     url = (
-        f"https://nomads.ncep.noaa.gov/cgi-bin/filter_gefs_atmos_0p50a.pl?"
-        f"file={filename}&lev_10_m_above_ground=on&"
-        f"var_UGRD=on&var_VGRD=on&subregion=&"
+        f"https://nomads.ncep.noaa.gov/cgi-bin/filter_gefs_atmos_0p25s.pl?"
+        f"file={filename}&lev_10_m_above_ground=on&lev_surface=on&"
+        f"var_UGRD=on&var_VGRD=on&var_GUST=on&subregion=&"
         f"leftlon={config.LON_MIN}&rightlon={config.LON_MAX}&toplat={config.LAT_MAX}&bottomlat={config.LAT_MIN}&"
-        f"dir=%2Fgefs.{date_ymd}%2F{cycle_hh:02d}%2Fatmos%2Fpgrb2ap5"
+        f"dir=%2Fgefs.{date_ymd}%2F{cycle_hh:02d}%2Fatmos%2Fpgrb2sp25"
     )
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_f:
         path_tmp = tmp_f.name
@@ -955,18 +950,19 @@ def _fetch_single_gefs_member_step(date_ymd, cycle_hh, step_h, prefix):
     return prefix, data, coords
 
 def fetch_gfs_data(start_step, end_step, ref_time_str):
-    print(f"-> Lade NOAA GEFS 0.5° (10m Wind inkl. 30 Member) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
+    print(f"-> Lade NOAA GEFS 0.25° (Wind & Böen inkl. 30 Member) für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
     ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
     date_ymd, cycle_hh = int(ref_dt.strftime("%Y%m%d")), int(ref_dt.strftime("%H"))
     target_steps = config.get_model_step_hours("gfs", ref_dt)[start_step : end_step + 1]
 
-    target_lons = np.arange(config.LON_MIN, config.LON_MAX + 0.5, 0.5)
-    target_lats = np.arange(config.LAT_MAX, config.LAT_MIN - 0.5, -0.5)
+    # Schweizer Referenzgitter als garantierter Fallback (0.25° Raster)
+    target_lons = np.arange(config.LON_MIN, config.LON_MAX + 0.25, 0.25)
+    target_lats = np.arange(config.LAT_MAX, config.LAT_MIN - 0.25, -0.25)
     glon, glat = np.meshgrid(target_lons, target_lats)
     ref_lon, ref_lat = glon.ravel().astype(np.float32), glat.ravel().astype(np.float32)
 
-    u_h_list, v_h_list = [], []
-    u_e_list, v_e_list = [], []
+    u_h_list, v_h_list, g_h_list = [], [], []
+    u_e_list, v_e_list, g_e_list = [], [], []
 
     for sh in target_steps:
         member_prefixes = ["gec00"] + [f"gep{m:02d}" for m in range(1, 31)]
@@ -974,7 +970,7 @@ def fetch_gfs_data(start_step, end_step, ref_time_str):
         step_results = {}
 
         with ThreadPoolExecutor(max_workers=4) as pool:
-            futures = [pool.submit(lambda t: _fetch_single_gefs_member_step(*t), task) for task in tasks]
+            futures = [pool.submit(lambda t: _fetch_single_gefs_025_member_step(*t), task) for task in tasks]
             for f in futures:
                 pfx, d, coords = f.result()
                 step_results[pfx] = d
@@ -983,41 +979,51 @@ def fetch_gfs_data(start_step, end_step, ref_time_str):
 
         pts = len(ref_lon)
 
+        # 1. Hauptlauf (gec00 = GEFS 0.25° Control)
         c_data = step_results.get("gec00")
         u_h = c_data.get("10u") if (c_data and c_data.get("10u") is not None and len(c_data.get("10u")) == pts) else None
         v_h = c_data.get("10v") if (c_data and c_data.get("10v") is not None and len(c_data.get("10v")) == pts) else None
+        g_h = c_data.get("gust") if (c_data and c_data.get("gust") is not None and len(c_data.get("gust")) == pts) else None
 
+        # Fallback falls gec00 temporär gefehlt hat
         if u_h is None:
             for m in range(1, 31):
                 md = step_results.get(f"gep{m:02d}")
                 if md and md.get("10u") is not None and len(md.get("10u")) == pts:
                     u_h = md.get("10u")
                     v_h = md.get("10v")
+                    g_h = md.get("gust")
                     break
 
-        u_ens_step, v_ens_step = [], []
+        u_ens_step, v_ens_step, g_ens_step = [], [], []
         for m in range(1, 31):
             pfx = f"gep{m:02d}"
             m_data = step_results.get(pfx)
 
             m_u = m_data.get("10u") if (m_data and m_data.get("10u") is not None and len(m_data.get("10u")) == pts) else u_h
             m_v = m_data.get("10v") if (m_data and m_data.get("10v") is not None and len(m_data.get("10v")) == pts) else v_h
+            m_g = m_data.get("gust") if (m_data and m_data.get("gust") is not None and len(m_data.get("gust")) == pts) else g_h
 
             u_ens_step.append(m_u if (m_u is not None and len(m_u) == pts) else np.full(pts, np.nan, dtype=np.float32))
             v_ens_step.append(m_v if (m_v is not None and len(m_v) == pts) else np.full(pts, np.nan, dtype=np.float32))
+            g_ens_step.append(m_g if (m_g is not None and len(m_g) == pts) else np.full(pts, np.nan, dtype=np.float32))
 
         u_h_list.append(u_h if (u_h is not None and len(u_h) == pts) else np.full(pts, np.nan, dtype=np.float32))
         v_h_list.append(v_h if (v_h is not None and len(v_h) == pts) else np.full(pts, np.nan, dtype=np.float32))
+        g_h_list.append(g_h if (g_h is not None and len(g_h) == pts) else np.full(pts, np.nan, dtype=np.float32))
 
         u_e_list.append(np.array(u_ens_step, dtype=np.float32))
         v_e_list.append(np.array(v_ens_step, dtype=np.float32))
+        g_e_list.append(np.array(g_ens_step, dtype=np.float32))
 
     return {
         "surface": {
             "u_h": xr.DataArray(np.stack(u_h_list, axis=0), dims=["lead_time", "cell"]),
             "v_h": xr.DataArray(np.stack(v_h_list, axis=0), dims=["lead_time", "cell"]),
+            "g_h": xr.DataArray(np.stack(g_h_list, axis=0), dims=["lead_time", "cell"]),
             "u_e": xr.DataArray(np.stack(u_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
-            "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"])
+            "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
+            "g_e": xr.DataArray(np.stack(g_e_list, axis=0), dims=["lead_time", "eps", "cell"])
         },
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
