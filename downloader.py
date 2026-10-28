@@ -668,7 +668,7 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     target_steps = config.get_model_step_hours("ecmwf", ref_dt)[start_step : end_step + 1]
 
     client = None
-    for src in ["azure", "aws", "google", "ecmwf"]:
+    for src in ["google", "ecmwf", "azure", "aws"]:
         try:
             client = Client(source=src, model="ifs", resol="0p1")
             break
@@ -790,10 +790,11 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
     date_ymd, time_hh = int(ref_dt.strftime("%Y%m%d")), int(ref_dt.strftime("%H"))
     target_steps = config.get_model_step_hours("aifs", ref_dt)[start_step : end_step + 1]
 
-    client = None
-    for src in ["azure", "aws", "google", "ecmwf"]:
+    client_single, client_ens = None, None
+    for src in ["google", "ecmwf", "azure", "aws"]:
         try:
-            client = Client(source=src)
+            client_single = Client(source=src, model="aifs-single", resol="0p25")
+            client_ens = Client(source=src, model="aifs-ens", resol="0p25")
             break
         except Exception:
             pass
@@ -809,34 +810,28 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
 
         ctrl_data, ens_data = None, None
 
+        # 1. Hauptlauf (aifs-single)
         try:
-            client.retrieve(
-                model="aifs-single",
-                resol="0p25",
-                date=date_ymd,
-                time=time_hh,
-                step=sh,
-                param=["10u", "10v"],
-                target=path_ctrl
-            )
+            client_single.download(date=date_ymd, time=time_hh, step=sh, target=path_ctrl)
             ctrl_data, coords_ctrl = _extract_swiss_subgrid_fast(path_ctrl, is_ens=False)
             if ref_lon is None and coords_ctrl:
                 ref_lon, ref_lat = coords_ctrl
         except Exception as e:
             print(f"   ⚠️ AIFS Hauptlauf (+{sh}h): {e}", flush=True)
 
+        # 2. Ensemble (aifs-ens, 50 Member)
         try:
-            client.retrieve(
-                model="aifs-ens",
-                resol="0p25",
-                stream="enfo",
-                type="pf",
-                date=date_ymd,
-                time=time_hh,
-                step=sh,
-                param=["10u", "10v"],
-                target=path_ens
-            )
+            download_ok = False
+            for ens_type in ["ef", "pf"]:
+                try:
+                    client_ens.download(date=date_ymd, time=time_hh, step=sh, stream="enfo", type=ens_type, target=path_ens)
+                    download_ok = True
+                    break
+                except Exception:
+                    pass
+            if not download_ok:
+                client_ens.download(date=date_ymd, time=time_hh, step=sh, target=path_ens)
+
             ens_data, coords_ens = _extract_swiss_subgrid_fast(path_ens, is_ens=True)
             if ref_lon is None and coords_ens:
                 ref_lon, ref_lat = coords_ens
@@ -916,7 +911,6 @@ def fetch_gfs_data(start_step, end_step, ref_time_str):
     date_ymd, cycle_hh = int(ref_dt.strftime("%Y%m%d")), int(ref_dt.strftime("%H"))
     target_steps = config.get_model_step_hours("gfs", ref_dt)[start_step : end_step + 1]
 
-    # Schweizer Referenzgitter als garantierter Fallback (0.25° Raster)
     target_lons = np.arange(config.LON_MIN, config.LON_MAX + 0.25, 0.25)
     target_lats = np.arange(config.LAT_MAX, config.LAT_MIN - 0.25, -0.25)
     glon, glat = np.meshgrid(target_lons, target_lats)
@@ -940,13 +934,11 @@ def fetch_gfs_data(start_step, end_step, ref_time_str):
 
         pts = len(ref_lon)
 
-        # 1. Hauptlauf (gec00 = GEFS 0.25° Control)
         c_data = step_results.get("gec00")
         u_h = c_data.get("10u") if (c_data and c_data.get("10u") is not None and len(c_data.get("10u")) == pts) else None
         v_h = c_data.get("10v") if (c_data and c_data.get("10v") is not None and len(c_data.get("10v")) == pts) else None
         g_h = c_data.get("gust") if (c_data and c_data.get("gust") is not None and len(c_data.get("gust")) == pts) else None
 
-        # Fallback falls gec00 temporär gefehlt hat
         if u_h is None:
             for m in range(1, 31):
                 md = step_results.get(f"gep{m:02d}")
