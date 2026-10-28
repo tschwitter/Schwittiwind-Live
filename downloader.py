@@ -26,6 +26,9 @@ _ICOND2_GRID_CACHE = {}
 _OGD_SEMAPHORE = threading.Semaphore(2)
 _HTTP_SESSION = requests.Session()
 
+# HEBEL 2: Globaler Cache für das ECMWF-Schweiz-Subgrid (Slices & Koordinaten)
+_ECMWF_GRID_CACHE = {}
+
 def trim_memory():
     try:
         gc.collect()
@@ -528,8 +531,9 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": grid_info["ref_lon"], "ref_lat": grid_info["ref_lat"]
     }
 
-# ================= ECMWF, AIFS & GFS SUBGRID EXTRACTOR (STRICT SURFACE FILTER) =================
+# ================= ECMWF, AIFS & GFS SUBGRID EXTRACTOR (MIT HEBEL 2: SCHWEIZ-GRID-CACHING) =================
 def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
+    global _ECMWF_GRID_CACHE
     if not os.path.exists(grib_path) or os.path.getsize(grib_path) < 500:
         return None, None
 
@@ -594,33 +598,49 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
                     vals = eccodes.codes_get_values(gid)
                     n_lats = int(eccodes.codes_get(gid, "Nj"))
                     n_lons = int(eccodes.codes_get(gid, "Ni"))
-                    la1 = float(eccodes.codes_get(gid, "latitudeOfFirstGridPointInDegrees"))
-                    lo1 = float(eccodes.codes_get(gid, "longitudeOfFirstGridPointInDegrees"))
-                    d_lat = float(eccodes.codes_get(gid, "jDirectionIncrementInDegrees"))
-                    d_lon = float(eccodes.codes_get(gid, "iDirectionIncrementInDegrees"))
-                    j_scans_pos = int(eccodes.codes_get(gid, "jScansPositively"))
 
-                    matrix = vals.reshape(n_lats, n_lons)
-                    lat_arr = la1 + np.arange(n_lats) * d_lat if j_scans_pos == 1 else la1 - np.arange(n_lats) * d_lat
-                    lon_arr = (lo1 + np.arange(n_lons) * d_lon + 180.0) % 360.0 - 180.0
-
-                    r_mask = np.where((lat_arr >= config.LAT_MIN - 0.2) & (lat_arr <= config.LAT_MAX + 0.2))[0]
-                    c_mask = np.where((lon_arr >= config.LON_MIN - 0.2) & (lon_arr <= config.LON_MAX + 0.2))[0]
-
-                    if len(r_mask) == 0 or len(c_mask) == 0 or (n_lats <= 25 and n_lons <= 35):
-                        sub = matrix
-                        sub_lats = lat_arr
-                        sub_lons = lon_arr
+                    # HEBEL 2: Schnitte und Koordinaten einmalig pro Gitterdimension cachen
+                    grid_key = f"{n_lats}x{n_lons}"
+                    if grid_key in _ECMWF_GRID_CACHE:
+                        cached = _ECMWF_GRID_CACHE[grid_key]
+                        r_min, r_max, c_min, c_max = cached["slices"]
+                        sub = vals.reshape(n_lats, n_lons)[r_min:r_max, c_min:c_max]
+                        if ref_lons is None:
+                            ref_lons, ref_lats = cached["ref_lons"], cached["ref_lats"]
                     else:
-                        r_min, r_max = r_mask[0], r_mask[-1] + 1
-                        c_min, c_max = c_mask[0], c_mask[-1] + 1
-                        sub = matrix[r_min:r_max, c_min:c_max]
-                        sub_lats = lat_arr[r_min:r_max]
-                        sub_lons = lon_arr[c_min:c_max]
+                        la1 = float(eccodes.codes_get(gid, "latitudeOfFirstGridPointInDegrees"))
+                        lo1 = float(eccodes.codes_get(gid, "longitudeOfFirstGridPointInDegrees"))
+                        d_lat = float(eccodes.codes_get(gid, "jDirectionIncrementInDegrees"))
+                        d_lon = float(eccodes.codes_get(gid, "iDirectionIncrementInDegrees"))
+                        j_scans_pos = int(eccodes.codes_get(gid, "jScansPositively"))
 
-                    if ref_lons is None:
+                        matrix = vals.reshape(n_lats, n_lons)
+                        lat_arr = la1 + np.arange(n_lats) * d_lat if j_scans_pos == 1 else la1 - np.arange(n_lats) * d_lat
+                        lon_arr = (lo1 + np.arange(n_lons) * d_lon + 180.0) % 360.0 - 180.0
+
+                        r_mask = np.where((lat_arr >= config.LAT_MIN - 0.2) & (lat_arr <= config.LAT_MAX + 0.2))[0]
+                        c_mask = np.where((lon_arr >= config.LON_MIN - 0.2) & (lon_arr <= config.LON_MAX + 0.2))[0]
+
+                        if len(r_mask) == 0 or len(c_mask) == 0 or (n_lats <= 25 and n_lons <= 35):
+                            r_min, r_max, c_min, c_max = 0, n_lats, 0, n_lons
+                            sub = matrix
+                            sub_lats, sub_lons = lat_arr, lon_arr
+                        else:
+                            r_min, r_max = r_mask[0], r_mask[-1] + 1
+                            c_min, c_max = c_mask[0], c_mask[-1] + 1
+                            sub = matrix[r_min:r_max, c_min:c_max]
+                            sub_lats, sub_lons = lat_arr[r_min:r_max], lon_arr[c_min:c_max]
+
                         glon, glat = np.meshgrid(sub_lons, sub_lats)
-                        ref_lons, ref_lats = glon.ravel().astype(np.float32), glat.ravel().astype(np.float32)
+                        c_rlons, c_rlats = glon.ravel().astype(np.float32), glat.ravel().astype(np.float32)
+
+                        _ECMWF_GRID_CACHE[grid_key] = {
+                            "slices": (r_min, r_max, c_min, c_max),
+                            "ref_lons": c_rlons,
+                            "ref_lats": c_rlats
+                        }
+                        if ref_lons is None:
+                            ref_lons, ref_lats = c_rlons, c_rlats
 
                     arr = sub.ravel().astype(np.float32)
                     if norm_param in ["clct", "clch", "clcm", "clcl"] and np.nanmax(arr) <= 1.01:
@@ -658,58 +678,80 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
         print(f"⚠️ ecCodes Fehler beim Lesen: {e}", flush=True)
         return None, None
 
-# ================= ECMWF IFS =================
-def fetch_ecmwf_data(start_step, end_step, ref_time_str):
+# ================= ECMWF IFS (MIT HEBEL 1: PARALLELE ZEITSCHRITT-DOWNLOADS) =================
+def _fetch_single_ecmwf_step(args):
+    """Lädt und entpackt einen einzelnen ECMWF-Schritt."""
+    date_ymd, time_hh, sh = args
     from ecmwf.opendata import Client
-    print(f"-> Lade ECMWF 0.1° für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
-
-    ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
-    date_ymd, time_hh = int(ref_dt.strftime("%Y%m%d")), int(ref_dt.strftime("%H"))
-    target_steps = config.get_model_step_hours("ecmwf", ref_dt)[start_step : end_step + 1]
 
     client = None
-    for src in ["google", "ecmwf", "azure", "aws"]:
+    # Azure & AWS an erster Stelle für schnellste Anbindung im Cloud-Backbone
+    for src in ["azure", "aws", "google", "ecmwf"]:
         try:
             client = Client(source=src, model="ifs", resol="0p1")
             break
         except Exception:
             pass
 
+    with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ctrl, \
+         tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ens:
+        path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
+
+    ctrl_data, ens_data, coords = None, None, None
+
+    try:
+        client.download(date=date_ymd, time=time_hh, step=sh, type="fc", levtype="sfc", target=path_ctrl)
+        ctrl_data, coords_ctrl = _extract_swiss_subgrid_fast(path_ctrl, is_ens=False)
+        if coords_ctrl:
+            coords = coords_ctrl
+    except Exception as e:
+        print(f"   ⚠️ ECMWF Hauptlauf (+{sh}h): {e}", flush=True)
+
+    try:
+        client.download(date=date_ymd, time=time_hh, step=sh, stream="enfo", type="ef", levtype="sfc", target=path_ens)
+        ens_data, coords_ens = _extract_swiss_subgrid_fast(path_ens, is_ens=True)
+        if coords is None and coords_ens:
+            coords = coords_ens
+    except Exception as e:
+        if sh > 0:
+            print(f"   ⚠️ ECMWF Ensemble (+{sh}h): {e}", flush=True)
+
+    for p in [path_ctrl, path_ens]:
+        if os.path.exists(p):
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+
+    return sh, ctrl_data, ens_data, coords
+
+def fetch_ecmwf_data(start_step, end_step, ref_time_str):
+    print(f"-> Lade ECMWF 0.1° parallel für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
+    ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
+    date_ymd, time_hh = int(ref_dt.strftime("%Y%m%d")), int(ref_dt.strftime("%H"))
+    target_steps = config.get_model_step_hours("ecmwf", ref_dt)[start_step : end_step + 1]
+
+    tasks = [(date_ymd, time_hh, sh) for sh in target_steps]
+    results_by_sh = {}
+    ref_lon, ref_lat = None, None
+
+    # HEBEL 1: 3 Zeitschritte gleichzeitig über das Netzwerk laden
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        for sh, ctrl_data, ens_data, coords in pool.map(_fetch_single_ecmwf_step, tasks):
+            results_by_sh[sh] = (ctrl_data, ens_data)
+            if ref_lon is None and coords:
+                ref_lon, ref_lat = coords
+
     u_h_list, v_h_list, g_h_list = [], [], []
     c_h_list, ch_h_list, cm_h_list, cl_h_list = [], [], [], []
     u_e_list, v_e_list, g_e_list = [], [], []
     c_e_list, ch_e_list, cm_e_list, cl_e_list = [], [], [], []
-    ref_lon, ref_lat = None, None
 
+    pts = len(ref_lon) if ref_lon is not None else 1352
+
+    # In exakter chronologischer Reihenfolge zusammenstellen
     for sh in target_steps:
-        with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ctrl, \
-             tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_ens:
-            path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
-
-        ctrl_data, ens_data = None, None
-        try:
-            client.download(date=date_ymd, time=time_hh, step=sh, type="fc", levtype="sfc", target=path_ctrl)
-            ctrl_data, coords_ctrl = _extract_swiss_subgrid_fast(path_ctrl, is_ens=False)
-            if ref_lon is None and coords_ctrl:
-                ref_lon, ref_lat = coords_ctrl
-        except Exception as e:
-            print(f"   ⚠️ ECMWF Hauptlauf (+{sh}h): {e}", flush=True)
-
-        try:
-            client.download(date=date_ymd, time=time_hh, step=sh, stream="enfo", type="ef", levtype="sfc", target=path_ens)
-            ens_data, coords_ens = _extract_swiss_subgrid_fast(path_ens, is_ens=True)
-            if ref_lon is None and coords_ens:
-                ref_lon, ref_lat = coords_ens
-        except Exception as e:
-            if sh > 0:
-                print(f"   ⚠️ ECMWF Ensemble (+{sh}h): {e}", flush=True)
-
-        for p in [path_ctrl, path_ens]:
-            if os.path.exists(p):
-                try: os.remove(p)
-                except Exception: pass
-
-        pts = len(ref_lon) if ref_lon is not None else 1352
+        ctrl_data, ens_data = results_by_sh.get(sh, (None, None))
 
         u_h  = ctrl_data.get("10u")  if ctrl_data else None
         v_h  = ctrl_data.get("10v")  if ctrl_data else None
@@ -791,7 +833,7 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
     target_steps = config.get_model_step_hours("aifs", ref_dt)[start_step : end_step + 1]
 
     client = None
-    for src in ["google", "ecmwf", "azure", "aws"]:
+    for src in ["azure", "aws", "google", "ecmwf"]:
         try:
             client = Client(source=src)
             break
@@ -809,7 +851,6 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
 
         ctrl_data, ens_data = None, None
 
-        # 1. Hauptlauf (AIFS Single) gezielt mit 10m Wind abrufen
         try:
             client.retrieve(
                 model="aifs-single",
@@ -826,7 +867,6 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
         except Exception as e:
             print(f"   ⚠️ AIFS Hauptlauf (+{sh}h): {e}", flush=True)
 
-        # 2. Ensemble (AIFS ENS) gezielt nur 10u & 10v der 50 Member abrufen (keine 3 GB Datei!)
         try:
             client.retrieve(
                 model="aifs-ens",
@@ -848,8 +888,10 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
 
         for p in [path_ctrl, path_ens]:
             if os.path.exists(p):
-                try: os.remove(p)
-                except Exception: pass
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
 
         pts = len(ref_lon) if ref_lon is not None else 1352
         u_h = ctrl_data.get("10u") if ctrl_data else None
@@ -918,7 +960,6 @@ def fetch_gfs_data(start_step, end_step, ref_time_str):
     date_ymd, cycle_hh = int(ref_dt.strftime("%Y%m%d")), int(ref_dt.strftime("%H"))
     target_steps = config.get_model_step_hours("gfs", ref_dt)[start_step : end_step + 1]
 
-    # Schweizer Referenzgitter als garantierter Fallback (0.50° Raster)
     target_lons = np.arange(config.LON_MIN, config.LON_MAX + 0.5, 0.5)
     target_lats = np.arange(config.LAT_MAX, config.LAT_MIN - 0.5, -0.5)
     glon, glat = np.meshgrid(target_lons, target_lats)
@@ -928,7 +969,6 @@ def fetch_gfs_data(start_step, end_step, ref_time_str):
     u_e_list, v_e_list = [], []
 
     for sh in target_steps:
-        # Alle 31 Member homogen aus GEFS 0.50° abrufen: gec00 (Control) + gep01 bis gep30
         member_prefixes = ["gec00"] + [f"gep{m:02d}" for m in range(1, 31)]
         tasks = [(date_ymd, cycle_hh, sh, pfx) for pfx in member_prefixes]
         step_results = {}
@@ -943,12 +983,10 @@ def fetch_gfs_data(start_step, end_step, ref_time_str):
 
         pts = len(ref_lon)
 
-        # 1. Hauptlauf (gec00 = GEFS Control Run)
         c_data = step_results.get("gec00")
         u_h = c_data.get("10u") if (c_data and c_data.get("10u") is not None and len(c_data.get("10u")) == pts) else None
         v_h = c_data.get("10v") if (c_data and c_data.get("10v") is not None and len(c_data.get("10v")) == pts) else None
 
-        # Fallback falls gec00 temporär gefehlt hat: Ersten verfügbaren Member nehmen
         if u_h is None:
             for m in range(1, 31):
                 md = step_results.get(f"gep{m:02d}")
