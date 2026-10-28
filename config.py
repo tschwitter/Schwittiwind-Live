@@ -50,10 +50,10 @@ MODELS_CONFIG = {
         "collection": "ogd-forecasting-icon-ch2",
         "hhl_asset": "vertical_constants_icon-ch2-eps.grib2",
         "nx": 200, "ny": 120, "hours": 120, "max_members": 21, "max_runs": 4,
-        "active_variables": [],
-        #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"
-        "ensemble_variables": [],
-        #"wind", "gust", "sun", "dbz"
+        "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"],
+        #
+        "ensemble_variables": ["wind", "gust", "sun", "dbz"],
+        #
         "max_chunks": 3
     },
     "arome": {
