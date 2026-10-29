@@ -83,10 +83,12 @@ def check_model_new_data(model_name):
             lambda dt, iso: f"https://opendata.dwd.de/weather/nwp/icon-d2-eps/grib/{dt.strftime('%H')}/u_10m/icon-d2-eps_germany_icosahedral_single-level_{dt.strftime('%Y%m%d%H')}_048_2d_u_10m.grib2.bz2"
         )
     if model_name == "gfs":
+        # Prüft auf den letzten Member (gep30) bei Stunde 240
         return _check_http_candidates(
             "gfs", [0, 6, 12, 18],
-            lambda dt, iso: f"https://nomads.ncep.noaa.gov/pub/data/nccf/com/gens/prod/gefs.{dt.strftime('%Y%m%d')}/{dt.strftime('%H')}/atmos/pgrb2sp25/gec00.t{dt.strftime('%H')}z.pgrb2s.0p25.f240"
+            lambda dt, iso: f"https://nomads.ncep.noaa.gov/pub/data/nccf/com/gens/prod/gefs.{dt.strftime('%Y%m%d')}/{dt.strftime('%H')}/atmos/pgrb2sp25/gep30.t{dt.strftime('%H')}z.pgrb2s.0p25.f240"
         )
+        
     if model_name == "aifs":
         try:
             from ecmwf.opendata import Client
