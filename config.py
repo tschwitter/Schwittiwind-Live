@@ -116,6 +116,8 @@ def get_model_step_hours(model_name, ref_dt):
         return list(range(0, 241, 6))
     if model_name == "gfs":
         return list(range(0, 241, 3))
+    if model_name == "icon-eu":
+        return list(range(0, 121, 3))
     if model_name == "ecmwf":
         return list(range(0, 145, 3)) + (list(range(150, 241, 6)) if ref_dt and ref_dt.hour in [0, 12] else [])
     
