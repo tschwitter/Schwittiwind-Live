@@ -5,7 +5,7 @@ let isSyncingMaps = false;
 let isLegendOpen = false;
 let syncRafId = null;
 
-const ALL_MODELS = ["kenda-ch1", "icon-ch1", "icon-ch2", "arome", "icon-d2", "ecmwf", "aifs", "gfs"];
+const ALL_MODELS = ["kenda-ch1", "icon-ch1", "icon-ch2", "arome", "icon-d2", "icon-eu", "ecmwf", "aifs", "gfs"];
 let isMobileModelExpanded = false;
 
 const modelsState = {
@@ -21,10 +21,10 @@ const modelsState = {
     }
 };
 
-const availableRuns = { "kenda-ch1": [], "icon-ch1": [], "icon-ch2": [], "arome": [], "icon-d2": [], "ecmwf": [], "aifs": [], "gfs": [] };
+const availableRuns = { "kenda-ch1": [], "icon-ch1": [], "icon-ch2": [], "arome": [], "icon-d2": [], "icon-eu": [], "ecmwf": [], "aifs": [], "gfs": [] };
 const selectedRuns = {
-    left: { "kenda-ch1": null, "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null, "ecmwf": null, "aifs": null, "gfs": null },
-    right: { "kenda-ch1": null, "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null, "ecmwf": null, "aifs": null, "gfs": null }
+    left: { "kenda-ch1": null, "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null, "icon-eu": null, "ecmwf": null, "aifs": null, "gfs": null },
+    right: { "kenda-ch1": null, "icon-ch1": null, "icon-ch2": null, "arome": null, "icon-d2": null, "icon-eu": null, "ecmwf": null, "aifs": null, "gfs": null }
 };
 
 let verticalNavMode = 'member';
@@ -408,7 +408,7 @@ async function fetchAvailableRuns(modelName) {
 }
 
 function getModelShortLabel(m) {
-    const LABELS = { "kenda-ch1": "KND", "icon-ch1": "CH1", "icon-ch2": "CH2", "icon-d2": "D2", "ecmwf": "EC", "aifs": "AI", "gfs": "GFS" };
+    const LABELS = { "kenda-ch1": "KND", "icon-ch1": "CH1", "icon-ch2": "CH2", "icon-d2": "D2", "icon-eu": "EU", "ecmwf": "EC", "aifs": "AI", "gfs": "GFS" };
     return LABELS[m] || "AROME";
 }
 
