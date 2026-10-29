@@ -82,6 +82,12 @@ def check_model_new_data(model_name):
             "icon-d2", [0, 3, 6, 9, 12, 15, 18, 21],
             lambda dt, iso: f"https://opendata.dwd.de/weather/nwp/icon-d2-eps/grib/{dt.strftime('%H')}/u_10m/icon-d2-eps_germany_icosahedral_single-level_{dt.strftime('%Y%m%d%H')}_048_2d_u_10m.grib2.bz2"
         )
+
+    if model_name == "icon-eu":
+        return _check_http_candidates(
+            "icon-eu", [0, 6, 12, 18],
+            lambda dt, iso: f"https://opendata.dwd.de/weather/nwp/icon-eu-eps/grib/{dt.strftime('%H')}/u_10m/icon-eu-eps_europe_icosahedral_single-level_{dt.strftime('%Y%m%d%H')}_120_u_10m.grib2.bz2"
+        )
     if model_name == "gfs":
         # Prüft auf den letzten Member (gep30) bei Stunde 240
         return _check_http_candidates(
