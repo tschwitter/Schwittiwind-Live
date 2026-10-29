@@ -87,6 +87,18 @@ MODELS_CONFIG = {
         "ensemble_variables": ["wind"],
         "max_chunks": 2
     },
+        "icon-eu": {
+        "name": "ICON-EU (6.5km)",
+        "collection": "dwd-icon-eu",
+        "nx": 100,
+        "ny": 60,
+        "hours": 120,
+        "max_members": 41,        # 1 Hauptlauf + 40 Ensemble-Member
+        "max_runs": 3,
+        "active_variables": ["wind", "gust"],
+        "ensemble_variables": ["wind", "gust"],
+        "max_chunks": 4
+    },
     "gfs": {
         "name": "GFS (0.25° NOAA)",
         "collection": "gefs_0p25",
