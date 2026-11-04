@@ -98,12 +98,12 @@ MODELS_CONFIG = {
     },
         "icon-eu": {
         "name": "ICON-EU (6.5km)",
-        "collection": "dwd-icon-eu",
+        "collection": "dwd-icon-eu-eps",
         "nx": 100,
         "ny": 60,
         "hours": 120,
         "max_members": 41,        # 1 Hauptlauf + 40 Ensemble-Member
-        "max_runs": 3,
+        "max_runs": 4,
         "active_variables": ["wind", "gust"],
         "ensemble_variables": ["wind", "gust"],
         "max_chunks": 4
