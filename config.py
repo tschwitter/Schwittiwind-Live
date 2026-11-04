@@ -122,13 +122,13 @@ def get_model_step_hours(model_name, ref_dt):
     if model_name == "kenda-ch1":
         return list(range(5))
     if model_name == "aifs":
-        return list(range(0, 241, 6))
+        return list(range(0, 6, 6))
     if model_name == "gfs":
         return list(range(0, 241, 3))
     if model_name == "icon-eu":
         return list(range(0, 121, 3))
     if model_name == "ecmwf":
-        return list(range(0, 145, 3)) + (list(range(150, 241, 6)) if ref_dt and ref_dt.hour in [0, 12] else [])
+        return list(range(0, 3, 3)) + (list(range(150, 241, 6)) if ref_dt and ref_dt.hour in [0, 12] else [])
     
     total_hours = MODELS_CONFIG[model_name].get("hours", 33)
     return list(range(total_hours + 1))
