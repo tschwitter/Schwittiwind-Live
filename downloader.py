@@ -400,23 +400,19 @@ def fetch_arome_hd_data(start_step, end_step, ref_time_str):
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
 
-# ================= DWD ICON-D2 =================
-def _download_and_extract_dwd(url):
-    def _get():
-        r = requests.get(url, timeout=35)
-        if r.status_code == 200 and len(r.content) > 1000:
-            return bz2.decompress(r.content)
-        return None
-    return retry_call(_get, max_attempts=3, delay_factor=2)
-
-def _find_dwd_coord_url(cycle_hh, param_name):
-    for d_url in [f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/{cycle_hh}/{param_name}/",
-                  f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/00/{param_name}/"]:
+# ================= DWD ICON-D2 & ICON-EU HELPER =================
+def _find_dwd_coord_url(model_folder, cycle_hh, param_name):
+    candidate_dirs = [
+        f"https://opendata.dwd.de/weather/nwp/{model_folder}/grib/{cycle_hh}/{param_name}/",
+        f"https://opendata.dwd.de/weather/nwp/{model_folder}/grib/00/{param_name}/"
+    ]
+    for d_url in candidate_dirs:
         try:
-            r = requests.get(d_url, timeout=10)
+            r = _HTTP_SESSION.get(d_url, timeout=10)
             if r.status_code == 200:
                 matches = re.findall(r'href="([^"]*' + param_name + r'[^"]*\.bz2)"', r.text, re.IGNORECASE)
-                if matches: return d_url.rstrip('/') + '/' + matches[-1]
+                if matches:
+                    return d_url.rstrip('/') + '/' + matches[-1]
         except Exception:
             pass
     return None
@@ -426,18 +422,35 @@ def _load_icond2_grid_coords(ref_iso):
     if "valid_indices" in _ICOND2_GRID_CACHE:
         return _ICOND2_GRID_CACHE
 
+    disk_cache = "/tmp/icon_d2_swiss_grid.npz"
+    if os.path.exists(disk_cache):
+        try:
+            data = np.load(disk_cache)
+            _ICOND2_GRID_CACHE = {
+                "valid_indices": data["valid_indices"],
+                "ref_lat": data["ref_lat"],
+                "ref_lon": data["ref_lon"]
+            }
+            return _ICOND2_GRID_CACHE
+        except Exception:
+            pass
+
     try:
         ref_dt = datetime.fromisoformat(ref_iso.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
     except Exception:
         ref_dt = datetime.now(ZoneInfo("UTC"))
 
     cycle_hh = ref_dt.strftime("%H")
-    clat_b = _download_and_extract_dwd(_find_dwd_coord_url(cycle_hh, "clat"))
-    clon_b = _download_and_extract_dwd(_find_dwd_coord_url(cycle_hh, "clon"))
+    url_lat = _find_dwd_coord_url("icon-d2", cycle_hh, "clat")
+    url_lon = _find_dwd_coord_url("icon-d2", cycle_hh, "clon")
+
+    clat_b = _download_and_extract_dwd(url_lat)
+    clon_b = _download_and_extract_dwd(url_lon)
 
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_lat, \
          tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_lon:
-        tmp_lat.write(clat_b); tmp_lon.write(clon_b)
+        tmp_lat.write(clat_b)
+        tmp_lon.write(clon_b)
         path_lat, path_lon = tmp_lat.name, tmp_lon.name
 
     try:
@@ -445,7 +458,8 @@ def _load_icond2_grid_coords(ref_iso):
             ds_lat, ds_lon = cfgrib.open_dataset(path_lat), cfgrib.open_dataset(path_lon)
         lats = ds_lat[list(ds_lat.data_vars.keys())[0]].values.ravel().astype(np.float64)
         lons = ds_lon[list(ds_lon.data_vars.keys())[0]].values.ravel().astype(np.float64)
-        ds_lat.close(); ds_lon.close()
+        ds_lat.close()
+        ds_lon.close()
 
         if np.nanmax(np.abs(lats)) <= 1.6:
             lats, lons = np.rad2deg(lats), np.rad2deg(lons)
@@ -459,6 +473,10 @@ def _load_icond2_grid_coords(ref_iso):
             "ref_lat": lats[valid_indices].astype(np.float32),
             "ref_lon": lons[valid_indices].astype(np.float32)
         }
+        try:
+            np.savez_compressed(disk_cache, valid_indices=valid_indices, ref_lat=_ICOND2_GRID_CACHE["ref_lat"], ref_lon=_ICOND2_GRID_CACHE["ref_lon"])
+        except Exception:
+            pass
         return _ICOND2_GRID_CACHE
     finally:
         for p in [path_lat, path_lon]:
@@ -466,56 +484,110 @@ def _load_icond2_grid_coords(ref_iso):
                 try: os.remove(p)
                 except Exception: pass
 
-def _extract_grib_array(raw_bytes, valid_indices, is_ensemble=False):
-    if raw_bytes is None: return None
-    with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp:
-        tmp.write(raw_bytes); tmp_path = tmp.name
+def _load_iconeu_grid_coords(ref_iso):
+    global _ICONEU_GRID_CACHE
+    if "valid_indices" in _ICONEU_GRID_CACHE:
+        return _ICONEU_GRID_CACHE
+
+    disk_cache = "/tmp/icon_eu_swiss_grid.npz"
+    if os.path.exists(disk_cache):
+        try:
+            data = np.load(disk_cache)
+            _ICONEU_GRID_CACHE = {
+                "valid_indices": data["valid_indices"],
+                "ref_lat": data["ref_lat"],
+                "ref_lon": data["ref_lon"]
+            }
+            return _ICONEU_GRID_CACHE
+        except Exception:
+            pass
+
+    try:
+        ref_dt = datetime.fromisoformat(ref_iso.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
+    except Exception:
+        ref_dt = datetime.now(ZoneInfo("UTC"))
+
+    cycle_hh = ref_dt.strftime("%H")
+    # Sucht die echten ICON-EU-EPS Gitterkoordinaten
+    url_lat = _find_dwd_coord_url("icon-eu-eps", cycle_hh, "clat")
+    url_lon = _find_dwd_coord_url("icon-eu-eps", cycle_hh, "clon")
+
+    clat_b = _download_and_extract_dwd(url_lat)
+    clon_b = _download_and_extract_dwd(url_lon)
+
+    with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_lat, \
+         tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_lon:
+        tmp_lat.write(clat_b)
+        tmp_lon.write(clon_b)
+        path_lat, path_lon = tmp_lat.name, tmp_lon.name
+
     try:
         with SilenceStderr():
-            ds = cfgrib.open_dataset(tmp_path)
-        vals = ds[list(ds.data_vars.keys())[0]].values
-        ds.close()
+            ds_lat, ds_lon = cfgrib.open_dataset(path_lat), cfgrib.open_dataset(path_lon)
+        lats = ds_lat[list(ds_lat.data_vars.keys())[0]].values.ravel().astype(np.float64)
+        lons = ds_lon[list(ds_lon.data_vars.keys())[0]].values.ravel().astype(np.float64)
+        ds_lat.close()
+        ds_lon.close()
 
-        if is_ensemble:
-            if vals.ndim == 1: vals = vals[np.newaxis, :]
-            elif vals.ndim > 2: vals = np.squeeze(vals)
-            if vals.ndim == 1: vals = vals[np.newaxis, :]
-            return vals[:, valid_indices].astype(np.float32)
-        return vals.ravel()[valid_indices].astype(np.float32)
-    except Exception:
-        return None
+        if np.nanmax(np.abs(lats)) <= 1.6:
+            lats, lons = np.rad2deg(lats), np.rad2deg(lons)
+        lons = (lons + 180.0) % 360.0 - 180.0
+
+        mask = (lats >= config.LAT_MIN) & (lats <= config.LAT_MAX) & (lons >= config.LON_MIN) & (lons <= config.LON_MAX)
+        valid_indices = np.where(mask)[0]
+
+        _ICONEU_GRID_CACHE = {
+            "valid_indices": valid_indices,
+            "ref_lat": lats[valid_indices].astype(np.float32),
+            "ref_lon": lons[valid_indices].astype(np.float32)
+        }
+        try:
+            np.savez_compressed(disk_cache, valid_indices=valid_indices, ref_lat=_ICONEU_GRID_CACHE["ref_lat"], ref_lon=_ICONEU_GRID_CACHE["ref_lon"])
+        except Exception:
+            pass
+        return _ICONEU_GRID_CACHE
     finally:
-        if os.path.exists(tmp_path):
-            try: os.remove(tmp_path)
-            except Exception: pass
+        for p in [path_lat, path_lon]:
+            if os.path.exists(p):
+                try: os.remove(p)
+                except Exception: pass
 
-def fetch_icond2_data(start_step, end_step, ref_time_str):
-    print(f"-> Lade ICON-D2 (10m Wind & Böen) für Schritte {start_step}..{end_step} ({ref_time_str})...", flush=True)
-    grid_info = _load_icond2_grid_coords(ref_time_str)
+def fetch_iconeu_data(start_step, end_step, ref_time_str):
+    print(f"-> Lade DWD ICON-EU-EPS 6.5km (Wind & Böen inkl. 40 Member) für Schritte {start_step}..{end_step} ({ref_time_str})...", flush=True)
+    grid_info = _load_iconeu_grid_coords(ref_time_str)
     valid_indices = grid_info["valid_indices"]
     num_pts = len(valid_indices)
 
     ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
     cycle_hh, date_ymd = ref_dt.strftime("%H"), ref_dt.strftime("%Y%m%d")
-    base_det = f"https://opendata.dwd.de/weather/nwp/icon-d2/grib/{cycle_hh}"
-    base_eps = f"https://opendata.dwd.de/weather/nwp/icon-d2-eps/grib/{cycle_hh}"
+    target_steps = config.get_model_step_hours("icon-eu", ref_dt)[start_step : end_step + 1]
 
-    u_h_list, v_h_list, g_h_list, u_e_list, v_e_list, g_e_list = [], [], [], [], [], []
-    for h in range(start_step, end_step + 1):
-        u_h = _extract_grib_array(_download_and_extract_dwd(f"{base_det}/u_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_2d_u_10m.grib2.bz2"), valid_indices)
-        v_h = _extract_grib_array(_download_and_extract_dwd(f"{base_det}/v_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_2d_v_10m.grib2.bz2"), valid_indices)
-        g_h = _extract_grib_array(_download_and_extract_dwd(f"{base_det}/vmax_10m/icon-d2_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_2d_vmax_10m.grib2.bz2"), valid_indices) if h > 0 else np.full(num_pts, np.nan, dtype=np.float32)
+    base_eps = f"https://opendata.dwd.de/weather/nwp/icon-eu-eps/grib/{cycle_hh}"
 
-        u_e = _extract_grib_array(_download_and_extract_dwd(f"{base_eps}/u_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_2d_u_10m.grib2.bz2"), valid_indices, is_ensemble=True)
-        v_e = _extract_grib_array(_download_and_extract_dwd(f"{base_eps}/v_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_2d_v_10m.grib2.bz2"), valid_indices, is_ensemble=True)
-        g_e = _extract_grib_array(_download_and_extract_dwd(f"{base_eps}/vmax_10m/icon-d2-eps_germany_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_2d_vmax_10m.grib2.bz2"), valid_indices, is_ensemble=True) if h > 0 else np.full((20, num_pts), np.nan, dtype=np.float32)
+    u_h_list, v_h_list, g_h_list = [], [], []
+    u_e_list, v_e_list, g_e_list = [], [], []
 
-        u_h_list.append(u_h if u_h is not None else np.full(num_pts, np.nan, dtype=np.float32))
-        v_h_list.append(v_h if v_h is not None else np.full(num_pts, np.nan, dtype=np.float32))
-        g_h_list.append(g_h if g_h is not None else np.full(num_pts, np.nan, dtype=np.float32))
-        u_e_list.append(u_e if u_e is not None else np.full((20, num_pts), np.nan, dtype=np.float32))
-        v_e_list.append(v_e if v_e is not None else np.full((20, num_pts), np.nan, dtype=np.float32))
-        g_e_list.append(g_e if g_e is not None else np.full((20, num_pts), np.nan, dtype=np.float32))
+    for h in target_steps:
+        url_ue = f"{base_eps}/u_10m/icon-eu-eps_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_u_10m.grib2.bz2"
+        url_ve = f"{base_eps}/v_10m/icon-eu-eps_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_v_10m.grib2.bz2"
+        url_ge = f"{base_eps}/vmax_10m/icon-eu-eps_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_vmax_10m.grib2.bz2"
+
+        u_e = _extract_grib_array(_download_and_extract_dwd(url_ue), valid_indices, is_ensemble=True)
+        v_e = _extract_grib_array(_download_and_extract_dwd(url_ve), valid_indices, is_ensemble=True)
+        g_e = _extract_grib_array(_download_and_extract_dwd(url_ge), valid_indices, is_ensemble=True) if h > 0 else np.full((40, num_pts), np.nan, dtype=np.float32)
+
+        # Kontroll-Lauf / Member 0 direkt aus dem ersten Member ableiten
+        u_h = u_e[0] if (u_e is not None and len(u_e) > 0) else np.full(num_pts, np.nan, dtype=np.float32)
+        v_h = v_e[0] if (v_e is not None and len(v_e) > 0) else np.full(num_pts, np.nan, dtype=np.float32)
+        g_h = g_e[0] if (g_e is not None and len(g_e) > 0) else np.full(num_pts, np.nan, dtype=np.float32)
+
+        u_h_list.append(u_h)
+        v_h_list.append(v_h)
+        g_h_list.append(g_h)
+
+        u_e_list.append(u_e if u_e is not None else np.full((40, num_pts), np.nan, dtype=np.float32))
+        v_e_list.append(v_e if v_e is not None else np.full((40, num_pts), np.nan, dtype=np.float32))
+        g_e_list.append(g_e if g_e is not None else np.full((40, num_pts), np.nan, dtype=np.float32))
 
     return {
         "surface": {
@@ -528,7 +600,6 @@ def fetch_icond2_data(start_step, end_step, ref_time_str):
         },
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": grid_info["ref_lon"], "ref_lat": grid_info["ref_lat"]
     }
-
 # ================= ECMWF, AIFS & GFS SUBGRID EXTRACTOR =================
 def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
     if not os.path.exists(grib_path) or os.path.getsize(grib_path) < 500:
