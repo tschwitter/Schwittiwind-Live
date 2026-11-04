@@ -33,7 +33,8 @@ MODELS_CONFIG = {
         "collection": "ogd-analysis-kenda-ch1",
         "hhl_asset": "vertical_constants_icon-ch1-eps.grib2",
         "nx": 400, "ny": 240, "hours": 5, "max_members": 1, "max_runs": 4,
-        "active_variables": ["wind", "gust", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"],
+        "active_variables": [],
+        #"wind", "gust", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
         "ensemble_variables": [], "max_chunks": 1
     },
     "icon-ch1": {
@@ -41,8 +42,10 @@ MODELS_CONFIG = {
         "collection": "ogd-forecasting-icon-ch1",
         "hhl_asset": "vertical_constants_icon-ch1-eps.grib2",
         "nx": 400, "ny": 240, "hours": 33, "max_members": 11, "max_runs": 8,
-        "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"],
-        "ensemble_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"],
+        "active_variables": [],
+       # "wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
+        "ensemble_variables": [],
+      #  "wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"
         "max_chunks": 4
     },
     "icon-ch2": {
@@ -50,10 +53,10 @@ MODELS_CONFIG = {
         "collection": "ogd-forecasting-icon-ch2",
         "hhl_asset": "vertical_constants_icon-ch2-eps.grib2",
         "nx": 200, "ny": 120, "hours": 120, "max_members": 21, "max_runs": 4,
-        "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"],
-        #
-        "ensemble_variables": ["wind", "gust", "sun", "dbz"],
-        #
+        "active_variables": [],
+        #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"
+        "ensemble_variables": [],
+        #"wind", "gust", "sun", "dbz"
         "max_chunks": 3
     },
     "arome": {
@@ -67,24 +70,30 @@ MODELS_CONFIG = {
         "name": "ICON-D2 (2.2km)",
         "collection": "dwd-icon-d2",
         "nx": 200, "ny": 120, "hours": 48, "max_members": 21, "max_runs": 8,
-        "active_variables": ["wind", "gust"],
-        "ensemble_variables": ["wind", "gust"],
+        "active_variables": [],
+        #"wind", "gust"
+        "ensemble_variables": [],
+        #"wind", "gust"
         "max_chunks": 2
     },
     "ecmwf": {
         "name": "ECMWF (0.1°)",
         "collection": "ifs-0p1",
         "nx": 200, "ny": 120, "max_members": 51, "max_runs": 4,
-        "active_variables": ["wind", "gust", "clct", "clch", "clcm", "clcl"],
-        "ensemble_variables": ["wind", "gust", "clct", "clch", "clcm", "clcl"],
+        "active_variables": [],
+        #"wind", "gust", "clct", "clch", "clcm", "clcl"
+        "ensemble_variables": [],
+        #"wind", "gust", "clct", "clch", "clcm", "clcl"
         "max_chunks": 3
     },
     "aifs": {
         "name": "AIFS (0.25° KI)",
         "collection": "aifs-single",
         "nx": 80, "ny": 50, "hours": 240, "max_members": 51, "max_runs": 4,
-        "active_variables": ["wind"],
-        "ensemble_variables": ["wind"],
+        "active_variables": [],
+        #"wind"
+        "ensemble_variables": [],
+        #"wind"
         "max_chunks": 2
     },
         "icon-eu": {
