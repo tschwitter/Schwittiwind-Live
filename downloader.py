@@ -819,7 +819,7 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
         print(f"⚠️ ecCodes Fehler beim Lesen: {e}", flush=True)
         return None, None
 
-# ================= ECMWF IFS (SCHNELLER ORIGINAL-STANDARD) =================
+# ================= ECMWF IFS (BEWÄHRTER, SCHNELLER STANDARD) =================
 def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     from ecmwf.opendata import Client
     print(f"-> Lade ECMWF 0.1° für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
@@ -829,7 +829,7 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     target_steps = config.get_model_step_hours("ecmwf", ref_dt)[start_step : end_step + 1]
 
     client = None
-    for src in ["google", "ecmwf", "azure", "aws"]:
+    for src in ["azure", "aws", "google", "ecmwf"]:
         try:
             client = Client(source=src, model="ifs", resol="0p1")
             break
@@ -848,6 +848,8 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
             path_ctrl, path_ens = tmp_ctrl.name, tmp_ens.name
 
         ctrl_data, ens_data = None, None
+
+        # 1. Hauptlauf (deterministisch)
         try:
             client.download(date=date_ymd, time=time_hh, step=sh, type="fc", levtype="sfc", target=path_ctrl)
             ctrl_data, coords_ctrl = _extract_swiss_subgrid_fast(path_ctrl, is_ens=False)
@@ -856,8 +858,20 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         except Exception as e:
             print(f"   ⚠️ ECMWF Hauptlauf (+{sh}h): {e}", flush=True)
 
+        # 2. Ensemble (50 Member, type="pf" statt "ef")
         try:
-            client.download(date=date_ymd, time=time_hh, step=sh, stream="enfo", type="ef", levtype="sfc", target=path_ens)
+            download_ok = False
+            for t_val in ["pf", "ep"]:
+                try:
+                    client.download(date=date_ymd, time=time_hh, step=sh, stream="enfo", type=t_val, levtype="sfc", target=path_ens)
+                    download_ok = True
+                    break
+                except Exception:
+                    pass
+
+            if not download_ok:
+                client.download(date=date_ymd, time=time_hh, step=sh, stream="enfo", levtype="sfc", target=path_ens)
+
             ens_data, coords_ens = _extract_swiss_subgrid_fast(path_ens, is_ens=True)
             if ref_lon is None and coords_ens:
                 ref_lon, ref_lat = coords_ens
@@ -888,6 +902,7 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         cm_e = ens_data.get("clcm") if ens_data else None
         cl_e = ens_data.get("clcl") if ens_data else None
 
+        # Nur bei Schritt 0 als Fallback duplizieren (da Ensemble erst ab Schritt > 0 vorliegt)
         if u_e is None and u_h is not None:
             u_e = np.repeat(u_h[np.newaxis, :], 50, axis=0)
             v_e = np.repeat(v_h[np.newaxis, :], 50, axis=0)
@@ -901,7 +916,7 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         if ch_e is None and ch_h is not None: ch_e = np.repeat(ch_h[np.newaxis, :], 50, axis=0)
         elif ch_h is None and ch_e is not None: ch_e = ch_e[0]
         if cm_e is None and cm_h is not None: cm_e = np.repeat(cm_h[np.newaxis, :], 50, axis=0)
-        elif cm_h is None and cm_e is not None: cm_e = cm_e[0]
+        elif cm_h is None and cm_e is not None: cm_h = cm_e[0]
         if cl_e is None and cl_h is not None: cl_e = np.repeat(cl_h[np.newaxis, :], 50, axis=0)
         elif cl_h is None and cl_e is not None: cl_e = cl_e[0]
 
@@ -941,6 +956,7 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         },
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
+
 
 # ================= ECMWF AIFS (0.25° KI INKL. 50 MEMBER) =================
 def fetch_aifs_data(start_step, end_step, ref_time_str):
