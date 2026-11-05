@@ -427,6 +427,15 @@ def _download_and_extract_dwd(url):
         return None
     return retry_call(_get, max_attempts=3, delay_factor=2)
 
+def _download_dwd_eps_field(base_eps, param_folder, prefix, date_stamp, h, param_name):
+    """Lädt eine DWD-EPS Datei herunter und probiert sowohl Klein- als auch Grossschreibung."""
+    for p_variant in [param_name.lower(), param_name.upper()]:
+        url = f"{base_eps}/{param_folder}/{prefix}_{date_stamp}_{h:03d}_{p_variant}.grib2.bz2"
+        data = _download_and_extract_dwd(url)
+        if data is not None:
+            return data
+    return None
+
 def _extract_grib_array(raw_bytes, valid_indices, is_ensemble=False):
     if raw_bytes is None:
         return None
@@ -590,7 +599,6 @@ def _load_iconeu_grid_coords(ref_iso):
         ref_dt = datetime.now(ZoneInfo("UTC"))
 
     cycle_hh = ref_dt.strftime("%H")
-    # 3 Argumente: Modellordner, Cycle-Stunde, Parametername
     url_lat = _find_dwd_coord_url("icon-eu-eps", cycle_hh, "clat")
     url_lon = _find_dwd_coord_url("icon-eu-eps", cycle_hh, "clon")
 
@@ -645,19 +653,20 @@ def fetch_iconeu_data(start_step, end_step, ref_time_str):
     target_steps = config.get_model_step_hours("icon-eu", ref_dt)[start_step : end_step + 1]
 
     base_eps = f"https://opendata.dwd.de/weather/nwp/icon-eu-eps/grib/{cycle_hh}"
+    prefix = "icon-eu-eps_europe_icosahedral_single-level"
+    date_stamp = f"{date_ymd}{cycle_hh}"
 
     u_h_list, v_h_list, g_h_list = [], [], []
     u_e_list, v_e_list, g_e_list = [], [], []
 
     for h in target_steps:
-        # DWD benennt icon-eu-eps mit Grossbuchstaben am Ende
-        url_ue = f"{base_eps}/u_10m/icon-eu-eps_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_U_10M.grib2.bz2"
-        url_ve = f"{base_eps}/v_10m/icon-eu-eps_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_V_10M.grib2.bz2"
-        url_ge = f"{base_eps}/vmax_10m/icon-eu-eps_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_VMAX_10M.grib2.bz2"
+        raw_u = _download_dwd_eps_field(base_eps, "u_10m", prefix, date_stamp, h, "u_10m")
+        raw_v = _download_dwd_eps_field(base_eps, "v_10m", prefix, date_stamp, h, "v_10m")
+        raw_g = _download_dwd_eps_field(base_eps, "vmax_10m", prefix, date_stamp, h, "vmax_10m") if h > 0 else None
 
-        u_e = _extract_grib_array(_download_and_extract_dwd(url_ue), valid_indices, is_ensemble=True)
-        v_e = _extract_grib_array(_download_and_extract_dwd(url_ve), valid_indices, is_ensemble=True)
-        g_e = _extract_grib_array(_download_and_extract_dwd(url_ge), valid_indices, is_ensemble=True) if h > 0 else np.full((40, num_pts), np.nan, dtype=np.float32)
+        u_e = _extract_grib_array(raw_u, valid_indices, is_ensemble=True)
+        v_e = _extract_grib_array(raw_v, valid_indices, is_ensemble=True)
+        g_e = _extract_grib_array(raw_g, valid_indices, is_ensemble=True) if h > 0 else np.full((40, num_pts), np.nan, dtype=np.float32)
 
         u_h = u_e[0] if (u_e is not None and len(u_e) > 0) else np.full(num_pts, np.nan, dtype=np.float32)
         v_h = v_e[0] if (v_e is not None and len(v_e) > 0) else np.full(num_pts, np.nan, dtype=np.float32)
@@ -892,7 +901,7 @@ def fetch_ecmwf_data(start_step, end_step, ref_time_str):
         if ch_e is None and ch_h is not None: ch_e = np.repeat(ch_h[np.newaxis, :], 50, axis=0)
         elif ch_h is None and ch_e is not None: ch_e = ch_e[0]
         if cm_e is None and cm_h is not None: cm_e = np.repeat(cm_h[np.newaxis, :], 50, axis=0)
-        elif cm_h is None and cm_e is not None: cm_h = cm_e[0]
+        elif cm_h is None and cm_e is not None: cm_e = cm_e[0]
         if cl_e is None and cl_h is not None: cl_e = np.repeat(cl_h[np.newaxis, :], 50, axis=0)
         elif cl_h is None and cl_e is not None: cl_e = cl_e[0]
 
@@ -962,6 +971,7 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
 
         ctrl_data, ens_data = None, None
 
+        # 1. Hauptlauf (aifs-single)
         try:
             client_single.download(date=date_ymd, time=time_hh, step=sh, target=path_ctrl)
             ctrl_data, coords_ctrl = _extract_swiss_subgrid_fast(path_ctrl, is_ens=False)
@@ -970,6 +980,7 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
         except Exception as e:
             print(f"   ⚠️ AIFS Hauptlauf (+{sh}h): {e}", flush=True)
 
+        # 2. Ensemble (aifs-ens, 50 Member)
         try:
             download_ok = False
             for ens_type in ["ef", "pf"]:
@@ -1000,6 +1011,7 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
         u_e = ens_data.get("10u") if ens_data else None
         v_e = ens_data.get("10v") if ens_data else None
 
+        # Fallback bei Schritt 0 oder falls Ensemble temporär fehlt
         if u_e is None and u_h is not None:
             u_e = np.repeat(u_h[np.newaxis, :], 50, axis=0)
             v_e = np.repeat(v_h[np.newaxis, :], 50, axis=0)
