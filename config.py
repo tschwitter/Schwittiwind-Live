@@ -33,18 +33,19 @@ MODELS_CONFIG = {
         "collection": "ogd-analysis-kenda-ch1",
         "hhl_asset": "vertical_constants_icon-ch1-eps.grib2",
         "nx": 400, "ny": 240, "hours": 5, "max_members": 1, "max_runs": 4,
-        "active_variables": [],
+        "active_variables": ["wind", "gust", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"],
         #"wind", "gust", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
-        "ensemble_variables": [], "max_chunks": 1
+        "ensemble_variables": [],
+        "max_chunks": 1
     },
     "icon-ch1": {
         "name": "ICON-CH1 (1km)",
         "collection": "ogd-forecasting-icon-ch1",
         "hhl_asset": "vertical_constants_icon-ch1-eps.grib2",
         "nx": 400, "ny": 240, "hours": 33, "max_members": 11, "max_runs": 8,
-        "active_variables": [],
+        "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"],
        # "wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1000", "wind1500", "wind2000", "wind2500", "wind3000", "wind3500"
-        "ensemble_variables": [],
+        "ensemble_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"],
       #  "wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl", "wind1500"
         "max_chunks": 4
     },
@@ -53,9 +54,9 @@ MODELS_CONFIG = {
         "collection": "ogd-forecasting-icon-ch2",
         "hhl_asset": "vertical_constants_icon-ch2-eps.grib2",
         "nx": 200, "ny": 120, "hours": 120, "max_members": 21, "max_runs": 4,
-        "active_variables": [],
+        "active_variables": ["wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"],
         #"wind", "gust", "dbz", "sun", "clct", "clch", "clcm", "clcl"
-        "ensemble_variables": [],
+        "ensemble_variables": ["wind", "gust", "sun", "dbz"],
         #"wind", "gust", "sun", "dbz"
         "max_chunks": 3
     },
@@ -70,9 +71,9 @@ MODELS_CONFIG = {
         "name": "ICON-D2 (2.2km)",
         "collection": "dwd-icon-d2",
         "nx": 200, "ny": 120, "hours": 48, "max_members": 21, "max_runs": 8,
-        "active_variables": [],
+        "active_variables": ["wind", "gust"],
         #"wind", "gust"
-        "ensemble_variables": [],
+        "ensemble_variables": ["wind", "gust"],
         #"wind", "gust"
         "max_chunks": 2
     },
@@ -80,9 +81,9 @@ MODELS_CONFIG = {
         "name": "ECMWF (0.1°)",
         "collection": "ifs-0p1",
         "nx": 200, "ny": 120, "max_members": 51, "max_runs": 4,
-        "active_variables": [],
+        "active_variables": ["wind", "gust", "clct", "clch", "clcm", "clcl"],
         #"wind", "gust", "clct", "clch", "clcm", "clcl"
-        "ensemble_variables": [],
+        "ensemble_variables": ["wind", "gust", "clct", "clch", "clcm", "clcl"],
         #"wind", "gust", "clct", "clch", "clcm", "clcl"
         "max_chunks": 3
     },
@@ -90,9 +91,9 @@ MODELS_CONFIG = {
         "name": "AIFS (0.25° KI)",
         "collection": "aifs-single",
         "nx": 80, "ny": 50, "hours": 240, "max_members": 51, "max_runs": 4,
-        "active_variables": [],
+        "active_variables": ["wind"],
         #"wind"
-        "ensemble_variables": [],
+        "ensemble_variables": ["wind"],
         #"wind"
         "max_chunks": 2
     },
@@ -122,13 +123,13 @@ def get_model_step_hours(model_name, ref_dt):
     if model_name == "kenda-ch1":
         return list(range(5))
     if model_name == "aifs":
-        return list(range(0, 6, 6))
+        return list(range(0, 241, 6))
     if model_name == "gfs":
         return list(range(0, 241, 3))
     if model_name == "icon-eu":
         return list(range(0, 121, 3))
     if model_name == "ecmwf":
-        return list(range(0, 3, 3)) + (list(range(150, 241, 6)) if ref_dt and ref_dt.hour in [0, 12] else [])
+        return list(range(0, 145, 3)) + (list(range(150, 241, 6)) if ref_dt and ref_dt.hour in [0, 12] else [])
     
     total_hours = MODELS_CONFIG[model_name].get("hours", 33)
     return list(range(total_hours + 1))
