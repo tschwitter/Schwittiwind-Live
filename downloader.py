@@ -403,8 +403,10 @@ def fetch_arome_hd_data(start_step, end_step, ref_time_str):
 # ================= DWD ICON-D2 & ICON-EU HELPER =================
 def _find_dwd_coord_url(model_folder, cycle_hh, param_name):
     candidate_dirs = [
-        f"https://opendata.dwd.de/weather/nwp/{model_folder}/grib/{cycle_hh}/{param_name}/",
-        f"https://opendata.dwd.de/weather/nwp/{model_folder}/grib/00/{param_name}/"
+        f"https://opendata.dwd.de/weather/nwp/{model_folder}/grib/{cycle_hh}/{param_name.lower()}/",
+        f"https://opendata.dwd.de/weather/nwp/{model_folder}/grib/{cycle_hh}/{param_name.upper()}/",
+        f"https://opendata.dwd.de/weather/nwp/{model_folder}/grib/00/{param_name.lower()}/",
+        f"https://opendata.dwd.de/weather/nwp/{model_folder}/grib/00/{param_name.upper()}/"
     ]
     for d_url in candidate_dirs:
         try:
@@ -588,6 +590,7 @@ def _load_iconeu_grid_coords(ref_iso):
         ref_dt = datetime.now(ZoneInfo("UTC"))
 
     cycle_hh = ref_dt.strftime("%H")
+    # 3 Argumente: Modellordner, Cycle-Stunde, Parametername
     url_lat = _find_dwd_coord_url("icon-eu-eps", cycle_hh, "clat")
     url_lon = _find_dwd_coord_url("icon-eu-eps", cycle_hh, "clon")
 
@@ -647,15 +650,15 @@ def fetch_iconeu_data(start_step, end_step, ref_time_str):
     u_e_list, v_e_list, g_e_list = [], [], []
 
     for h in target_steps:
-        url_ue = f"{base_eps}/u_10m/icon-eu-eps_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_u_10m.grib2.bz2"
-        url_ve = f"{base_eps}/v_10m/icon-eu-eps_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_v_10m.grib2.bz2"
-        url_ge = f"{base_eps}/vmax_10m/icon-eu-eps_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_vmax_10m.grib2.bz2"
+        # DWD benennt icon-eu-eps mit Grossbuchstaben am Ende
+        url_ue = f"{base_eps}/u_10m/icon-eu-eps_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_U_10M.grib2.bz2"
+        url_ve = f"{base_eps}/v_10m/icon-eu-eps_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_V_10M.grib2.bz2"
+        url_ge = f"{base_eps}/vmax_10m/icon-eu-eps_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_VMAX_10M.grib2.bz2"
 
         u_e = _extract_grib_array(_download_and_extract_dwd(url_ue), valid_indices, is_ensemble=True)
         v_e = _extract_grib_array(_download_and_extract_dwd(url_ve), valid_indices, is_ensemble=True)
         g_e = _extract_grib_array(_download_and_extract_dwd(url_ge), valid_indices, is_ensemble=True) if h > 0 else np.full((40, num_pts), np.nan, dtype=np.float32)
 
-        # Kontroll-Lauf / Member 0 direkt aus dem ersten Member ableiten
         u_h = u_e[0] if (u_e is not None and len(u_e) > 0) else np.full(num_pts, np.nan, dtype=np.float32)
         v_h = v_e[0] if (v_e is not None and len(v_e) > 0) else np.full(num_pts, np.nan, dtype=np.float32)
         g_h = g_e[0] if (g_e is not None and len(g_e) > 0) else np.full(num_pts, np.nan, dtype=np.float32)
@@ -679,6 +682,7 @@ def fetch_iconeu_data(start_step, end_step, ref_time_str):
         },
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": grid_info["ref_lon"], "ref_lat": grid_info["ref_lat"]
     }
+
 # ================= ECMWF, AIFS & GFS SUBGRID EXTRACTOR =================
 def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
     if not os.path.exists(grib_path) or os.path.getsize(grib_path) < 500:
@@ -699,25 +703,23 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
                 try:
                     param = eccodes.codes_get(gid, "shortName")
 
-                    # Schichttyp & Level abfragen
+                    # Schichttyp & Level abfragen: Druckflächen (200 hPa Jetstream) strikt überspringen!
                     try:
                         type_of_level = eccodes.codes_get(gid, "typeOfLevel")
+                        if type_of_level in ["isobaricInhPa", "isobaricInPa", "hybrid", "pl"]:
+                            continue
                     except Exception:
-                        type_of_level = "surface"
+                        pass
 
                     try:
                         level = int(eccodes.codes_get(gid, "level"))
                     except Exception:
                         level = 0
 
-                    # Druckflächen (z. B. 200 hPa Jetstream) strikt überspringen!
-                    if type_of_level in ["isobaricInhPa", "isobaricInPa", "hybrid", "pl"]:
-                        continue
-
                     norm_param = None
-                    if param in ["10u", "u10"] or (param in ["ugrd", "u"] and (type_of_level in ["heightAboveGround", "surface", "sfc", "specifiedHeightLevelAboveGround"] or level == 10)):
+                    if param in ["10u", "u10"] or (param in ["ugrd", "u"] and level == 10):
                         norm_param = "10u"
-                    elif param in ["10v", "v10"] or (param in ["vgrd", "v"] and (type_of_level in ["heightAboveGround", "surface", "sfc", "specifiedHeightLevelAboveGround"] or level == 10)):
+                    elif param in ["10v", "v10"] or (param in ["vgrd", "v"] and level == 10):
                         norm_param = "10v"
                     elif param in ["10fg", "10fg3", "10fg6", "fg10", "gust"]:
                         norm_param = "gust"
@@ -760,8 +762,7 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
 
                     if len(r_mask) == 0 or len(c_mask) == 0 or (n_lats <= 30 and n_lons <= 40):
                         sub = matrix
-                        sub_lats = lat_arr
-                        sub_lons = lon_arr
+                        sub_lats, sub_lons = lat_arr, lon_arr
                     else:
                         r_min, r_max = r_mask[0], r_mask[-1] + 1
                         c_min, c_max = c_mask[0], c_mask[-1] + 1
@@ -809,7 +810,7 @@ def _extract_swiss_subgrid_fast(grib_path, is_ens=False):
         print(f"⚠️ ecCodes Fehler beim Lesen: {e}", flush=True)
         return None, None
 
-# ================= ECMWF IFS (BEWÄHRTER, SCHNELLER STANDARD) =================
+# ================= ECMWF IFS (SCHNELLER ORIGINAL-STANDARD) =================
 def fetch_ecmwf_data(start_step, end_step, ref_time_str):
     from ecmwf.opendata import Client
     print(f"-> Lade ECMWF 0.1° für Index {start_step}..{end_step} ({ref_time_str})...", flush=True)
@@ -961,7 +962,6 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
 
         ctrl_data, ens_data = None, None
 
-        # 1. Hauptlauf (aifs-single)
         try:
             client_single.download(date=date_ymd, time=time_hh, step=sh, target=path_ctrl)
             ctrl_data, coords_ctrl = _extract_swiss_subgrid_fast(path_ctrl, is_ens=False)
@@ -970,7 +970,6 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
         except Exception as e:
             print(f"   ⚠️ AIFS Hauptlauf (+{sh}h): {e}", flush=True)
 
-        # 2. Ensemble (aifs-ens, 50 Member)
         try:
             download_ok = False
             for ens_type in ["ef", "pf"]:
@@ -1022,7 +1021,7 @@ def fetch_aifs_data(start_step, end_step, ref_time_str):
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
 
-# ================= NOAA GEFS 0.25° (ECHTE 0.25° AUFLÖSUNG: HAUPTLAUF + 30 MEMBER) =================
+# ================= NOAA GEFS 0.25° (HAUPTLAUF + 30 MEMBER INKL. BÖEN) =================
 def _fetch_single_gefs_025_member_step(date_ymd, cycle_hh, step_h, prefix):
     filename = f"{prefix}.t{cycle_hh:02d}z.pgrb2s.0p25.f{step_h:03d}"
     url = (
@@ -1132,126 +1131,6 @@ def fetch_gfs_data(start_step, end_step, ref_time_str):
         "altitude_hl": {}, "altitude_ens": {}, "ref_lon": ref_lon, "ref_lat": ref_lat
     }
 
-
-# ================= DWD ICON-EU (6.5km INKL. 40 MEMBER) =================
-def _load_iconeu_grid_coords(ref_iso):
-    global _ICONEU_GRID_CACHE
-    if "valid_indices" in _ICONEU_GRID_CACHE:
-        return _ICONEU_GRID_CACHE
-
-    try:
-        ref_dt = datetime.fromisoformat(ref_iso.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
-    except Exception:
-        ref_dt = datetime.now(ZoneInfo("UTC"))
-
-    cycle_hh = ref_dt.strftime("%H")
-    # Sucht die Koordinaten-Dateien (clat/clon) auf dem DWD Server
-    for d_url in [f"https://opendata.dwd.de/weather/nwp/icon-eu/grib/{cycle_hh}/",
-                  f"https://opendata.dwd.de/weather/nwp/icon-eu/grib/00/"]:
-        url_lat = _find_dwd_coord_url(cycle_hh, "clat")
-        url_lon = _find_dwd_coord_url(cycle_hh, "clon")
-        if url_lat and url_lon:
-            break
-
-    clat_b = _download_and_extract_dwd(url_lat)
-    clon_b = _download_and_extract_dwd(url_lon)
-
-    with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_lat, \
-         tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tmp_lon:
-        tmp_lat.write(clat_b)
-        tmp_lon.write(clon_b)
-        path_lat, path_lon = tmp_lat.name, tmp_lon.name
-
-    try:
-        with SilenceStderr():
-            ds_lat, ds_lon = cfgrib.open_dataset(path_lat), cfgrib.open_dataset(path_lon)
-        lats = ds_lat[list(ds_lat.data_vars.keys())[0]].values.ravel().astype(np.float64)
-        lons = ds_lon[list(ds_lon.data_vars.keys())[0]].values.ravel().astype(np.float64)
-        ds_lat.close()
-        ds_lon.close()
-
-        if np.nanmax(np.abs(lats)) <= 1.6:
-            lats, lons = np.rad2deg(lats), np.rad2deg(lons)
-        lons = (lons + 180.0) % 360.0 - 180.0
-
-        mask = (lats >= config.LAT_MIN) & (lats <= config.LAT_MAX) & (lons >= config.LON_MIN) & (lons <= config.LON_MAX)
-        valid_indices = np.where(mask)[0]
-
-        _ICONEU_GRID_CACHE = {
-            "valid_indices": valid_indices,
-            "ref_lat": lats[valid_indices].astype(np.float32),
-            "ref_lon": lons[valid_indices].astype(np.float32)
-        }
-        return _ICONEU_GRID_CACHE
-    finally:
-        for p in [path_lat, path_lon]:
-            if os.path.exists(p):
-                try:
-                    os.remove(p)
-                except Exception:
-                    pass
-
-def fetch_iconeu_data(start_step, end_step, ref_time_str):
-    print(f"-> Lade DWD ICON-EU (Wind & Böen inkl. 40 Member) für Schritte {start_step}..{end_step} ({ref_time_str})...", flush=True)
-    grid_info = _load_iconeu_grid_coords(ref_time_str)
-    valid_indices = grid_info["valid_indices"]
-    num_pts = len(valid_indices)
-
-    ref_dt = datetime.fromisoformat(ref_time_str.replace("Z", "")).replace(tzinfo=ZoneInfo("UTC"))
-    cycle_hh, date_ymd = ref_dt.strftime("%H"), ref_dt.strftime("%Y%m%d")
-    target_steps = config.get_model_step_hours("icon-eu", ref_dt)[start_step : end_step + 1]
-
-    base_det = f"https://opendata.dwd.de/weather/nwp/icon-eu/grib/{cycle_hh}"
-    base_eps = f"https://opendata.dwd.de/weather/nwp/icon-eu-eps/grib/{cycle_hh}"
-
-    u_h_list, v_h_list, g_h_list = [], [], []
-    u_e_list, v_e_list, g_e_list = [], [], []
-
-    for h in target_steps:
-        # Hauptlauf (deterministisch)
-        url_u = f"{base_det}/u_10m/icon-eu_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_u_10m.grib2.bz2"
-        url_v = f"{base_det}/v_10m/icon-eu_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_v_10m.grib2.bz2"
-        url_g = f"{base_det}/vmax_10m/icon-eu_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_vmax_10m.grib2.bz2"
-
-        u_h = _extract_grib_array(_download_and_extract_dwd(url_u), valid_indices)
-        v_h = _extract_grib_array(_download_and_extract_dwd(url_v), valid_indices)
-        g_h = _extract_grib_array(_download_and_extract_dwd(url_g), valid_indices) if h > 0 else np.full(num_pts, np.nan, dtype=np.float32)
-
-        # Ensemble (40 Member)
-        url_ue = f"{base_eps}/u_10m/icon-eu-eps_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_u_10m.grib2.bz2"
-        url_ve = f"{base_eps}/v_10m/icon-eu-eps_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_v_10m.grib2.bz2"
-        url_ge = f"{base_eps}/vmax_10m/icon-eu-eps_europe_icosahedral_single-level_{date_ymd}{cycle_hh}_{h:03d}_vmax_10m.grib2.bz2"
-
-        u_e = _extract_grib_array(_download_and_extract_dwd(url_ue), valid_indices, is_ensemble=True)
-        v_e = _extract_grib_array(_download_and_extract_dwd(url_ve), valid_indices, is_ensemble=True)
-        g_e = _extract_grib_array(_download_and_extract_dwd(url_ge), valid_indices, is_ensemble=True) if h > 0 else np.full((40, num_pts), np.nan, dtype=np.float32)
-
-        if u_e is None and u_h is not None:
-            u_e = np.repeat(u_h[np.newaxis, :], 40, axis=0)
-            v_e = np.repeat(v_h[np.newaxis, :], 40, axis=0)
-        if g_e is None and g_h is not None:
-            g_e = np.repeat(g_h[np.newaxis, :], 40, axis=0)
-
-        u_h_list.append(u_h if u_h is not None else np.full(num_pts, np.nan, dtype=np.float32))
-        v_h_list.append(v_h if v_h is not None else np.full(num_pts, np.nan, dtype=np.float32))
-        g_h_list.append(g_h if g_h is not None else np.full(num_pts, np.nan, dtype=np.float32))
-
-        u_e_list.append(u_e if u_e is not None else np.full((40, num_pts), np.nan, dtype=np.float32))
-        v_e_list.append(v_e if v_e is not None else np.full((40, num_pts), np.nan, dtype=np.float32))
-        g_e_list.append(g_e if g_e is not None else np.full((40, num_pts), np.nan, dtype=np.float32))
-
-    return {
-        "surface": {
-            "u_h": xr.DataArray(np.stack(u_h_list, axis=0), dims=["lead_time", "cell"]),
-            "v_h": xr.DataArray(np.stack(v_h_list, axis=0), dims=["lead_time", "cell"]),
-            "g_h": xr.DataArray(np.stack(g_h_list, axis=0), dims=["lead_time", "cell"]),
-            "u_e": xr.DataArray(np.stack(u_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
-            "v_e": xr.DataArray(np.stack(v_e_list, axis=0), dims=["lead_time", "eps", "cell"]),
-            "g_e": xr.DataArray(np.stack(g_e_list, axis=0), dims=["lead_time", "eps", "cell"])
-        },
-        "altitude_hl": {}, "altitude_ens": {}, "ref_lon": grid_info["ref_lon"], "ref_lat": grid_info["ref_lat"]
-    }
-    
 # ================= ALLGEMEINER DISPATCHER =================
 def fetch_weather_data(model_name, start_step, end_step, ref_time_str):
     if model_name == "kenda-ch1": return fetch_kenda_data(start_step, end_step, ref_time_str)
